@@ -1,0 +1,25 @@
+server:
+  server_id: 1001
+  max_connections: 64
+  # Batch sends to replicas for up to this long; 0 sends at once.
+  send_linger: 200us
+storage:
+  data_dir: /var/lib/binlog-streamer
+  retention:
+    policy: age
+    period: 7d
+  disk:
+    max_size: 256G
+    purge_high_watermark: 240G
+    purge_low_watermark: 224G
+    min_free_space: 50G
+    recovery_reserve: 10G
+cache:
+  policy: time_window
+  window: 60s
+  max_size: 4G
+monitoring:
+  http:
+    listen_address: 0.0.0.0
+    listen_port: 8080
+    html_dir: /etc/binlog-streamer/html

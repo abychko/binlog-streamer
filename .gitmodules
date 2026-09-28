@@ -1,0 +1,12 @@
+[submodule "third_party/yaml-cpp"]
+	path = third_party/yaml-cpp
+	url = https://github.com/jbeder/yaml-cpp.git
+[submodule "third_party/openssl"]
+	path = third_party/openssl
+	url = https://github.com/openssl/openssl.git
+[submodule "third_party/zstd"]
+	path = third_party/zstd
+	url = https://github.com/facebook/zstd.git
+[submodule "third_party/zlib-ng"]
+	path = third_party/zlib-ng
+	url = https://github.com/zlib-ng/zlib-ng.git

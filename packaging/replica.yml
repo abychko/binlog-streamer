@@ -1,0 +1,18 @@
+# /etc/binlog-streamer/replica.yml: owner root, group binlog-streamer, mode 0640.
+listen_address:
+listen_port:
+
+# uncompressed | zstd | zlib
+compression:
+
+require_secure_transport: false
+ssl_ca:
+ssl_cert:
+ssl_key:
+
+clients:
+#  - user:
+#    password:
+#    hosts:
+#      - 127.0.0.0/8
+#      - 2001:db8::/32

@@ -1,0 +1,640 @@
+zabbix_export:
+  version: '6.0'
+  date: '2026-09-24T12:00:00Z'
+  groups:
+    - uuid: 0b2360358f4b48bbac11bc3cdf304484
+      name: Templates/Databases
+  templates:
+    - uuid: b1295eeb057d47228c9dcd1af671ed1b
+      template: 'Binlog Streamer by HTTP'
+      name: 'Binlog Streamer by HTTP'
+      description: |
+        Monitors a binlog-streamer relay through its /status.json.
+
+        One HTTP agent item fetches the document; everything else is a
+        dependent item read from it with JSONPath, and the connected
+        replicas are discovered from the "replicas" array. Set
+        {$BS.STATUS.URL} when the relay does not listen on port 8080 of
+        the host's address.
+
+        Lag thresholds and the reconnect grace are macros; the replica
+        thresholds take the replica's user as context, e.g.
+        {$BS.REPLICA.LAG.HIGH:"reporting"}.
+      groups:
+        - name: Templates/Databases
+      items:
+        - uuid: 7b54365fc00c40b180dd80176d71de6c
+          name: 'Status document'
+          type: HTTP_AGENT
+          key: binlog_streamer.status
+          delay: 30s
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          url: '{$BS.STATUS.URL}'
+          timeout: 5s
+          tags:
+            - tag: component
+              value: raw
+          triggers:
+            - uuid: 6995c0e20de14e428a155c8cb9b1466f
+              expression: 'nodata(/Binlog Streamer by HTTP/binlog_streamer.status,3m)=1'
+              name: 'Relay status is not available'
+              priority: HIGH
+              description: 'No /status.json for three minutes: the relay, its HTTP listener or the network to it is down.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 98f4670aa2dd48549f9001428de4c428
+          name: 'Relay version'
+          type: DEPENDENT
+          key: binlog_streamer.version
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.version
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: relay
+        - uuid: bd1c762329304e1189c77c2151da8555
+          name: 'Relay state'
+          type: DEPENDENT
+          key: binlog_streamer.state_code
+          delay: '0'
+          history: 7d
+          valuemap:
+            name: 'binlog-streamer relay state'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.state_code
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: relay
+          triggers:
+            - uuid: 8db5424fcd564302872685470eeab067
+              expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.state_code,{$BS.RECONNECT.MAX})=2'
+              name: 'Relay has been reconnecting to the source for more than {$BS.RECONNECT.MAX}'
+              priority: HIGH
+              description: 'The stream from the source is lost. Replicas are still served from storage, but their lag grows until the source is back.'
+              dependencies:
+                - name: 'Relay status is not available'
+                  expression: 'nodata(/Binlog Streamer by HTTP/binlog_streamer.status,3m)=1'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 264d20536dd741d983fe769268130b1a
+          name: 'Relay uptime'
+          type: DEPENDENT
+          key: binlog_streamer.uptime_seconds
+          delay: '0'
+          history: 7d
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.uptime_seconds
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: relay
+        - uuid: 2455985b44244fd69fd261c2671c3f61
+          name: 'Source: connected'
+          type: DEPENDENT
+          key: binlog_streamer.source.connected
+          delay: '0'
+          history: 7d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.source.connected
+            - type: BOOL_TO_DECIMAL
+              parameters:
+                - ''
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: source
+        - uuid: 69e85522a28b4d668d4ce67aef60a4cc
+          name: 'Source: since'
+          type: DEPENDENT
+          key: binlog_streamer.source.since
+          delay: '0'
+          history: 7d
+          trends: '0'
+          units: unixtime
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.source.since
+              error_handler: DISCARD_VALUE
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: source
+        - uuid: dec177adcad54545a3250138a621c471
+          name: 'Source: connection attempt'
+          type: DEPENDENT
+          key: binlog_streamer.source.attempt
+          delay: '0'
+          history: 7d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.source.attempt
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: source
+        - uuid: f9e20897d16d45c890cc573c131de286
+          name: 'Source: seconds behind'
+          type: DEPENDENT
+          key: binlog_streamer.source.behind_seconds
+          delay: '0'
+          history: 7d
+          units: s
+          description: 'The source clock minus the timestamp of the last event received; 0 once the source says it has nothing more. Not collected while disconnected.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.source.behind_seconds
+              error_handler: DISCARD_VALUE
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: source
+          triggers:
+            - uuid: 993b9a0face4457d8dd301518867771d
+              expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.source.behind_seconds,3m)>{$BS.SOURCE.LAG.HIGH}'
+              name: 'Relay is more than {$BS.SOURCE.LAG.HIGH}s behind the source'
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: performance
+            - uuid: 3f3a0455ad0c4b76bd63080e73b899e5
+              expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.source.behind_seconds,3m)>{$BS.SOURCE.LAG.WARN}'
+              name: 'Relay is more than {$BS.SOURCE.LAG.WARN}s behind the source'
+              priority: WARNING
+              dependencies:
+                - name: 'Relay is more than {$BS.SOURCE.LAG.HIGH}s behind the source'
+                  expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.source.behind_seconds,3m)>{$BS.SOURCE.LAG.HIGH}'
+              tags:
+                - tag: scope
+                  value: performance
+        - uuid: e67d482f2b9e4f24ae0f63cfe0f7f259
+          name: 'Source: server_uuid'
+          type: DEPENDENT
+          key: binlog_streamer.source.server_uuid
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.source.server_uuid
+              error_handler: DISCARD_VALUE
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: source
+          triggers:
+            - uuid: 2e233c5ffc194f7b89acc103b51431c6
+              expression: 'last(/Binlog Streamer by HTTP/binlog_streamer.source.server_uuid,#1)<>last(/Binlog Streamer by HTTP/binlog_streamer.source.server_uuid,#2) and length(last(/Binlog Streamer by HTTP/binlog_streamer.source.server_uuid,#2))>0'
+              name: 'Source server changed (server_uuid is now {ITEM.VALUE})'
+              priority: WARNING
+              description: 'The relay is receiving from a different server than before: a failover or a redirected source.yml. Check that the new server carries the GTID history the replicas rely on.'
+              manual_close: 'YES'
+              tags:
+                - tag: scope
+                  value: notice
+        - uuid: 7720944c48cf44f586384acf120f7128
+          name: 'Source: version'
+          type: DEPENDENT
+          key: binlog_streamer.source.version
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.source.version
+              error_handler: DISCARD_VALUE
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: source
+        - uuid: 250758d37e4342b5aca5d50c4eab555b
+          name: 'Source: position received'
+          type: DEPENDENT
+          key: binlog_streamer.source.position
+          delay: '0'
+          history: 7d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.source.position
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: source
+        - uuid: 48903881634b4becb778fea09617e957
+          name: 'Storage: files on disk'
+          type: DEPENDENT
+          key: binlog_streamer.storage.files
+          delay: '0'
+          history: 7d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.storage.files
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: storage
+        - uuid: 137e7e7a97ce4cfeb4fb2858bf7a8e72
+          name: 'Storage: bytes on disk'
+          type: DEPENDENT
+          key: binlog_streamer.storage.bytes
+          delay: '0'
+          history: 7d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.storage.bytes
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: storage
+        - uuid: 70482740c04f4959bfc7c920d703ad8a
+          name: 'Storage: disk limit'
+          type: DEPENDENT
+          key: binlog_streamer.storage.max_bytes
+          delay: '0'
+          history: 7d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.storage.max_bytes
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: storage
+        - uuid: b636d34bdad64eac97b274e699a8e116
+          name: 'Storage: bytes received but not yet published'
+          type: DEPENDENT
+          key: binlog_streamer.storage.behind_bytes
+          delay: '0'
+          history: 7d
+          units: B
+          description: 'What the relay has received from the source but not yet made readable for replicas: a transaction still in flight, or a stalled writer.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.storage.behind_bytes
+              error_handler: DISCARD_VALUE
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: storage
+          triggers:
+            - uuid: 7f2f346c0c554c6e8e94182635b0f93b
+              expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.storage.behind_bytes,5m)>0 and max(/Binlog Streamer by HTTP/binlog_streamer.storage.behind_bytes,5m)=min(/Binlog Streamer by HTTP/binlog_streamer.storage.behind_bytes,5m)'
+              name: 'Received bytes have not been published for 5 minutes'
+              priority: WARNING
+              description: 'The unpublished tail is non-zero and has not moved for five minutes: either a very large transaction is still arriving or the storage writer is stuck.'
+              tags:
+                - tag: scope
+                  value: performance
+        - uuid: 298d17952c5146bda39b0ce8c5f0c85c
+          name: 'Memory: bytes in the event cache'
+          type: DEPENDENT
+          key: binlog_streamer.memory.bytes
+          delay: '0'
+          history: 7d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.memory.bytes
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: memory
+        - uuid: b467274a54c0497585529f500917ac5d
+          name: 'Memory: cache limit'
+          type: DEPENDENT
+          key: binlog_streamer.memory.max_bytes
+          delay: '0'
+          history: 7d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.memory.max_bytes
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: memory
+        - uuid: 614b9e89f76e48d1970a226183e1db63
+          name: 'Replicas connected'
+          type: DEPENDENT
+          key: binlog_streamer.replicas_connected
+          delay: '0'
+          history: 7d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.replicas_connected
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: replicas
+        - uuid: 4063a7ad00ce428890c54e50814ac7f5
+          name: 'Replica connection limit'
+          type: DEPENDENT
+          key: binlog_streamer.max_connections
+          delay: '0'
+          history: 7d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.max_connections
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: binlog_streamer.status
+          tags:
+            - tag: component
+              value: replicas
+      discovery_rules:
+        - uuid: dcb3197298f0453b98b4595024eea39d
+          name: 'Replica discovery'
+          type: DEPENDENT
+          key: binlog_streamer.replicas.discovery
+          delay: '0'
+          lifetime: 3d
+          description: 'One entity per connected replica, keyed by its address and user; a replica that reconnects keeps its items.'
+          item_prototypes:
+            - uuid: 202c39f6d1564ecbbd07d511599de06a
+              name: 'Replica {#USER}@{#ADDRESS}: state'
+              type: DEPENDENT
+              key: 'binlog_streamer.replica.state_code[{#ADDRESS},{#USER}]'
+              delay: '0'
+              history: 7d
+              valuemap:
+                name: 'binlog-streamer replica state'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.replicas[?(@.address == "{#ADDRESS}" && @.user == "{#USER}")].state_code.first()'
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: binlog_streamer.status
+              tags:
+                - tag: component
+                  value: replicas
+                - tag: replica
+                  value: '{#USER}@{#ADDRESS}'
+              trigger_prototypes:
+                - uuid: 47cf521529be4a62909a6821c875c1c2
+                  expression: 'nodata(/Binlog Streamer by HTTP/binlog_streamer.replica.state_code[{#ADDRESS},{#USER}],5m)=1'
+                  name: 'Replica {#USER}@{#ADDRESS} has disconnected'
+                  priority: WARNING
+                  description: 'The replica is no longer in the status; the relay log says why it closed.'
+                  tags:
+                    - tag: scope
+                      value: availability
+                - uuid: 73f37e0932fb41d98b2c4e0148574547
+                  expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.replica.state_code[{#ADDRESS},{#USER}],2m)=0'
+                  name: 'Replica {#USER}@{#ADDRESS} logged in but requested no dump'
+                  priority: WARNING
+                  description: 'Connected for two minutes without COM_BINLOG_DUMP_GTID: usually the replica side is misconfigured or stopped.'
+                  tags:
+                    - tag: scope
+                      value: availability
+            - uuid: 9e335875281d44e1b40e2385889b2583
+              name: 'Replica {#USER}@{#ADDRESS}: seconds behind'
+              type: DEPENDENT
+              key: 'binlog_streamer.replica.behind_seconds[{#ADDRESS},{#USER}]'
+              delay: '0'
+              history: 7d
+              units: s
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.replicas[?(@.address == "{#ADDRESS}" && @.user == "{#USER}")].behind_seconds.first()'
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: binlog_streamer.status
+              tags:
+                - tag: component
+                  value: replicas
+                - tag: replica
+                  value: '{#USER}@{#ADDRESS}'
+              trigger_prototypes:
+                - uuid: 6413df203a0a41f38ae4c772a61266a2
+                  expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.replica.behind_seconds[{#ADDRESS},{#USER}],3m)>{$BS.REPLICA.LAG.HIGH:"{#USER}"}'
+                  name: 'Replica {#USER}@{#ADDRESS} is more than {$BS.REPLICA.LAG.HIGH:"{#USER}"}s behind'
+                  priority: HIGH
+                  tags:
+                    - tag: scope
+                      value: performance
+                - uuid: 21fc2014776947de8977f2a1617e0276
+                  expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.replica.behind_seconds[{#ADDRESS},{#USER}],3m)>{$BS.REPLICA.LAG.WARN:"{#USER}"}'
+                  name: 'Replica {#USER}@{#ADDRESS} is more than {$BS.REPLICA.LAG.WARN:"{#USER}"}s behind'
+                  priority: WARNING
+                  dependencies:
+                    - name: 'Replica {#USER}@{#ADDRESS} is more than {$BS.REPLICA.LAG.HIGH:"{#USER}"}s behind'
+                      expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.replica.behind_seconds[{#ADDRESS},{#USER}],3m)>{$BS.REPLICA.LAG.HIGH:"{#USER}"}'
+                  tags:
+                    - tag: scope
+                      value: performance
+            - uuid: bb1463af048f4868820da4706e701586
+              name: 'Replica {#USER}@{#ADDRESS}: bytes behind'
+              type: DEPENDENT
+              key: 'binlog_streamer.replica.behind_bytes[{#ADDRESS},{#USER}]'
+              delay: '0'
+              history: 7d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.replicas[?(@.address == "{#ADDRESS}" && @.user == "{#USER}")].behind_bytes.first()'
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: binlog_streamer.status
+              tags:
+                - tag: component
+                  value: replicas
+                - tag: replica
+                  value: '{#USER}@{#ADDRESS}'
+            - uuid: 115883a90ade4308adc579fba48a0d27
+              name: 'Replica {#USER}@{#ADDRESS}: connected since'
+              type: DEPENDENT
+              key: 'binlog_streamer.replica.since[{#ADDRESS},{#USER}]'
+              delay: '0'
+              history: 7d
+              trends: '0'
+              units: unixtime
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.replicas[?(@.address == "{#ADDRESS}" && @.user == "{#USER}")].since.first()'
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: binlog_streamer.status
+              tags:
+                - tag: component
+                  value: replicas
+                - tag: replica
+                  value: '{#USER}@{#ADDRESS}'
+          master_item:
+            key: binlog_streamer.status
+          lld_macro_paths:
+            - lld_macro: '{#ADDRESS}'
+              path: $.address
+            - lld_macro: '{#USER}'
+              path: $.user
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.replicas
+      macros:
+        - macro: '{$BS.DISK.HIGH}'
+          value: '95'
+          description: 'Disk used, percent of storage.disk.max_size, for the high-severity trigger'
+        - macro: '{$BS.DISK.WARN}'
+          value: '80'
+          description: 'Disk used, percent of storage.disk.max_size, for the warning'
+        - macro: '{$BS.RECONNECT.MAX}'
+          value: 1m
+          description: 'How long the relay may stay in the reconnecting state before the trigger fires'
+        - macro: '{$BS.REPLICA.LAG.HIGH}'
+          value: '60'
+          description: 'Replica lag in seconds for the high-severity trigger; context is the replica user'
+        - macro: '{$BS.REPLICA.LAG.WARN}'
+          value: '5'
+          description: 'Replica lag in seconds for the warning; context is the replica user'
+        - macro: '{$BS.SOURCE.LAG.HIGH}'
+          value: '60'
+          description: 'Seconds the relay may be behind the source before the high-severity trigger'
+        - macro: '{$BS.SOURCE.LAG.WARN}'
+          value: '5'
+          description: 'Seconds the relay may be behind the source before the warning'
+        - macro: '{$BS.START.GRACE}'
+          value: '60'
+          description: 'Seconds after start within which the relay may still be reaching the source'
+        - macro: '{$BS.STATUS.URL}'
+          value: 'http://{HOST.CONN}:8080/status.json'
+          description: 'Where the relay serves its status (monitoring.http in settings.yml)'
+      valuemaps:
+        - uuid: 034e44d3ef454b0292ad95d0f0489912
+          name: 'binlog-streamer relay state'
+          mappings:
+            - value: '0'
+              newvalue: starting
+            - value: '1'
+              newvalue: serving
+            - value: '2'
+              newvalue: reconnecting
+        - uuid: 1abb9d7fdfef4409a1311213ae59cbb6
+          name: 'binlog-streamer replica state'
+          mappings:
+            - value: '0'
+              newvalue: connected
+            - value: '1'
+              newvalue: catching_up
+            - value: '2'
+              newvalue: streaming
+  triggers:
+    - uuid: c18a0abe97b742378bef362fa8814113
+      expression: 'last(/Binlog Streamer by HTTP/binlog_streamer.state_code)=0 and last(/Binlog Streamer by HTTP/binlog_streamer.uptime_seconds)>{$BS.START.GRACE}'
+      name: 'Relay has not reached the source since it started'
+      priority: HIGH
+      description: 'Still in the starting state past the grace period: the source address, credentials or network in source.yml are wrong, or the source is down.'
+      dependencies:
+        - name: 'Relay status is not available'
+          expression: 'nodata(/Binlog Streamer by HTTP/binlog_streamer.status,3m)=1'
+      tags:
+        - tag: scope
+          value: availability
+    - uuid: 24acdc934dfa4b279a823fe46ec3dcb3
+      expression: 'max(/Binlog Streamer by HTTP/binlog_streamer.source.connected,3m)=0 and last(/Binlog Streamer by HTTP/binlog_streamer.source.attempt)=last(/Binlog Streamer by HTTP/binlog_streamer.source.attempt,#6)'
+      name: 'Relay is disconnected from the source and not retrying'
+      priority: HIGH
+      description: 'Disconnected for three minutes while the attempt counter has not moved: the reconnect loop is not running.'
+      dependencies:
+        - name: 'Relay status is not available'
+          expression: 'nodata(/Binlog Streamer by HTTP/binlog_streamer.status,3m)=1'
+      tags:
+        - tag: scope
+          value: availability
+    - uuid: f241000277c5411b9b9b0ba78e786ef2
+      expression: 'last(/Binlog Streamer by HTTP/binlog_streamer.storage.max_bytes)>0 and last(/Binlog Streamer by HTTP/binlog_streamer.storage.bytes)*100/last(/Binlog Streamer by HTTP/binlog_streamer.storage.max_bytes)>{$BS.DISK.HIGH}'
+      name: 'Relay storage is more than {$BS.DISK.HIGH}% of its disk limit'
+      priority: HIGH
+      description: 'Purging cannot keep up: files are pinned by lagging replicas, or the retention period holds more than the disk limit allows.'
+      tags:
+        - tag: scope
+          value: capacity
+    - uuid: 222258f1030d438282b0a894fac7f8fb
+      expression: 'last(/Binlog Streamer by HTTP/binlog_streamer.storage.max_bytes)>0 and last(/Binlog Streamer by HTTP/binlog_streamer.storage.bytes)*100/last(/Binlog Streamer by HTTP/binlog_streamer.storage.max_bytes)>{$BS.DISK.WARN}'
+      name: 'Relay storage is more than {$BS.DISK.WARN}% of its disk limit'
+      priority: WARNING
+      dependencies:
+        - name: 'Relay storage is more than {$BS.DISK.HIGH}% of its disk limit'
+          expression: 'last(/Binlog Streamer by HTTP/binlog_streamer.storage.max_bytes)>0 and last(/Binlog Streamer by HTTP/binlog_streamer.storage.bytes)*100/last(/Binlog Streamer by HTTP/binlog_streamer.storage.max_bytes)>{$BS.DISK.HIGH}'
+      tags:
+        - tag: scope
+          value: capacity
+    - uuid: dbfbaa1d53ce45f4933955c0c55a87b9
+      expression: 'last(/Binlog Streamer by HTTP/binlog_streamer.replicas_connected)>=last(/Binlog Streamer by HTTP/binlog_streamer.max_connections)'
+      name: 'All replica connections of the relay are in use'
+      priority: HIGH
+      description: 'The next replica is refused with ERR 1040. Raise server.max_connections in settings.yml or find what holds the connections.'
+      tags:
+        - tag: scope
+          value: capacity

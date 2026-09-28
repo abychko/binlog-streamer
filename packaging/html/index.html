@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>binlog-streamer</title>
+<link rel="stylesheet" href="status.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1><span id="title">binlog-streamer</span><small id="version"></small></h1>
+    <span id="state" class="state neutral">loading</span>
+    <div class="clock">
+      <span>up <b id="uptime" class="num">–</b></span>
+      <span>relay time <b id="now" class="num">–</b></span>
+    </div>
+  </header>
+  <div id="error"></div>
+
+  <div class="tiles">
+    <div class="tile">
+      <div class="label">Source</div>
+      <div class="value" id="t-src"><span class="badge neutral">–</span></div>
+      <div class="sub mono" id="t-src-addr">–</div>
+    </div>
+    <div class="tile">
+      <div class="label">Replicas</div>
+      <div class="value"><span id="t-rep">–</span>
+        <span class="muted aside" id="t-rep-sub"></span></div>
+      <div class="sub" id="t-rep-lag">–</div>
+    </div>
+    <div class="tile">
+      <div class="label">Disk</div>
+      <div class="value" id="t-disk">–</div>
+      <div class="bar" id="t-disk-bar"><i></i></div>
+      <div class="bar-legend"><span id="t-disk-used">–</span>
+        <span id="t-disk-max">–</span></div>
+    </div>
+    <div class="tile">
+      <div class="label">Memory</div>
+      <div class="value" id="t-mem">–</div>
+      <div class="bar" id="t-mem-bar"><i></i></div>
+      <div class="bar-legend"><span id="t-mem-used">–</span>
+        <span id="t-mem-max">–</span></div>
+    </div>
+  </div>
+
+  <div class="panels">
+    <section>
+      <h2>Source</h2>
+      <dl>
+        <dt>connection</dt><dd id="src-conn">–</dd>
+        <dt>address</dt><dd id="src-addr" class="mono">–</dd>
+        <dt>since</dt><dd id="src-since" class="num">–</dd>
+        <dt>server</dt><dd id="src-server">–</dd>
+        <dt>uuid</dt><dd id="src-uuid" class="mono">–</dd>
+        <dt>received</dt><dd id="src-pos" class="mono">–</dd>
+        <dt>last event</dt><dd id="src-ts" class="num">–</dd>
+        <dt>lag</dt><dd id="src-lag">–</dd>
+      </dl>
+    </section>
+    <section>
+      <h2>Storage</h2>
+      <dl>
+        <dt>published</dt><dd id="st-pos" class="mono">–</dd>
+        <dt>not yet published</dt><dd id="st-lag" class="num">–</dd>
+        <dt>files on disk</dt><dd id="st-files" class="num">–</dd>
+        <dt>disk</dt><dd id="st-bytes" class="num">–</dd>
+        <dt>in memory</dt><dd id="mem-bytes" class="num">–</dd>
+        <dt>files in memory</dt><dd id="mem-files" class="num">–</dd>
+      </dl>
+    </section>
+  </div>
+
+  <section>
+    <h2>Replicas <span id="rep-count" class="muted"></span></h2>
+    <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>replica</th><th>version</th><th>connected</th><th>link</th>
+        <th>state</th><th>sent</th><th class="num">behind</th>
+        <th>lag</th>
+      </tr></thead>
+      <tbody id="rep-rows"><tr><td colspan="8" class="muted empty">–</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <footer>
+    <span id="updated">–</span>
+    <label>refresh
+      <select id="interval">
+        <option value="1000">1 s</option>
+        <option value="2000" selected>2 s</option>
+        <option value="5000">5 s</option>
+        <option value="10000">10 s</option>
+        <option value="0">paused</option>
+      </select>
+    </label>
+    <button id="refresh" type="button">refresh now</button>
+    <a href="status.json">status.json</a>
+  </footer>
+</main>
+<script src="status.js"></script>
+</body>
+</html>

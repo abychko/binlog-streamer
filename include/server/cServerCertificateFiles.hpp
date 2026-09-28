@@ -1,0 +1,52 @@
+/* Copyright (c) 2026, Alexey Bychko.
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is designed to work with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of binlog-streamer hereby grant you an
+   additional permission to link the program and your derivative works
+   with the separately licensed software that they have either included
+   with the program or referenced in the documentation.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License, version 2.0, for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
+
+#pragma once
+
+#include <filesystem>
+#include <string>
+#include <string_view>
+#include "net/sTlsMaterial.hpp"
+
+namespace binlog_streamer {
+
+// The relay's own certificate when replica.yml names none: read from the
+// data directory, or generated there on the first start, as
+// auto_generate_certs does for a server. Four files, so the CA
+// can sign a replica's certificate later; the keys are written 0600.
+class ServerCertificateFiles {
+ public:
+  static constexpr std::string_view CA_FILE_NAME = "ca.pem";
+  static constexpr std::string_view CA_KEY_FILE_NAME = "ca-key.pem";
+  static constexpr std::string_view CERT_FILE_NAME = "server-cert.pem";
+  static constexpr std::string_view KEY_FILE_NAME = "server-key.pem";
+
+  // Fills material.certPem/keyPem, and caPem when it is empty and ca.pem
+  // is there. Generates when neither certificate file exists; one of the
+  // two without the other is an error, never silently regenerated.
+  static bool LoadOrCreate(const std::filesystem::path &dataDir,
+                           const std::string &name, TlsMaterial &material,
+                           std::string &error);
+};
+
+}  // namespace binlog_streamer

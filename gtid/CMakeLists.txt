@@ -1,0 +1,18 @@
+ADD_LIBRARY(bs-gtid STATIC
+    cGtidSet.cpp
+    cTagText.cpp
+    cUuidText.cpp
+)
+TARGET_LINK_LIBRARIES(bs-gtid PUBLIC bs-warnings)
+# Internal headers use bare-filename includes (like config/ and src/);
+# PRIVATE and outside the root's global INCLUDE_DIRECTORIES(), so only
+# this module's own targets reach them.
+TARGET_INCLUDE_DIRECTORIES(bs-gtid PRIVATE "${PROJECT_SOURCE_DIR}/gtid")
+ADD_HEADER_CHECK(bs-gtid-hc
+    "${BINLOG_STREAMER_INCLUDE_DIR}/gtid" "${BINLOG_STREAMER_INCLUDE_DIR}")
+ADD_HEADER_CHECK(bs-gtid-internal-hc
+    "${PROJECT_SOURCE_DIR}/gtid" "${PROJECT_SOURCE_DIR}/gtid")
+TARGET_INCLUDE_DIRECTORIES(bs-gtid-internal-hc PRIVATE "${PROJECT_SOURCE_DIR}/gtid")
+IF(BUILD_TESTING)
+    ADD_SUBDIRECTORY(tests)
+ENDIF()

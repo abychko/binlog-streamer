@@ -1,0 +1,44 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = configure ]; then
+    getent group binlog-streamer >/dev/null || addgroup --system binlog-streamer
+    getent passwd binlog-streamer >/dev/null || adduser --system --ingroup binlog-streamer \
+        --home /var/lib/binlog-streamer --no-create-home --shell /usr/sbin/nologin binlog-streamer
+
+    for f in settings.yml source.yml replica.yml; do
+        if [ -e /etc/binlog-streamer/$f ]; then
+            chown root:binlog-streamer /etc/binlog-streamer/$f
+            chmod 0640 /etc/binlog-streamer/$f
+        fi
+    done
+    if [ -e /etc/default/binlog-streamer ]; then
+        chown root:root /etc/default/binlog-streamer
+        chmod 0644 /etc/default/binlog-streamer
+    fi
+    chown root:binlog-streamer /etc/binlog-streamer
+    chmod 0750 /etc/binlog-streamer
+    chown binlog-streamer:binlog-streamer /var/lib/binlog-streamer
+    chmod 0750 /var/lib/binlog-streamer
+fi
+
+if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-deconfigure" ] || [ "$1" = "abort-remove" ]; then
+    if [ -z "${DPKG_ROOT:-}" ] && [ -x /usr/bin/deb-systemd-helper ]; then
+        if deb-systemd-helper debian-installed binlog-streamer.service; then
+            deb-systemd-helper unmask binlog-streamer.service >/dev/null || true
+            if deb-systemd-helper --quiet was-enabled binlog-streamer.service; then
+                deb-systemd-helper enable binlog-streamer.service >/dev/null || true
+            fi
+        fi
+        deb-systemd-helper update-state binlog-streamer.service >/dev/null || true
+    fi
+fi
+
+if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-deconfigure" ] || [ "$1" = "abort-remove" ]; then
+    if [ -z "${DPKG_ROOT:-}" ] && [ -d /run/systemd/system ]; then
+        systemctl --system daemon-reload >/dev/null || true
+        if [ -n "$2" ]; then
+            deb-systemd-invoke try-restart binlog-streamer.service >/dev/null || true
+        fi
+    fi
+fi

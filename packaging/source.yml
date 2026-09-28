@@ -1,0 +1,18 @@
+# /etc/binlog-streamer/source.yml: owner root, group binlog-streamer, mode 0640.
+host:
+port:
+user:
+password:
+
+get_source_public_key: false
+source_public_key_path:
+
+# uncompressed | zstd | zlib
+compression:
+zstd_compression_level:
+
+# DISABLED | PREFERRED | REQUIRED | VERIFY_CA | VERIFY_IDENTITY
+ssl_mode:
+ssl_ca:
+ssl_cert:
+ssl_key:

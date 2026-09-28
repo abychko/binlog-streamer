@@ -1,0 +1,7 @@
+/etc/binlog-streamer/settings.yml
+/etc/binlog-streamer/source.yml
+/etc/binlog-streamer/replica.yml
+/etc/binlog-streamer/html/index.html
+/etc/binlog-streamer/html/status.css
+/etc/binlog-streamer/html/status.js
+/etc/default/binlog-streamer

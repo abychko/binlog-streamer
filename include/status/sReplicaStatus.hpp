@@ -1,0 +1,51 @@
+/* Copyright (c) 2026, Alexey Bychko.
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is designed to work with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of binlog-streamer hereby grant you an
+   additional permission to link the program and your derivative works
+   with the separately licensed software that they have either included
+   with the program or referenced in the documentation.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License, version 2.0, for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
+
+#pragma once
+
+#include <cstdint>
+#include <optional>
+#include <string>
+#include "status/eReplicaState.hpp"
+#include "status/sReplicaFacts.hpp"
+#include "status/sStreamPoint.hpp"
+
+namespace binlog_streamer {
+
+struct ReplicaStatus {
+  ReplicaFacts facts;
+  // report_host the replica registered with; empty when it set none.
+  std::string reportHost;
+  std::uint64_t since = 0;  // unix seconds of the login
+  ReplicaState state = ReplicaState::Connected;
+  StreamPoint sent;  // the last event sent; empty before the dump
+  // Stored bytes between what was sent and the published position; unknown
+  // before the dump and when either file is not in storage any more.
+  std::optional<std::uint64_t> behindBytes;
+  // 0 while streaming; otherwise the source's clock minus the timestamp of
+  // the last event sent. Unknown before the dump, and while the source's
+  // clock is (not connected).
+  std::optional<std::uint64_t> behindSeconds;
+};
+
+}  // namespace binlog_streamer

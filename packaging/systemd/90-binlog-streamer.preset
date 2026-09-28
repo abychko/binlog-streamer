@@ -1,0 +1,2 @@
+# The service cannot start until the administrator fills in source.yml.
+disable binlog-streamer.service
