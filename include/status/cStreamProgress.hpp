@@ -26,6 +26,7 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
+#include <optional>
 #include <string>
 #include "status/sStreamPoint.hpp"
 
@@ -42,6 +43,8 @@ class StreamProgress {
   void Advance(std::uint64_t position, std::uint32_t timestamp);
   void Idle(std::uint64_t position);
   StreamPoint Read() const;
+  void ReadFrom(bool disk);
+  std::optional<bool> FromDisk() const;
 
  private:
   mutable std::mutex m_mutex;
@@ -49,6 +52,7 @@ class StreamProgress {
   std::atomic<std::uint64_t> m_position{0};
   std::atomic<std::uint32_t> m_timestamp{0};
   std::atomic<bool> m_idle{false};
+  std::atomic<std::uint8_t> m_readFrom{0};  // 0 unknown, 1 cache, 2 disk
 };
 
 }  // namespace binlog_streamer

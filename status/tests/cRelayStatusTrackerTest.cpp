@@ -213,6 +213,10 @@ TEST(RelayStatusTrackerTest, ReplicasAreListedWhileRegistered) {
   first->Progress().Advance(700, sourceClock - 3600);
   status = tracker.Snapshot();
   EXPECT_EQ(status.replicas[0].state, ReplicaState::CatchingUp);
+  EXPECT_EQ(status.replicas[0].readFromDisk, std::nullopt);
+  first->Progress().ReadFrom(true);
+  EXPECT_EQ(tracker.Snapshot().replicas[0].readFromDisk,
+            std::optional<bool>(true));
   EXPECT_EQ(status.replicas[0].sent.file, "binlog.000001");
   EXPECT_EQ(status.replicas[0].sent.position, 700u);
   EXPECT_EQ(status.replicas[0].behindBytes, std::optional<std::uint64_t>(700));

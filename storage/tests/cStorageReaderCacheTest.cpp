@@ -120,10 +120,13 @@ TEST_F(StorageReaderCacheTest,
   auto cursor = reader.Open("data", error);
   ASSERT_TRUE(cursor);
   std::vector<std::uint8_t> out(S + 68, 0xcc);
+  EXPECT_FALSE(cursor->LastReadFromDisk());
   ASSERT_EQ(reader.Read(*cursor, 0, out, error), 37u) << error;
+  EXPECT_TRUE(cursor->LastReadFromDisk());
   EXPECT_TRUE(std::equal(header.begin(), header.end(), out.begin()));
   EXPECT_EQ(out[37], 0xcc);
   ASSERT_EQ(reader.Read(*cursor, 37, out, error), body.size()) << error;
+  EXPECT_FALSE(cursor->LastReadFromDisk());
   EXPECT_TRUE(std::equal(body.begin(), body.end(), out.begin()));
   EXPECT_EQ(reader.Counters().readFromDisk, 37u);
   EXPECT_EQ(reader.Counters().readFromDiskHeader, 37u);

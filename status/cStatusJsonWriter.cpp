@@ -195,6 +195,9 @@ std::string StatusJsonWriter::Write(const RelayStatus &status) {
       WritePoint(object, replica.sent);
       object.Member("behind_bytes", replica.behindBytes);
       object.Member("behind_seconds", replica.behindSeconds);
+      object.MemberOrNull("read_from", !replica.readFromDisk   ? ""
+                                       : *replica.readFromDisk ? "disk"
+                                                               : "cache");
     }
     out += ']';
     root.Member("replicas_connected",

@@ -2,6 +2,14 @@
 
 Changes by minor version; each entry includes its patch releases.
 
+## 0.43 — 2026-09-29
+
+### Added
+
+- `status.json` reports for each replica whether its last read came from
+  the memory cache or from disk (`read_from`); the monitoring page shows it
+  as RAM or DISK under the replica's state.
+
 ## 0.42 — 2026-09-28
 
 ### Changed

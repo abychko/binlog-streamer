@@ -171,7 +171,9 @@
         ['link', (r.tls ? badge('ok', 'TLS') : badge('warn', 'plain')) +
           (r.compression !== 'none' ? '<div class="stack">' +
             badge('neutral', r.compression) + '</div>' : '')],
-        ['state', badge(stateCls, r.state.replace('_', ' '))],
+        ['state', badge(stateCls, r.state.replace('_', ' ')) +
+          (r.read_from ? '<div class="stack">' + (r.read_from === 'disk' ?
+            badge('warn', 'DISK') : badge('neutral', 'RAM')) + '</div>' : '')],
         ['sent', '<span class="mono">' + esc(position(r.file, r.position)) +
           '</span><span class="sub">' + esc(time(r.timestamp)) + '</span>'],
         ['behind', '<span class="num">' + (r.behind_bytes == null ? '–' :

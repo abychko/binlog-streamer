@@ -155,6 +155,7 @@ RelayStatus RelayStatusTracker::Snapshot() const {
       replica.sent = registration->Progress().Read();
       replica.state = replica.sent.idle ? ReplicaState::Streaming
                                         : ReplicaState::CatchingUp;
+      replica.readFromDisk = registration->Progress().FromDisk();
     }
     status.replicas.push_back(std::move(replica));
   }

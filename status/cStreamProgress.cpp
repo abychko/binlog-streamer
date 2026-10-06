@@ -57,4 +57,14 @@ StreamPoint StreamProgress::Read() const {
   return point;
 }
 
+void StreamProgress::ReadFrom(bool disk) {
+  m_readFrom.store(disk ? 2 : 1, std::memory_order_relaxed);
+}
+
+std::optional<bool> StreamProgress::FromDisk() const {
+  const std::uint8_t from = m_readFrom.load(std::memory_order_relaxed);
+  if (from == 0) return std::nullopt;
+  return from == 2;
+}
+
 }  // namespace binlog_streamer

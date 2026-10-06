@@ -175,6 +175,8 @@ std::size_t DumpSender::ReadAhead(const FileCursor &cursor,
     m_windowFile = cursor.FileName();
     m_windowOffset = offset;
     if (m_windowSize == 0) return 0;
+    if (m_options.progress != nullptr)
+      m_options.progress->ReadFrom(cursor.LastReadFromDisk());
   }
   const std::size_t from = static_cast<std::size_t>(offset - m_windowOffset);
   const std::size_t count = std::min(out.size(), m_windowSize - from);

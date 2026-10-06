@@ -66,5 +66,17 @@ TEST(StreamProgressTest, IdleNeverMovesThePositionBack) {
   EXPECT_FALSE(progress.Read().idle);
 }
 
+TEST(StreamProgressTest, ReadSourceIsUnknownUntilTheFirstRead) {
+  StreamProgress progress;
+  EXPECT_EQ(progress.FromDisk(), std::nullopt);
+  progress.ReadFrom(true);
+  EXPECT_EQ(progress.FromDisk(), std::optional<bool>(true));
+  progress.ReadFrom(false);
+  EXPECT_EQ(progress.FromDisk(), std::optional<bool>(false));
+  // A new file keeps the source until its own first read.
+  progress.SetFile("binlog.000002", 4);
+  EXPECT_EQ(progress.FromDisk(), std::optional<bool>(false));
+}
+
 }  // namespace
 }  // namespace binlog_streamer

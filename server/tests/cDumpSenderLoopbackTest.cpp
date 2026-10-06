@@ -33,6 +33,7 @@
 #include "receiver/cReplicaSession.hpp"
 #include "receiver/eStreamEndReason.hpp"
 #include "receiver/sStreamResult.hpp"
+#include "status/cRelayStatusTracker.hpp"
 #include "storage/cPublishedPositionTracker.hpp"
 #include "storage/cStorageCatalog.hpp"
 #include "storage/cStorageReader.hpp"
@@ -395,6 +396,7 @@ class DumpSenderLoopbackTest : public ::testing::Test {
 
   std::string relayChecksum = "CRC32";
   std::chrono::microseconds sendLinger{0};
+  RelayStatusTracker *statusTracker = nullptr;
 
   std::uint16_t listenPort = 0;
   StreamResult lastStream;
@@ -466,7 +468,7 @@ class DumpSenderLoopbackTest : public ::testing::Test {
         settings, DEFAULT_MAX_CONNECTIONS, &stopRequested, &wakeupPipe, {},
         ServerIdentity{RELAY_SERVER_ID, RELAY_UUID, "test relay",
                        "binlog-streamer", "0.20.0"},
-        &state, &reader, nullptr, nullptr, sendLinger);
+        &state, &reader, nullptr, statusTracker, sendLinger);
     std::string error;
     ASSERT_TRUE(listener.Start(error)) << error;
     listenPort = settings.listenPort;
@@ -575,6 +577,25 @@ TEST_F(
   EXPECT_TRUE(sink.stored == expected);
   ASSERT_FALSE(sink.heartbeatPositions.empty());
   EXPECT_EQ(sink.heartbeatPositions.front(), first.transactionEnds[0]);
+}
+
+TEST_F(DumpSenderLoopbackTest, TheStatusShowsWhereTheReplicaIsReadFrom) {
+  RelayStatusTracker tracker("relay", "0.0.0", 151, nullptr);
+  statusTracker = &tracker;
+  std::optional<bool> readFromDisk;
+  CollectingSink sink(second.bytes.size() - 4);
+  Receive(
+      std::string(SOURCE_UUID) + ":1-3", second.bytes.size() - 4, sink,
+      std::chrono::seconds(30), [&] {
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (!readFromDisk && std::chrono::steady_clock::now() < deadline) {
+          const auto replicas = tracker.Snapshot().replicas;
+          if (!replicas.empty()) readFromDisk = replicas[0].readFromDisk;
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+      });
+  EXPECT_EQ(readFromDisk, std::optional<bool>(true));
 }
 
 TEST_F(DumpSenderLoopbackTest,

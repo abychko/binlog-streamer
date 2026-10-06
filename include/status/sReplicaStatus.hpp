@@ -42,6 +42,7 @@ struct ReplicaStatus {
   // 0 while streaming; otherwise the source's clock minus the timestamp of the
   // last event sent.
   std::optional<std::uint64_t> behindSeconds;
+  std::optional<bool> readFromDisk;
 };
 
 }  // namespace binlog_streamer

@@ -43,6 +43,8 @@ class FileCursor {
   FileCursor &operator=(const FileCursor &) = delete;
 
   const std::string &FileName() const { return m_pin.FileName(); }
+  // Set only by reads that returned bytes.
+  bool LastReadFromDisk() const { return m_previousReadFromDisk; }
 
  private:
   friend class StorageReader;

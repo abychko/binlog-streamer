@@ -65,6 +65,7 @@ RelayStatus Sample() {
   replica.sent = {"binlog.000412", 5'183'900, 1'700'003'598, true};
   replica.behindBytes = 0;
   replica.behindSeconds = 0;
+  replica.readFromDisk = false;
   replica.reportHost = "replica1.example";
   status.replicas.push_back(replica);
   return status;
@@ -94,7 +95,7 @@ TEST(StatusJsonWriterTest, WritesEveryFieldAsPlainNumbersAndNames) {
       "\"since\":1700001000,\"tls\":true,\"compression\":\"zstd\","
       "\"state\":\"streaming\",\"state_code\":2,\"file\":\"binlog.000412\","
       "\"position\":5183900,\"timestamp\":1700003598,\"behind_bytes\":0,"
-      "\"behind_seconds\":0}],"
+      "\"behind_seconds\":0,\"read_from\":\"cache\"}],"
       "\"replicas_connected\":1,\"max_connections\":151}\n");
 }
 
@@ -134,6 +135,9 @@ TEST(StatusJsonWriterTest, ReplicaThatSentNoVersionHasNullProgramAndVersion) {
   const std::string json = StatusJsonWriter::Write(status);
   EXPECT_NE(json.find("\"report_host\":null,\"user\":\"replica1\","
                       "\"program\":null,\"version\":null,"),
+            std::string::npos)
+      << json;
+  EXPECT_NE(json.find("\"behind_seconds\":null,\"read_from\":null}"),
             std::string::npos)
       << json;
 }
