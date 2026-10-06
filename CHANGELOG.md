@@ -9,6 +9,9 @@ Changes by minor version; each entry includes its patch releases.
 - `status.json` reports for each replica whether its last read came from
   the memory cache or from disk (`read_from`); the monitoring page shows it
   as RAM or DISK under the replica's state.
+- The Zabbix template reads it per replica and warns when a replica has
+  been read from disk for `{$BS.REPLICA.DISK.MAX}` (10 minutes by
+  default).
 
 ## 0.42 — 2026-09-28
 

@@ -17,8 +17,9 @@ zabbix_export:
         {$BS.STATUS.URL} when the relay does not listen on port 8080 of
         the host's address.
 
-        Lag thresholds and the reconnect grace are macros; the replica
-        thresholds take the replica's user as context, e.g.
+        Lag thresholds, how long a replica may be read from disk and the
+        reconnect grace are macros; the replica thresholds take the
+        replica's user as context, e.g.
         {$BS.REPLICA.LAG.HIGH:"reporting"}.
       groups:
         - name: Templates/Databases
@@ -511,6 +512,43 @@ zabbix_export:
                   value: replicas
                 - tag: replica
                   value: '{#USER}@{#ADDRESS}'
+            - uuid: 66b1327f96b6405cb331049f0bacc58b
+              name: 'Replica {#USER}@{#ADDRESS}: read from disk'
+              type: DEPENDENT
+              key: 'binlog_streamer.replica.read_from_disk[{#ADDRESS},{#USER}]'
+              delay: '0'
+              history: 7d
+              description: 'Whether the last events sent to the replica were read from disk (1) rather than from the memory cache (0).'
+              valuemap:
+                name: 'binlog-streamer replica read source'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.replicas[?(@.address == "{#ADDRESS}" && @.user == "{#USER}")].read_from.first()'
+                  error_handler: DISCARD_VALUE
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      if (value === 'disk') return 1;
+                      if (value === 'cache') return 0;
+                      throw 'nothing read yet';
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: binlog_streamer.status
+              tags:
+                - tag: component
+                  value: replicas
+                - tag: replica
+                  value: '{#USER}@{#ADDRESS}'
+              trigger_prototypes:
+                - uuid: 695100f678c24ca989ff7a06b0f896fa
+                  expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.replica.read_from_disk[{#ADDRESS},{#USER}],{$BS.REPLICA.DISK.MAX:"{#USER}"})=1'
+                  name: 'Replica {#USER}@{#ADDRESS} has been read from disk for {$BS.REPLICA.DISK.MAX:"{#USER}"}'
+                  priority: WARNING
+                  description: 'The replica is further behind than the memory cache holds, so its events come from disk: it is catching up after a long stop, or cache.max_size and cache.window in settings.yml are too small for its lag.'
+                  tags:
+                    - tag: scope
+                      value: performance
             - uuid: 115883a90ade4308adc579fba48a0d27
               name: 'Replica {#USER}@{#ADDRESS}: connected since'
               type: DEPENDENT
@@ -552,6 +590,9 @@ zabbix_export:
         - macro: '{$BS.RECONNECT.MAX}'
           value: 1m
           description: 'How long the relay may stay in the reconnecting state before the trigger fires'
+        - macro: '{$BS.REPLICA.DISK.MAX}'
+          value: 10m
+          description: 'How long a replica may be read from disk before the warning; context is the replica user'
         - macro: '{$BS.REPLICA.LAG.HIGH}'
           value: '60'
           description: 'Replica lag in seconds for the high-severity trigger; context is the replica user'
@@ -589,6 +630,13 @@ zabbix_export:
               newvalue: catching_up
             - value: '2'
               newvalue: streaming
+        - uuid: 9aa748660d044c2dbdf050de25e59e17
+          name: 'binlog-streamer replica read source'
+          mappings:
+            - value: '0'
+              newvalue: cache
+            - value: '1'
+              newvalue: disk
   triggers:
     - uuid: c18a0abe97b742378bef362fa8814113
       expression: 'last(/Binlog Streamer by HTTP/binlog_streamer.state_code)=0 and last(/Binlog Streamer by HTTP/binlog_streamer.uptime_seconds)>{$BS.START.GRACE}'
