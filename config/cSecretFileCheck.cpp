@@ -31,8 +31,7 @@ std::vector<std::string> SecretFileCheck::CheckFile(const struct stat &status,
   if (!S_ISREG(status.st_mode)) errors.emplace_back("not a regular file");
   if (status.st_uid != expectedUid) errors.emplace_back("wrong owner");
   if (status.st_gid != expectedGid) errors.emplace_back("wrong group");
-  // Three separate checks, not a single "mode not wider than 0640"
-  // comparison: owner and group-execute bits are intentionally left unchecked.
+  // Owner and group-execute bits are intentionally not checked.
   if ((status.st_mode & 0007) != 0) errors.emplace_back("others have access");
   if ((status.st_mode & 0020) != 0)
     errors.emplace_back("group has write access");

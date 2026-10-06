@@ -36,10 +36,7 @@ struct CacheHooks {
   std::function<void()> beforeCopy;
   std::function<void()> afterMiss;
   std::function<void()> afterBeginFile;
-  // Must not throw; sampled once per successful nonempty Append.
   std::function<std::chrono::steady_clock::time_point()> now;
-  // Replaces madvise for tests; returns zero on success, nonzero on
-  // failure.
   std::function<int(void *, std::size_t)> returnPages;
 };
 }  // namespace binlog_streamer

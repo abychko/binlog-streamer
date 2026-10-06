@@ -25,16 +25,13 @@
 
 namespace binlog_streamer {
 
-// How a dump request was resolved against the stored history.
 enum class DumpStartKind {
-  Found,                // the start file is pinned and open
-  NoHistoryYet,         // the relay has not stored its first file yet
-  PurgedRequiredGtids,  // the replica needs history from before the first
-                        // stored file
-  ReplicaHasOwnGtids,   // the replica holds GTIDs carrying the relay's own
-                        // server UUID
-  BadRequest,           // the request's GTID set cannot be decoded
-  StorageError,         // the start file could not be opened
+  Found,
+  NoHistoryYet,
+  PurgedRequiredGtids,
+  ReplicaHasOwnGtids,
+  BadRequest,
+  StorageError,
 };
 
 }  // namespace binlog_streamer

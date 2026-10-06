@@ -25,31 +25,27 @@
 
 namespace binlog_streamer {
 
-// Every `return` in main() uses one of these, not a bare integer literal.
 enum class ExitCode {
-  // --help, --version, --validate-config with no errors, or a session
-  // that reached registration with the source.
+  // --help, --version, --validate-config without errors, or a session that
+  // reached registration.
   Success = 0,
 
-  // Command line or settings files are invalid. In systemd's
-  // RestartPreventExitStatus (packaging/systemd/binlog-streamer.service)
-  // alongside SourceError: retrying unchanged fixes neither.
+  // Invalid command line or settings. In RestartPreventExitStatus: retrying
+  // unchanged fixes nothing.
   ConfigurationError = 1,
 
-  // Unrecoverable source problem after settings loaded successfully:
-  // an unsupported version, GTID_MODE != ON, a colliding server_id, or
-  // StartupSequence's retry budget exhausted without reaching a dump.
+  // Unrecoverable source problem after settings loaded (unsupported version,
+  // GTID_MODE != ON, colliding server_id, start-up retries exhausted). In
+  // RestartPreventExitStatus.
   SourceError = 2,
 
-  // Stream ended after a dump had already started, for a reason a later
-  // attempt should recover from on its own. Not in RestartPreventExitStatus:
-  // systemd restarts, and the new run resumes from stored history.
+  // Stream lost after a dump started: systemd restarts and the new run resumes
+  // from stored history.
   SourceStreamLost = 3,
 
-  // Storage refused to open or refused an event (disk full, write/fsync
-  // failure, history mismatch, existing writer). Its own code rather than
-  // SourceError, so a disk problem doesn't read as a source problem in
-  // monitoring.
+  // Storage refused to open or refused an event (disk full, fsync failure,
+  // history mismatch, existing writer); apart from SourceError so monitoring
+  // can tell them apart.
   StorageError = 4,
 };
 

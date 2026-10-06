@@ -54,18 +54,12 @@ if ! command -v mysqlbinlog >/dev/null 2>&1; then
     exit 1
 fi
 
-# Runs one full scenario in a subshell: its own settings.yml/data_dir/relay
-# process/cleanup trap, isolated so a mid-scenario `exit` only ends the
-# subshell. $1 label, $2 storage.retention.period, $3 server_id (distinct per test).
 run_scenario() {
     local LABEL="$1"
     local PERIOD="$2"
     local SERVER_ID="$3"
     (
         set -u
-        # Unique per run: the source's current file can still hold the
-        # marker of an earlier run - a fixed marker would be found there
-        # first and stop the relay early.
         MARKER="after-second-rotation-${LABEL}-$$-$(date +%s)"
 
         STDERR_LOG="$(mktemp)"
@@ -87,9 +81,6 @@ run_scenario() {
         cp "$SOURCE_YML" "$WORKDIR/source.yml"
         chmod 640 "$WORKDIR/source.yml"
 
-        # disk.* thresholds copied from packaging/settings.yml as-is:
-        # purge/watermark enforcement is not part of this stage, only
-        # their presence is validated (config/cConfigValidator.cpp).
         cat > "$WORKDIR/settings.yml" <<SETTINGS
 server:
   server_id: $SERVER_ID
@@ -98,7 +89,6 @@ storage:
   retention:
     policy: age
     period: $PERIOD
-  # Keep the test independent of the host file-system free space.
   disk:
     max_size: 2T
     purge_high_watermark: 1900G
@@ -115,8 +105,6 @@ SETTINGS
         "$BINARY" --config "$WORKDIR/settings.yml" >/dev/null 2>"$STDERR_LOG" &
         RELAY_PID=$!
 
-        # Wait for the dump to actually start (up to 30s) rather than a
-        # fixed sleep - same reasoning as src/tests/source_integration_test.sh.
         DUMP_STARTED=0
         for _ in $(seq 1 300); do
             if grep -q "dump requested" "$STDERR_LOG" 2>/dev/null; then
@@ -134,11 +122,8 @@ SETTINGS
             exit 1
         fi
 
-        sleep 1 # let registration/the first file's header settle before issuing writes
+        sleep 1
 
-        # Five transactions, one with an event over 16 MiB - REPEAT('a', 25165824)
-        # is the same oversize value already proven to cross MAX_PAYLOAD_PER_PACKET
-        # in receiver/tests/driver/stream_integration_test.sh.
         INSERT_SQL="INSERT INTO storage_integration_test (v) VALUES ('row1-${LABEL}');
 INSERT INTO storage_integration_test (v) VALUES ('row2-${LABEL}');
 INSERT INTO storage_integration_test (v) VALUES ('row3-${LABEL}');
@@ -149,8 +134,6 @@ INSERT INTO storage_integration_test (v) VALUES ('row5-${LABEL}');"
             exit 1
         fi
 
-        # Two forced rotations, each followed by a further transaction so the
-        # file just rotated into is not itself empty when the run ends.
         if ! "${ADMIN[@]}" -e "FLUSH BINARY LOGS;"; then
             echo "FATAL: [$LABEL] first FLUSH BINARY LOGS failed"
             exit 1
@@ -168,9 +151,6 @@ INSERT INTO storage_integration_test (v) VALUES ('row5-${LABEL}');"
             exit 1
         fi
 
-        # Waits for the relay to reach this run's own last transaction rather
-        # than a fixed sleep: a long-lived source's history only grows, so a
-        # once-sufficient fixed sleep can silently stop being enough.
         CAUGHT_UP=0
         for _ in $(seq 1 300); do
             if grep -qs "$MARKER" "$DATA_DIR"/*.[0-9][0-9][0-9][0-9][0-9][0-9] 2>/dev/null; then
@@ -178,7 +158,7 @@ INSERT INTO storage_integration_test (v) VALUES ('row5-${LABEL}');"
                 break
             fi
             if ! kill -0 "$RELAY_PID" 2>/dev/null; then
-                break # exited before catching up - reported below, not here
+                break
             fi
             sleep 0.2
         done
@@ -218,9 +198,6 @@ INSERT INTO storage_integration_test (v) VALUES ('row5-${LABEL}');"
             exit 1
         fi
 
-        # Witnesses: transactions flowed, one event crossed the
-        # packet-splitting threshold, more than one file exists - else
-        # comparisons below could pass vacuously.
         LARGEST_EVENT_LENGTH="$(printf '%s\n' "$STDERR_TEXT" | grep -oE 'largest_event_length=[0-9]+' | cut -d= -f2)"
         if [ "${LARGEST_EVENT_LENGTH:-0}" -le 16777215 ]; then
             echo "FATAL: [$LABEL] largest_event_length=$LARGEST_EVENT_LENGTH, expected > 16777215"
@@ -240,8 +217,6 @@ INSERT INTO storage_integration_test (v) VALUES ('row5-${LABEL}');"
         FILES=()
         for NAME in "${SORTED_NAMES[@]}"; do FILES+=("$DATA_DIR/$NAME"); done
 
-        # binlog.index must list exactly these names, in the same order
-        # cStorageEventSink appended them.
         INDEX_CONTENT="$(cat "$DATA_DIR/binlog.index" 2>/dev/null)"
         EXPECTED_INDEX_CONTENT="$(printf '%s\n' "${SORTED_NAMES[@]}")"
         if [ "$INDEX_CONTENT" != "$EXPECTED_INDEX_CONTENT" ]; then
@@ -259,17 +234,11 @@ INSERT INTO storage_integration_test (v) VALUES ('row5-${LABEL}');"
             exit 1
         fi
 
-        # Specific to this run: this source accumulates history across runs,
-        # so the thresholds above alone could pass without new events. grep -a
-        # on raw bytes, since a row event's values are base64 in mysqlbinlog's text output.
         if ! grep -qas "$MARKER" "${FILES[@]}"; then
             echo "FATAL: [$LABEL] this run's own last transaction ('$MARKER') was not found in any of our files - new events never reached storage"
             exit 1
         fi
 
-        # The highest-numbered file is the one not yet closed by a real
-        # ROTATE ("in use"); every other file must be byte-identical to the
-        # source's copy in full, the open one only up to what was written.
         LAST_INDEX=$((${#FILES[@]} - 1))
 
         FAIL=0
@@ -308,8 +277,6 @@ INSERT INTO storage_integration_test (v) VALUES ('row5-${LABEL}');"
     )
 }
 
-# Ten-second window leaves room for writes and shutdown without expiry
-# (the retention period only governs purging, never where the relay starts).
 if ! run_scenario current 10s 999005; then
     exit 1
 fi

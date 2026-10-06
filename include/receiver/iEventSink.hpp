@@ -30,23 +30,17 @@
 
 namespace binlog_streamer {
 
-// Called for every event, including heartbeats and artificial ones - no
-// pre-filtering; a sink filters by EventHeader::type/flags itself.
 class EventSink {
  public:
   virtual ~EventSink() = default;
 
-  // Treat position, not header.nextPosition (32 bits only), as the
-  // source of truth. False stops the stream; no further calls follow.
+  // position, not header.nextPosition (32 bits), is the source of truth. False
+  // stops the stream.
   virtual bool OnEventBegin(const EventHeader &header,
                             const StreamPosition &position) = 0;
 
-  // Span sizes across all calls sum to header.eventLength; bytes stream
-  // in as they arrive off the wire, not buffered whole first.
   virtual bool OnEventBytes(std::span<const std::uint8_t> bytes) = 0;
 
-  // Not called if an earlier callback already returned false for this
-  // event.
   virtual bool OnEventEnd() = 0;
 };
 

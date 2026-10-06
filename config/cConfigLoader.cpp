@@ -129,11 +129,6 @@ LoadResult<Settings> ConfigLoader::Parse(const std::string &text,
     if (const auto value = section.ByteSize("max_size"))
       settings.cache.maxSize = *value;
   }
-  // Optional as a whole, and each key inside optional too: the packaged
-  // file names the defaults, and an unfilled key means the default, as in
-  // replica.yml.
-  // A section left with nothing under it means the defaults, like an
-  // unfilled key does.
   const auto monitoring = reader.Optional("monitoring");
   if (monitoring.IsDefined() && !monitoring.IsNull()) {
     YamlMapReader section(fileName, monitoring, "monitoring", result.errors,

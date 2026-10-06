@@ -76,27 +76,21 @@ constexpr PacketChannelOptions COMMAND_CHANNEL_OPTIONS{
     COMMAND_READ_TIMEOUT, COMMAND_WRITE_TIMEOUT, INCOMING_PACKET_LIMIT,
     "replica"};
 
-// Every login attempt runs the same scramble check regardless of whether
-// the username matched a configured client, so a mismatch never reveals
-// which path ran. Any fixed value works, as long as it isn't a real client's
-// password.
+// Every login runs the same scramble check whether or not the username matched
+// a configured client, so a mismatch never reveals which path ran.
 constexpr char UNKNOWN_ACCOUNT_PLACEHOLDER_PASSWORD[] = "";
 
 std::uint32_t NextThreadId() {
-  // Relaxed: only needs to be unique per connection, not ordered against
-  // anything else - shown to a replica purely for diagnostics.
+  // Relaxed is enough: the id only has to be unique, for diagnostics.
   static std::atomic<std::uint32_t> counter{1};
   return counter.fetch_add(1, std::memory_order_relaxed);
 }
 
-// Mirrors generate_user_salt(): masked into printable, NUL/'$'-free bytes
-// plus a trailing 0x00, so the wire bytes match a real server's, even though
-// this relay reads the scramble by length, not by NUL.
+// As generate_user_salt(): printable, NUL- and '$'-free bytes plus a trailing
+// 0x00, so the wire bytes match a real server's.
 std::array<std::uint8_t, SCRAMBLE_LENGTH + 1> GenerateNonce() {
   std::array<std::uint8_t, SCRAMBLE_LENGTH + 1> nonce{};
-  RAND_bytes(nonce.data(),
-             SCRAMBLE_LENGTH);  // return value not checked, same convention as
-                                // elsewhere in this relay's OpenSSL calls
+  RAND_bytes(nonce.data(), SCRAMBLE_LENGTH);
   for (std::size_t i = 0; i < SCRAMBLE_LENGTH; ++i) {
     nonce[i] &= 0x7F;
     if (nonce[i] == 0x00 || nonce[i] == '$')
@@ -117,8 +111,8 @@ std::string ServerVersionString(const std::string &sourceVersion,
 
 bool IsRelayServerVersion(const std::string &serverVersion,
                           const std::string &relayName) {
-  // The last occurrence, not the first: a chain of relays leaves the name
-  // of the one that answers at the end.
+  // The last occurrence: in a chain of relays the answering one's name comes
+  // last.
   const std::string mark = "-" + relayName + "-";
   const std::size_t at = serverVersion.rfind(mark);
   return at != std::string::npos && at + mark.size() < serverVersion.size();
@@ -201,17 +195,16 @@ bool ReplicaConnection::Login(std::string &username) {
   greeting.serverVersion = m_serverVersion;
   greeting.threadId = NextThreadId();
   greeting.authPluginData.assign(nonce.begin(), nonce.end());
-  // A replica whose client library was told to compress refuses the
-  // connection itself, before sending anything, when no compression bit
-  // is offered (sql-common/client.cc, error 2066).
+  // A replica whose client library was told to compress refuses the connection
+  // itself, before sending anything, when no compression bit is offered
+  // (sql-common/client.cc, error 2066).
   const std::uint32_t compressionBit =
       CompressionCapabilityBit(m_services.compression);
   const std::uint32_t advertisedCapabilities =
       SERVER_CAPABILITIES | compressionBit |
       (m_services.tls != nullptr ? CLIENT_SSL : 0);
   greeting.capabilities = advertisedCapabilities;
-  greeting.characterSet =
-      0;  // not consulted by any client this relay needs to interoperate with
+  greeting.characterSet = 0;
   greeting.statusFlags = 0;
   greeting.authPluginName = CACHING_SHA2_PASSWORD_PLUGIN_NAME;
 
@@ -232,15 +225,13 @@ bool ReplicaConnection::Login(std::string &username) {
     return false;
   }
   if (HandshakeResponse41Codec::IsSslRequest(payload)) {
-    // The bit was not offered: the same refusal a server without a
-    // certificate gives (sql/auth/sql_authentication.cc).
     if (m_services.tls == nullptr) {
       SendErr(channel, 1043, "08S01", "Bad handshake");
       Log("rejected", "", "bad handshake: TLS requested but not offered");
       return false;
     }
-    // The client's hello follows its SSL request at once, so part of it
-    // may already sit in the channel's read-ahead.
+    // The client's hello follows its SSL request at once, so part of it may
+    // already sit in the channel's read-ahead.
     const std::vector<std::uint8_t> unread = channel.TakeUnread();
     if (!m_tls.Accept(*m_services.tls, LOGIN_TIMEOUT, error, unread)) {
       Log("closed", "", error);
@@ -269,7 +260,6 @@ bool ReplicaConnection::Login(std::string &username) {
 
   const bool compress =
       compressionBit != 0 && (m_clientCapabilities & compressionBit) != 0;
-  // Only zstd states a level, and only then is there one to reject.
   const bool statesLevel =
       compress && m_services.compression == CompressionAlgorithm::Zstd;
   if (statesLevel &&
@@ -290,9 +280,6 @@ bool ReplicaConnection::Login(std::string &username) {
             nonceInEffect.begin());
 
   if (response.authPluginName != CACHING_SHA2_PASSWORD_PLUGIN_NAME) {
-    // Different plugin asked for (or none named): a fresh nonce,
-    // matching upstream generating a new one per call rather than
-    // reusing the greeting's (sql/auth/sql_authentication.cc).
     const auto switchNonce = m_nonceGenerator();
     AuthSwitchRequest switchRequest;
     switchRequest.pluginName = CACHING_SHA2_PASSWORD_PLUGIN_NAME;
@@ -309,8 +296,7 @@ bool ReplicaConnection::Login(std::string &username) {
           "reading scramble after AuthSwitchRequest: " + error);
       return false;
     }
-    authResponse = std::move(
-        switchResponse);  // raw scramble bytes, no packet-type wrapper
+    authResponse = std::move(switchResponse);
     std::copy(switchNonce.begin(), switchNonce.begin() + SCRAMBLE_LENGTH,
               nonceInEffect.begin());
   }
@@ -322,9 +308,9 @@ bool ReplicaConnection::Login(std::string &username) {
   const auto expected = CachingSha2Scramble::Compute(
       passwordForCompare, std::span<const std::uint8_t, SCRAMBLE_LENGTH>(
                               nonceInEffect.data(), SCRAMBLE_LENGTH));
-  // CRYPTO_memcmp (not ==/std::equal): a data-dependent early exit would let
-  // response time leak whether a guessed scramble is getting closer. Sizes
-  // are compared first since CRYPTO_memcmp requires equal-length buffers.
+  // CRYPTO_memcmp, not ==/std::equal: a data-dependent early exit would let
+  // response time leak how close a guessed scramble is. Sizes are compared
+  // first since CRYPTO_memcmp requires equal-length buffers.
   const bool scrambleMatches =
       authResponse.size() == expected.size() &&
       CRYPTO_memcmp(authResponse.data(), expected.data(), expected.size()) == 0;
@@ -348,15 +334,12 @@ bool ReplicaConnection::Login(std::string &username) {
   OkPacket ok;
   ok.statusFlags = SERVER_STATUS_AUTOCOMMIT;
   std::vector<std::uint8_t> encodedOk;
-  OkPacketCodec::Encode(ok, false,
-                        encodedOk);  // false: SERVER_CAPABILITIES does not
-                                     // declare CLIENT_SESSION_TRACK
+  OkPacketCodec::Encode(ok, false, encodedOk);
   if (!channel.WritePacket(encodedOk, error)) {
     Log("closed", username, "sending login OK: " + error);
     return false;
   }
 
-  // After the OK, which itself goes uncompressed (sql/sql_connect.cc).
   const int level = CompressionLevelInEffect(m_services.compression,
                                              response.zstdCompressionLevel);
   if (compress) m_compressed.Enable(m_services.compression, level);
@@ -381,9 +364,8 @@ bool ReplicaConnection::Login(std::string &username) {
 }
 
 void ReplicaConnection::CommandLoop(const std::string &username) {
-  // A fresh channel rather than reusing Login()'s: this phase's timeouts
-  // (COMMAND_CHANNEL_OPTIONS) differ from login's, matching mysqld resetting
-  // its own net timeouts between the two phases.
+  // A fresh channel: this phase's timeouts (COMMAND_CHANNEL_OPTIONS) differ
+  // from login's, as mysqld resets its net timeouts between the two phases.
   PacketChannel channel(m_compressed, COMMAND_CHANNEL_OPTIONS);
   for (;;) {
     channel.ResetSequence();
@@ -424,9 +406,6 @@ void ReplicaConnection::CommandLoop(const std::string &username) {
       continue;
     }
     if (command == Command::RegisterSlave) {
-      // A source records the replica for SHOW REPLICAS; the relay keeps
-      // the server_id, to tell a replica's dumps apart when the replica
-      // sent no UUID, and report_host, to name it in the status.
       RegisterSlaveCommand registration;
       if (!ComRegisterSlaveCommand::Parse(payload, registration, error)) {
         SendErr(channel, 1835, "HY000", "Malformed communication packet.");
@@ -451,10 +430,9 @@ void ReplicaConnection::CommandLoop(const std::string &username) {
       continue;
     }
     if (command == Command::BinlogDump) {
-      // A dump by file name and position, what a replica without
-      // SOURCE_AUTO_POSITION and mysqlbinlog --read-from-remote-server
-      // send. Refused the way a source refuses a dump, so the reason
-      // reaches the replica's log instead of "Unknown command".
+      // A dump by file name and position (a replica without
+      // SOURCE_AUTO_POSITION, mysqlbinlog --read-from-remote-server): refused
+      // as a source refuses a dump, so the reason reaches the replica's log.
       SendErr(channel, 1236, "HY000",
               "relay serves GTID auto-positioning only; a dump by file "
               "name and position is not offered");
@@ -462,8 +440,6 @@ void ReplicaConnection::CommandLoop(const std::string &username) {
           "dump by file name and position: GTID auto-positioning only");
       continue;
     }
-    // Same ERR 1047 a real server sends for an unrecognized command;
-    // the connection stays open.
     SendErr(channel, 1047, "08S01", "Unknown command");
   }
 }
@@ -483,14 +459,13 @@ bool ReplicaConnection::HandleDump(PacketChannel &channel,
     case DumpStartKind::Found:
       break;
     case DumpStartKind::NoHistoryYet:
-      // Closing looks like a lost connection, which the replica
-      // retries on its own; an error packet would stop its receiver
-      // thread for good.
+      // Closing looks like a lost connection, which the replica retries; an
+      // error packet would stop its receiver thread for good.
       Log("closed", username, "dump requested, but " + start.message);
       return false;
     default:
-      // ER_SOURCE_FATAL_ERROR_READING_BINLOG: how a source reports
-      // every refusal of a dump, the reason being the message.
+      // ER_SOURCE_FATAL_ERROR_READING_BINLOG: how a source reports every
+      // refusal of a dump.
       SendErr(channel, 1236, "HY000", start.message);
       Log("refused", username, "dump: " + start.message);
       return true;
@@ -548,7 +523,7 @@ bool ReplicaConnection::HandleDump(PacketChannel &channel,
   Log("closed", username,
       "dump ended after " + std::to_string(end.events) + " events sent and " +
           std::to_string(end.skipped) + " skipped: " + end.message);
-  return false;  // a dump is the last thing a connection does
+  return false;
 }
 
 bool ReplicaConnection::SendQueryResponse(PacketChannel &channel,
@@ -566,8 +541,8 @@ bool ReplicaConnection::SendQueryResponse(PacketChannel &channel,
     return channel.WritePacket(packet, error);
   }
 
-  // A client with CLIENT_DEPRECATE_EOF gets an OK (header 0xFE) instead of
-  // EOF at the end, and no EOF after the column definitions either.
+  // With CLIENT_DEPRECATE_EOF the end is an OK (header 0xFE) and no EOF follows
+  // the column definitions.
   const bool deprecateEof = (m_clientCapabilities & CLIENT_DEPRECATE_EOF) != 0;
   LengthEncodedInteger::Encode(response.columns.size(), packet);
   if (!channel.WritePacket(packet, error)) return false;
@@ -578,8 +553,7 @@ bool ReplicaConnection::SendQueryResponse(PacketChannel &channel,
     column.name = responseColumn.name;
     column.characterSet = 255;
     column.columnLength = 1024;
-    column.type = 253;  // MYSQL_TYPE_VAR_STRING: every value here is
-                        // returned as text, not its real type
+    column.type = 253;
     packet.clear();
     ColumnDefinition41Codec::Encode(column, packet);
     if (!channel.WritePacket(packet, error)) return false;
@@ -620,9 +594,7 @@ void ReplicaConnection::SendErr(PacketChannel &channel, std::uint16_t code,
   std::vector<std::uint8_t> encoded;
   ErrPacketCodec::Encode(err, encoded);
   std::string error;
-  channel.WritePacket(
-      encoded,
-      error);  // best-effort: nothing left to do here if even this fails
+  channel.WritePacket(encoded, error);
 }
 
 void ReplicaConnection::SendRefusal(PacketChannel &channel, std::uint16_t code,

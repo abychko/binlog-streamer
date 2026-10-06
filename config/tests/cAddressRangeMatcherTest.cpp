@@ -68,12 +68,11 @@ TEST(AddressRangeMatcherTest, ZeroLengthPrefixMatchesEveryAddressOfItsFamily) {
 }
 
 TEST(AddressRangeMatcherTest, MatchesOnANonByteAlignedPrefixBoundary) {
-  const AddressRange range = ParseRange(
-      "192.0.2.128/26");  // network bits stop mid-byte (26 = 3*8 + 2)
-  EXPECT_TRUE(AddressRangeMatcher::Contains(
-      range, ParseAddress("192.0.2.191")));  // last address in the /26
-  EXPECT_FALSE(AddressRangeMatcher::Contains(
-      range, ParseAddress("192.0.2.192")));  // first address past it
+  const AddressRange range = ParseRange("192.0.2.128/26");
+  EXPECT_TRUE(
+      AddressRangeMatcher::Contains(range, ParseAddress("192.0.2.191")));
+  EXPECT_FALSE(
+      AddressRangeMatcher::Contains(range, ParseAddress("192.0.2.192")));
 }
 
 TEST(AddressRangeMatcherTest,

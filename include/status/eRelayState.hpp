@@ -25,12 +25,10 @@
 
 namespace binlog_streamer {
 
-// The relay as a whole. Storage failing ends the process, so it has no
-// state here.
 enum class RelayState {
-  Starting,      // the source not reached yet since the process started
-  Serving,       // receiving from the source
-  Reconnecting,  // the stream was lost; replicas are served from storage
+  Starting,
+  Serving,
+  Reconnecting,
 };
 
 }  // namespace binlog_streamer

@@ -31,16 +31,13 @@
 namespace binlog_streamer {
 namespace {
 
-// Values of the same order as a real channel's; the tests below that depend
-// on one of them say so.
 constexpr std::size_t TEST_MAX_PACKET_SIZE = 16UL * 1024UL * 1024UL;
 constexpr PacketChannelOptions TEST_OPTIONS{std::chrono::milliseconds{1000},
                                             std::chrono::milliseconds{1000},
                                             TEST_MAX_PACKET_SIZE, "peer"};
 
 TEST(PacketChannelTest, ReassemblesPacketByteExactWhenDeliveredOneByteAtATime) {
-  const std::vector<std::uint8_t> payload{0x03, 'a', 'b',
-                                          'c'};  // COM_QUERY "abc"
+  const std::vector<std::uint8_t> payload{0x03, 'a', 'b', 'c'};
   std::uint8_t writeSequenceId = 0;
   test::FakeTransport transport;
   PacketFramer::Encode(payload, writeSequenceId, transport.incoming);
@@ -51,18 +48,10 @@ TEST(PacketChannelTest, ReassemblesPacketByteExactWhenDeliveredOneByteAtATime) {
   std::string error;
   ASSERT_TRUE(channel.ReadPacket(received, error)) << error;
   EXPECT_EQ(received, payload);
-  // One Read() per byte: the buffer-growth loop asks for what Measure()
-  // still needs, not a fixed chunk.
   EXPECT_EQ(transport.readCallCount, transport.incoming.size());
 }
 
-// TEST_MAX_PACKET_SIZE (16 MiB) makes a genuine multi-sub-packet response
-// structurally unreachable here; that reassembly is covered in
-// protocol/tests/cPacketFramerTest.cpp instead.
-
 TEST(PacketChannelTest, RejectsAPacketLargerThanItsLimitWithoutRepeatedGrowth) {
-  // Header alone (declared length 0xFFFFFF) already exceeds the limit;
-  // rejection must fire without asking for the (nonexistent) body.
   test::FakeTransport transport;
   transport.incoming = {0xFF, 0xFF, 0xFF, 0x00};
 
@@ -71,7 +60,7 @@ TEST(PacketChannelTest, RejectsAPacketLargerThanItsLimitWithoutRepeatedGrowth) {
   std::string error;
   EXPECT_FALSE(channel.ReadPacket(received, error));
   EXPECT_EQ(error, "packet from peer larger than the 16777216-byte limit");
-  EXPECT_EQ(transport.readCallCount, 1u);  // no looping back for more growth
+  EXPECT_EQ(transport.readCallCount, 1u);
 }
 
 TEST(PacketChannelTest, InterruptedReadIsReportedThroughWasInterrupted) {
@@ -87,9 +76,6 @@ TEST(PacketChannelTest, InterruptedReadIsReportedThroughWasInterrupted) {
 }
 
 TEST(PacketChannelTest, IdleTimeoutAppliesOnlyToTheFirstReadOfAFreshPacket) {
-  // maxBytesPerRead forces more than one Read() per ReadPacket() call, so
-  // this observes idleTimeout on the first Read() only, not just that it
-  // was passed at all.
   const std::vector<std::uint8_t> payload{0x03, 'a', 'b', 'c'};
   std::uint8_t writeSequenceId = 0;
   test::FakeTransport transport;
@@ -99,13 +85,11 @@ TEST(PacketChannelTest, IdleTimeoutAppliesOnlyToTheFirstReadOfAFreshPacket) {
   PacketChannel channel(transport, TEST_OPTIONS);
   std::vector<std::uint8_t> received;
   std::string error;
-  constexpr std::chrono::milliseconds IDLE_TIMEOUT{
-      28'800'000};  // NET_WAIT_TIMEOUT, 8h, ms
+  constexpr std::chrono::milliseconds IDLE_TIMEOUT{28'800'000};
   ASSERT_TRUE(channel.ReadPacket(received, error, IDLE_TIMEOUT)) << error;
   EXPECT_EQ(received, payload);
 
-  ASSERT_EQ(transport.readTimeouts.size(),
-            transport.incoming.size());  // one Read() per byte, as above
+  ASSERT_EQ(transport.readTimeouts.size(), transport.incoming.size());
   EXPECT_EQ(transport.readTimeouts.front(), IDLE_TIMEOUT);
   for (std::size_t i = 1; i < transport.readTimeouts.size(); ++i)
     EXPECT_EQ(transport.readTimeouts[i], TEST_OPTIONS.readTimeout)
@@ -114,9 +98,6 @@ TEST(PacketChannelTest, IdleTimeoutAppliesOnlyToTheFirstReadOfAFreshPacket) {
 
 TEST(PacketChannelTest,
      IdleTimeoutDoesNotApplyWhenThisPacketIsAlreadyPartlyBuffered) {
-  // Counterpart to LeavesOverreadBytesBufferedForTheNextReadPacketCall:
-  // bytes are already buffered, so the wait idleTimeout would cover is
-  // already over - the completing Read() must use the ordinary readTimeout.
   const std::vector<std::uint8_t> firstPayload{0x01, 0xAA};
   const std::vector<std::uint8_t> secondPayload{0x02, 0xBB, 0xCC};
   std::uint8_t sequenceId = 0;
@@ -130,8 +111,7 @@ TEST(PacketChannelTest,
   PacketChannel channel(transport, TEST_OPTIONS);
   std::vector<std::uint8_t> received;
   std::string error;
-  ASSERT_TRUE(channel.ReadPacket(received, error))
-      << error;  // first packet, plus the second packet's leading bytes
+  ASSERT_TRUE(channel.ReadPacket(received, error)) << error;
   EXPECT_EQ(received, firstPayload);
   const unsigned readsBeforeSecondCall = transport.readTimeouts.size();
 
@@ -142,13 +122,10 @@ TEST(PacketChannelTest,
 
   ASSERT_GT(transport.readTimeouts.size(), readsBeforeSecondCall);
   EXPECT_EQ(transport.readTimeouts[readsBeforeSecondCall],
-            TEST_OPTIONS.readTimeout);  // not IDLE_TIMEOUT
+            TEST_OPTIONS.readTimeout);
 }
 
 TEST(PacketChannelTest, LeavesOverreadBytesBufferedForTheNextReadPacketCall) {
-  // A source handing back next-packet bytes in the same Read() call (a
-  // real recv() does this routinely) must not lose them - the second
-  // ReadPacket() call must find them already buffered.
   const std::vector<std::uint8_t> firstPayload{0x01, 0xAA};
   const std::vector<std::uint8_t> secondPayload{0x02, 0xBB, 0xCC};
   std::uint8_t sequenceId = 0;
@@ -165,8 +142,7 @@ TEST(PacketChannelTest, LeavesOverreadBytesBufferedForTheNextReadPacketCall) {
 
   ASSERT_TRUE(channel.ReadPacket(received, error)) << error;
   EXPECT_EQ(received, secondPayload);
-  EXPECT_EQ(transport.readCallCount,
-            readsAfterFirstPacket);  // already buffered - no new Read() needed
+  EXPECT_EQ(transport.readCallCount, readsAfterFirstPacket);
 }
 
 TEST(PacketChannelTest, QueuedPacketsGoOutTogetherAndAheadOfTheNextWrittenOne) {
@@ -178,8 +154,7 @@ TEST(PacketChannelTest, QueuedPacketsGoOutTogetherAndAheadOfTheNextWrittenOne) {
   const std::vector<std::uint8_t> third{4, 5, 6};
   ASSERT_TRUE(channel.QueuePacket(first, error)) << error;
   ASSERT_TRUE(channel.QueuePacket(second, error)) << error;
-  EXPECT_TRUE(
-      transport.writes.empty());  // too little gathered to go out on its own
+  EXPECT_TRUE(transport.writes.empty());
   ASSERT_TRUE(channel.WritePacket(third, error)) << error;
 
   std::vector<std::uint8_t> expected;
@@ -189,7 +164,7 @@ TEST(PacketChannelTest, QueuedPacketsGoOutTogetherAndAheadOfTheNextWrittenOne) {
   PacketFramer::Encode(third, sequenceId, expected);
   ASSERT_EQ(transport.writes.size(), 1U);
   EXPECT_EQ(transport.writes[0], expected);
-  EXPECT_TRUE(channel.Flush(error));  // nothing left: no empty write
+  EXPECT_TRUE(channel.Flush(error));
   EXPECT_EQ(transport.writes.size(), 1U);
 }
 
@@ -204,7 +179,7 @@ TEST(PacketChannelTest, QueuedPacketsGoOutOnTheirOwnOnceEnoughHasGathered) {
     ++queued;
   }
   ASSERT_EQ(transport.writes.size(), 1U);
-  EXPECT_EQ(queued, 66U);  // 66 packets of 1004 bytes reach 64 KiB
+  EXPECT_EQ(queued, 66U);
   EXPECT_EQ(transport.writes[0].size(), queued * 1004);
 }
 
@@ -225,8 +200,6 @@ TEST(PacketChannelTest, TakeUnreadHandsOverWhatWasReadPastThePacket) {
   std::string error;
   ASSERT_TRUE(channel.ReadPacket(received, error)) << error;
   EXPECT_EQ(received, first);
-  // Both packets came in one read; the second is not the channel's any
-  // more, and a further read would start from the transport again.
   EXPECT_EQ(channel.TakeUnread(), secondFramed);
   EXPECT_TRUE(channel.TakeUnread().empty());
   EXPECT_FALSE(channel.ReadPacket(received, error));

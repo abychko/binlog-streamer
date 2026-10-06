@@ -31,23 +31,19 @@
 namespace binlog_streamer {
 
 struct SourceStatus {
-  std::string address;  // host:port from source.yml
+  std::string address;
   bool connected = false;
-  // Unix seconds: when the current connection was made, or when the last
-  // one was lost; nullopt before the first attempt finished.
   std::optional<std::uint64_t> since;
-  unsigned attempt = 0;  // the connection attempt under way, 0 when connected
+  unsigned attempt = 0;
   std::uint32_t serverId = 0;
   std::string serverUuid;
   std::string version;
   bool tls = false;
-  std::string compression;  // "none", "zstd" or "zlib"; empty before connecting
-  StreamPoint seen;         // the last event or heartbeat received
-  // The source's own clock, unix seconds; known while connected.
+  std::string compression;
+  StreamPoint seen;
   std::optional<std::uint64_t> clock;
-  // 0 when the source said it has nothing more (heartbeat); otherwise the
-  // source's clock minus the last event's timestamp. Unknown until an
-  // event came through, and while not connected.
+  // 0 when the source has nothing more (heartbeat); otherwise the source's
+  // clock minus the last event's timestamp.
   std::optional<std::uint64_t> behindSeconds;
 };
 

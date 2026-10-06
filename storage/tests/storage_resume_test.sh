@@ -62,7 +62,6 @@ wait_for_line() {
     return 1
 }
 
-# Proves only the marker bytes are on disk, not the complete group.
 wait_for_marker() {
     local DATA_DIR="$1" MARKER="$2" PID="$3"
     for _ in $(seq 1 300); do
@@ -120,18 +119,12 @@ check_storage_summary() {
     return 1
 }
 
-# Appends the first 100 bytes of FILE's first group back onto its end - the
-# shape a crash mid-write of a later group leaves. $1 FILE $2 SOURCE_FILE_NAME.
-# Echoes bytes appended (100) on success, else FATAL and returns 1.
 inject_corruption() {
     local FILE="$1" SOURCE_FILE_NAME="$2"
     local END_LOG_POS
     END_LOG_POS="$(header_end "$SOURCE_FILE_NAME")" || return 1
     local TMP
     TMP="$(mktemp)"
-    # Read into a temp file first, then append separately - reading FILE
-    # with dd and writing its own output back onto FILE in the same command
-    # is not something this script relies on being well-defined.
     dd if="$FILE" bs=1 skip="$END_LOG_POS" count=100 2>/dev/null > "$TMP"
     if [ "$(wc -c < "$TMP")" -ne 100 ]; then
         echo "FATAL: read fewer than 100 bytes from $FILE at offset $END_LOG_POS" >&2
@@ -151,9 +144,6 @@ assert_no_purge() {
     fi
 }
 
-# Runs one full scenario in a subshell (own WORKDIR, two relay processes,
-# cleanup trap). $1 label $2 server_id (distinct per scenario) $3 stop
-# signal for the first run (KILL/TERM) $4 1 to inject_corruption(), 0 to skip.
 run_scenario() {
     local LABEL="$1"
     local SERVER_ID="$2"
@@ -192,7 +182,6 @@ storage:
   retention:
     policy: age
     period: 10s
-  # Keep the test independent of the host file-system free space.
   disk:
     max_size: 2T
     purge_high_watermark: 1900G
@@ -216,9 +205,6 @@ SETTINGS
             exit 1
         fi
 
-        # This scenario never forces a rotation - the file the resolver
-        # picked stays this run's only file throughout, named identically on
-        # both sides (the relay mirrors the source's own file names).
         START_FILE="$(grep -m1 "dump requested" "$FIRST_LOG" | sed -n 's/.*(file \([^)]*\)).*/\1/p')"
         if [ -z "$START_FILE" ]; then
             echo "FATAL: [$LABEL] could not parse the starting file name out of the 'dump requested' line"
@@ -227,7 +213,7 @@ SETTINGS
         START_FILE_NUMBER=$((10#${START_FILE##*.}))
         RELAY_FILE="$DATA_DIR/$START_FILE"
 
-        sleep 1 # let the first file's own header settle before issuing writes
+        sleep 1
 
         INSERT_SQL="INSERT INTO storage_resume_test (v) VALUES ('row1-${LABEL}');
 INSERT INTO storage_resume_test (v) VALUES ('row2-${LABEL}');
@@ -273,9 +259,6 @@ INSERT INTO storage_resume_test (v) VALUES ('$PRE_MARKER');"
             exit 1
         fi
 
-        # Only clean shutdown prints summaries. The exact source length was
-        # reached before stopping; no further transaction is issued here.
-        # DrainAndSync must preserve that length and account for every byte.
         if [ "$LABEL" = "clean" ]; then
             SIZE_AFTER_STOP=$(wc -c < "$RELAY_FILE" | tr -d '[:space:]')
             HEADER_END="$(header_end "$START_FILE")" || exit 1
@@ -307,9 +290,6 @@ INSERT INTO storage_resume_test (v) VALUES ('$PRE_MARKER');"
             fi
         fi
 
-        # Transactions the source receives *while the relay is down* - the
-        # restart has to both recover local history and catch these up from
-        # the source, not just the ones already on disk before the stop.
         if ! "${ADMIN[@]}" binlog_streamer_test -e "INSERT INTO storage_resume_test (v) VALUES ('$MID_MARKER');"; then
             echo "FATAL: [$LABEL] the while-stopped transaction did not succeed"
             exit 1
@@ -325,17 +305,12 @@ INSERT INTO storage_resume_test (v) VALUES ('$PRE_MARKER');"
             exit 1
         fi
 
-        # Negative witness for the "identity" scenario's warning: this
-        # scenario's source never changes server_id, so the warning must stay
-        # silent - catches a mutant that warns on every restart, not just a real mismatch.
         if grep -q "server_id has changed" "$SECOND_LOG"; then
             echo "FATAL: [$LABEL] unexpected server_id-changed warning in the restarted run's stderr:"
             cat "$SECOND_LOG"
             exit 1
         fi
 
-        # The exact injected byte count must appear in stderr; a scenario
-        # injecting nothing must not report a truncation either.
         if [ "$INJECT_CORRUPTION" -eq 1 ]; then
             if ! wait_for_line "$SECOND_LOG" "truncated $START_FILE by $CORRUPTION_BYTES byte(s)" "$SECOND_PID"; then
                 echo "FATAL: [$LABEL] expected a 'truncated $START_FILE by $CORRUPTION_BYTES byte(s)' line in the restarted run's stderr, got:"
@@ -384,16 +359,12 @@ INSERT INTO storage_resume_test (v) VALUES ('$PRE_MARKER');"
 
         check_storage_summary "$SECOND_LOG" 0 || exit 1
 
-        # No gap or history mismatch must ever have been reported in either
-        # run - the whole point of this scenario.
         if grep -q "past what storage has written\|storage does not match source history" "$FIRST_LOG" "$SECOND_LOG"; then
             echo "FATAL: [$LABEL] a gap or a history mismatch was detected somewhere across the two runs:"
             cat "$FIRST_LOG" "$SECOND_LOG"
             exit 1
         fi
 
-        # while read, not mapfile - see storage_integration_test.sh's own
-        # comment on why (this development source's macOS shell is bash 3.2).
         SORTED_NAMES=()
         while IFS= read -r NAME; do SORTED_NAMES+=("$NAME"); done < <(cd "$DATA_DIR" && ls | grep -E '^[^./]+\.[0-9]{6,}$' | sort -t. -k2 -n)
         FILE_COUNT=${#SORTED_NAMES[@]}
@@ -413,8 +384,6 @@ INSERT INTO storage_resume_test (v) VALUES ('$PRE_MARKER');"
             exit 1
         fi
 
-        # Compared against the source's own count, not a literal "1", so a
-        # rotation this scenario did not request still leaves both sides agreeing.
         SOURCE_FILE_COUNT=0
         while IFS= read -r NAME; do
             NUMBER=$((10#${NAME##*.}))
@@ -472,9 +441,6 @@ INSERT INTO storage_resume_test (v) VALUES ('$PRE_MARKER');"
     )
 }
 
-# Scenario: patches the last file's server_id byte to simulate a source
-# identity change, then forces FLUSH BINARY LOGS while the relay is down so
-# the real file is never resent unpatched. Expects a warn-and-continue, not a refusal.
 run_identity_mismatch_scenario() {
     (
         set -u
@@ -509,7 +475,6 @@ storage:
   retention:
     policy: age
     period: 10s
-  # Keep the test independent of the host file-system free space.
   disk:
     max_size: 2T
     purge_high_watermark: 1900G
@@ -541,7 +506,7 @@ SETTINGS
         START_FILE_NUMBER=$((10#${START_FILE##*.}))
         RELAY_FILE="$DATA_DIR/$START_FILE"
 
-        sleep 1 # let the first file's own header settle before issuing writes
+        sleep 1
 
         if ! "${ADMIN[@]}" binlog_streamer_test -e "INSERT INTO storage_resume_test (v) VALUES ('$MARKER');"; then
             echo "FATAL: [identity] the marker transaction did not succeed"
@@ -582,8 +547,6 @@ SETTINGS
             exit 1
         fi
 
-        # From here on $START_FILE only gets its "in use" flag cleared when
-        # the restart abandons it; every other byte stays as the patch left it.
         if ! "${ADMIN[@]}" -e "FLUSH BINARY LOGS;"; then
             echo "FATAL: [identity] FLUSH BINARY LOGS failed"
             exit 1
@@ -598,9 +561,7 @@ SETTINGS
             cat "$SECOND_LOG"
             exit 1
         fi
-        # 4278190079 is the patched bytes read back as little-endian
-        # server_id; checked by value, not just presence, so a mutant
-        # swapping "from"/"to" or naming the wrong file still fails.
+        # 4278190079 is the patched bytes read back as little-endian server_id.
         if ! grep -q "warning: source server_id has changed from 4278190079 (recorded in $START_FILE) to " "$SECOND_LOG"; then
             echo "FATAL: [identity] expected a server_id-changed warning naming 4278190079 and $START_FILE in stderr, got:"
             cat "$SECOND_LOG"
@@ -642,17 +603,12 @@ SETTINGS
             exit 1
         fi
 
-        # No gap or unexpected history mismatch may ever be reported: the one
-        # mismatch this scenario provokes is the server_id warning above, not
-        # a "storage does not match source history" refusal.
         if grep -q "past what storage has written\|storage does not match source history" "$FIRST_LOG" "$SECOND_LOG"; then
             echo "FATAL: [identity] a gap or an unexpected history mismatch was detected somewhere across the two runs:"
             cat "$FIRST_LOG" "$SECOND_LOG"
             exit 1
         fi
 
-        # while read, not mapfile - see storage_integration_test.sh's own
-        # comment on why (this development source's macOS shell is bash 3.2).
         SORTED_NAMES=()
         while IFS= read -r NAME; do SORTED_NAMES+=("$NAME"); done < <(cd "$DATA_DIR" && ls | grep -E '^[^./]+\.[0-9]{6,}$' | sort -t. -k2 -n)
         FILE_COUNT=${#SORTED_NAMES[@]}
@@ -670,8 +626,6 @@ SETTINGS
             exit 1
         fi
 
-        # Both sides still have $START_FILE (abandoned, never deleted), so
-        # the same "count from the starting file onward" comparison applies.
         SOURCE_FILE_COUNT=0
         while IFS= read -r NAME; do
             NUMBER=$((10#${NAME##*.}))
@@ -690,8 +644,6 @@ SETTINGS
             exit 1
         fi
 
-        # $START_FILE is excluded from the byte-for-byte compare below: it
-        # carries this scenario's own patch, not a real divergence.
         NEW_FILES=()
         for NAME in "${SORTED_NAMES[@]}"; do
             NUMBER=$((10#${NAME##*.}))
@@ -748,9 +700,6 @@ if ! run_scenario crash 999006 KILL 1; then
     OVERALL_FAIL=1
 fi
 
-# Witness scenario: the same resume path also runs after an ordinary clean
-# stop, not only after a crash - no artificial tail is injected here since a
-# complete marker group is already on disk before the stop.
 if ! run_scenario clean 999007 TERM 0; then
     OVERALL_FAIL=1
 fi

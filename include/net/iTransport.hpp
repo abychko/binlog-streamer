@@ -40,9 +40,6 @@ class Transport {
                        std::chrono::milliseconds timeout,
                        std::string &error) = 0;
 
-  // TimedOut/Interrupted/Closed leave bytesRead at 0 and error empty -
-  // the caller decides whether each is fatal; Failed covers everything
-  // else, with error set.
   virtual ReadOutcome Read(std::span<std::uint8_t> buffer,
                            std::size_t &bytesRead,
                            std::chrono::milliseconds timeout,

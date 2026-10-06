@@ -32,10 +32,9 @@ namespace binlog_streamer {
 struct ProbeResult {
   bool ok = false;
   std::string fileName;
-  std::uint64_t createdAt = 0;  // FORMAT_DESCRIPTION_EVENT's Common-Header
-                                // timestamp (binlog.cc)
-  std::uint64_t position = 0;   // the artificial ROTATE's own position field
-  SessionResult failure;        // meaningful when !ok
+  std::uint64_t createdAt = 0;
+  std::uint64_t position = 0;
+  SessionResult failure;
 };
 
 }  // namespace binlog_streamer

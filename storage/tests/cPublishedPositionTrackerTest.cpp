@@ -75,8 +75,6 @@ TEST(PublishedPositionTrackerTest, LocateTellsWhetherAFileIsThePublishedOne) {
   EXPECT_EQ(other.file, own.file);
 }
 
-// Each file's positions are written as file * STEP + n, so a mark whose
-// position belongs to another file than its number is a torn read.
 TEST(PublishedPositionTrackerTest, MarkNeverPairsOneFilesNumberWithAnother) {
   PublishedPositionTracker tracker;
   constexpr std::uint64_t STEP = 1000;
@@ -171,7 +169,6 @@ TEST(PublishedPositionTrackerTest, APollingReaderNoticesAnAdvanceByItself) {
   publisher.join();
 }
 
-// Each way of waiting keeps the same promises.
 class PublishedPositionTrackerStyleTest
     : public ::testing::TestWithParam<WaitStyle> {};
 

@@ -80,22 +80,11 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 constexpr std::size_t BENCH_CHUNK_SIZE = 1024 * 1024;
-// 256 MiB spreads a multi-gigabyte dataset over many files without
-// catalog bookkeeping dominating the result.
 constexpr std::uint64_t ROTATE_THRESHOLD_BYTES = 256ULL * 1024 * 1024;
-// Matches packaging/settings.yml's own cache.window default: replicas
-// lagging by less than this are treated as almost in sync.
 constexpr double DEFAULT_WINDOW_SECONDS = 60.0;
-// Spread across the whole dataset, not all starting at the same point.
 constexpr std::array<double, 4> HISTORIAN_START_FRACTIONS{0.0, 0.25, 0.50,
                                                           0.90};
 
-// ---------------------------------------------------------------------------
-// Byte-size / rate parsing
-// ---------------------------------------------------------------------------
-
-// Independent copy of config/cByteSizeParser.hpp's convention, kept
-// private rather than shared across modules.
 bool ParseByteSize(std::string_view text, std::uint64_t &value) {
   if (text.size() < 2) return false;
   const auto suffixPos = std::string_view("kKmMgGtT").find(text.back());
@@ -142,10 +131,6 @@ bool ParseUint64(std::string_view text, std::uint64_t &value) {
   }
   return consumed == text.size();
 }
-
-// ---------------------------------------------------------------------------
-// Wire-format helpers
-// ---------------------------------------------------------------------------
 
 void AppendLE(std::vector<std::uint8_t> &out, std::uint64_t value,
               std::size_t length) {
@@ -241,8 +226,6 @@ bool Drive(EventSink &sink, const WireEvent &event,
   return sink.OnEventEnd();
 }
 
-// One buffer, filled once, sliced per chunk, so --large-event never holds
-// the whole event body in memory at once.
 const std::vector<std::uint8_t> &ChunkFillTemplate() {
   static const std::vector<std::uint8_t> chunk(BENCH_CHUNK_SIZE, 0xAB);
   return chunk;
@@ -333,8 +316,6 @@ bool CloseFileWithRotate(EventSink &sink, const std::string &currentFile,
                          std::uint64_t offset, const std::string &nextFile) {
   const auto body = RotateBody(4, nextFile);
   const auto rotateEventLength = EVENT_HEADER_LENGTH + body.size();
-  // This generator claims correct positions throughout, unlike unit tests
-  // that use an arbitrary ROTATE placeholder.
   const auto rotate =
       MakeEvent(static_cast<std::uint8_t>(EventType::Rotate), body,
                 static_cast<std::uint32_t>(offset + rotateEventLength));
@@ -352,9 +333,9 @@ std::uint64_t GroupWireLength(const DrivenGroup &group) {
          group.xid.bytes.size();
 }
 
-// Sized so an OLTP group's on-wire length is exactly 744 bytes, a plausible
-// small UPDATE/INSERT; 744 stays in the same lenenc width class regardless
-// of the placeholder used to size the GTID event.
+// Sized so an OLTP group is 744 bytes on the wire, a plausible small
+// UPDATE/INSERT; 744 is in the same lenenc width class as the placeholder
+// used to size the GTID event.
 constexpr std::size_t OLTP_QUERY_BODY_SIZE = 627;
 
 const std::vector<std::uint8_t> &OltpQueryBodyTemplate() {
@@ -377,8 +358,7 @@ DrivenGroup MakeOltpGroup(std::uint64_t start, std::int64_t gno) {
                          GtidBody(gno, transactionLength),
                          static_cast<std::uint32_t>(start + gtidEventLength));
   group.query = MakeEvent(
-      2 /* a Query event - no EventType enumerator, eEventType.hpp */,
-      OltpQueryBodyTemplate(),
+      2 /* Query */, OltpQueryBodyTemplate(),
       static_cast<std::uint32_t>(start + gtidEventLength + queryEventLength));
   group.xid =
       MakeEvent(16 /* Xid event */, std::vector<std::uint8_t>(8, 0xCD),
@@ -396,10 +376,6 @@ bool DriveGroup(EventSink &sink, const DrivenGroup &group,
   offset += group.query.bytes.size();
   return Drive(sink, group.xid, StreamPosition{fileName, offset});
 }
-
-// ---------------------------------------------------------------------------
-// /proc + cgroup v2 readings (Linux only; see MacPeakRssBytes() for macOS)
-// ---------------------------------------------------------------------------
 
 struct MemorySample {
   bool available = false;
@@ -419,8 +395,6 @@ struct MemorySample {
 
 #if defined(__linux__)
 
-// false+error on a real read failure, not a silent 0: callers must tell
-// "nothing read from disk" apart from a broken /proc read.
 bool ReadProcIoReadBytes(const std::string &path, std::uint64_t &value,
                          std::string &error) {
   std::ifstream file(path);
@@ -469,8 +443,6 @@ bool ReadMemoryStat(const std::string &path,
   return true;
 }
 
-// Refuses to fall back to 0 like std::map::operator[] would: a missing key
-// must surface as a loud fault, not blend into "nothing happened".
 bool RequireMemoryStatField(const std::map<std::string, std::uint64_t> &fields,
                             const char *key, std::uint64_t &out) {
   const auto it = fields.find(key);
@@ -545,7 +517,7 @@ class MemorySampler {
   MemorySample m_sample;
 };
 
-#else  // !__linux__
+#else
 
 bool ThreadReadBytes(std::uint64_t &value, std::string &) {
   value = 0;  // no per-thread I/O accounting on macOS; not a read failure
@@ -555,7 +527,6 @@ bool ProcessReadBytes(std::uint64_t &value, std::string &) {
   value = 0;
   return true;
 }
-// Shared calling code (below) calls this on every platform.
 std::optional<std::string> CgroupMemoryStatPath() { return std::nullopt; }
 
 class MemorySampler {
@@ -575,10 +546,6 @@ std::uint64_t MacPeakRssBytes() {
 }
 
 #endif
-
-// ---------------------------------------------------------------------------
-// Timing percentiles
-// ---------------------------------------------------------------------------
 
 struct Percentiles {
   double p50Us = 0;
@@ -600,10 +567,6 @@ Percentiles ComputePercentiles(std::vector<double> samplesUs) {
   result.maxUs = samplesUs.back();
   return result;
 }
-
-// ---------------------------------------------------------------------------
-// Rate limiting
-// ---------------------------------------------------------------------------
 
 class TokenBucket {
  public:
@@ -628,10 +591,6 @@ class TokenBucket {
   Clock::time_point m_last;
 };
 
-// ---------------------------------------------------------------------------
-// Ingest: dataset prep (unthrottled) and live phase (rate limited, timed)
-// ---------------------------------------------------------------------------
-
 struct FileBoundary {
   std::string name;
   std::uint64_t cumulativeStart = 0;
@@ -645,8 +604,6 @@ struct IngestState {
   std::int64_t nextGno = 1;
 };
 
-// Shared by dataset-prep and the live phase, so --mixed historians walk
-// through multi-file history, not one giant file.
 bool RotateIfNeeded(StorageEventSink &sink, IngestState &state,
                     std::vector<FileBoundary> *boundaries, std::string &error) {
   if (!state.currentFile.empty() &&
@@ -668,7 +625,6 @@ bool RotateIfNeeded(StorageEventSink &sink, IngestState &state,
   return true;
 }
 
-// boundaries feeds LocateFraction() below.
 bool WriteDataset(StorageEventSink &sink, std::uint64_t targetBytes,
                   IngestState &state, std::vector<FileBoundary> &boundaries,
                   std::string &error) {
@@ -694,7 +650,6 @@ struct LiveIngestResult {
   std::vector<double> groupDurationsUs;
 };
 
-// The measured phase behind the groups/s, MB/s and p50/p99/max numbers.
 LiveIngestResult EmitLiveGroups(StorageEventSink &sink, IngestState &state,
                                 std::uint64_t groupCount, TokenBucket *rate) {
   LiveIngestResult result;
@@ -739,8 +694,6 @@ bool RunLargeEvent(StorageEventSink &sink, std::uint64_t largeEventBytes,
 
   const std::size_t xidEventLength = EVENT_HEADER_LENGTH + 8;
   const std::size_t queryEventLength = EVENT_HEADER_LENGTH + largeEventBytes;
-  // largeEventBytes already exceeds Lenenc()'s 65536 threshold, so the
-  // GTID event's lenenc width is fixed regardless of the placeholder used here.
   const std::size_t gtidEventLength =
       EVENT_HEADER_LENGTH + GtidBody(1, 1'000'000'000).size();
   const std::uint64_t transactionLength =
@@ -776,10 +729,6 @@ bool RunLargeEvent(StorageEventSink &sink, std::uint64_t largeEventBytes,
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Readers
-// ---------------------------------------------------------------------------
-
 enum class CaughtUpBehavior { Wait, Loop, Stop };
 
 struct ReaderStats {
@@ -797,8 +746,6 @@ struct ReaderStats {
   std::string ioAccountingError;
 };
 
-// Destructor, not an explicit call at the end: must run on every early
-// return too, not just the ordinary exit.
 struct EndIoCapture {
   ReaderStats &stats;
   StorageReader &reader;
@@ -920,10 +867,6 @@ std::pair<std::string, std::uint64_t> LocateFraction(
   return {boundaries[chosen].name, target - boundaries[chosen].cumulativeStart};
 }
 
-// ---------------------------------------------------------------------------
-// Free space check
-// ---------------------------------------------------------------------------
-
 bool HasEnoughFreeSpace(const std::filesystem::path &dataDir,
                         std::uint64_t datasetBytes, std::string &error) {
   std::error_code ec;
@@ -943,10 +886,6 @@ bool HasEnoughFreeSpace(const std::filesystem::path &dataDir,
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// CLI
-// ---------------------------------------------------------------------------
-
 struct BenchOptions {
   enum class Mode {
     IngestOrReaders,
@@ -963,11 +902,8 @@ struct BenchOptions {
   std::chrono::seconds::rep windowSeconds =
       static_cast<std::chrono::seconds::rep>(DEFAULT_WINDOW_SECONDS);
   std::optional<std::uint64_t> datasetBytes;
-  // Matches the shipped settings template; explicit --cache-size overrides it.
   std::uint64_t cacheSize = 2ULL * 1024 * 1024 * 1024;
   double rateMegabytesPerSecond = 0.0;  // 0 = unlimited
-  // Per historian, 0 = as fast as memory copies; unpaced, several of them
-  // would measure memory bandwidth instead of a realistic catch-up rate.
   double historianRateMegabytesPerSecond = 0.0;
   std::optional<std::uint64_t> largeEventBytes;
   // process-io|thread-io: which read_bytes attribution feeds the "official"
@@ -986,9 +922,6 @@ bool NextArg(int argc, char **argv, int &index, std::string_view flag,
   return true;
 }
 
-// checksumLength is always 0 in this bench: StorageEventSink never verifies
-// checksum bytes, and no metric this bench reports is affected by their
-// presence.
 bool ParseArgs(int argc, char **argv, BenchOptions &options,
                std::string &error) {
   bool sawLargeEvent = false, sawFsync = false, sawMixed = false;
@@ -1135,8 +1068,7 @@ bool ParseArgs(int argc, char **argv, BenchOptions &options,
         "--large-event, --fsync-every-group and --mixed are mutually exclusive";
     return false;
   }
-  if (options.mode == BenchOptions::Mode::LargeEvent)
-    return true;  // --groups not needed
+  if (options.mode == BenchOptions::Mode::LargeEvent) return true;
   if (!options.groups) {
     error = "--groups is required";
     return false;
@@ -1212,8 +1144,6 @@ void PrintIngestSummary(const std::string &label, std::uint64_t groups,
             << " p99_us=" << p.p99Us << " max_us=" << p.maxUs << "\n";
 }
 
-// Never fails: a run under 100,000 groups (e.g. the ctest smoke invocation)
-// is a deliberately smaller request, not a failure.
 void PrintGroupsWitness(std::uint64_t requested) {
   if (requested >= 100000)
     std::cout << "WITNESS groups>=100000: requested=" << requested
@@ -1229,10 +1159,6 @@ void PrintCacheSummary(std::chrono::seconds::rep windowSeconds,
             << " evicted_window=" << counters.evictedForWindow
             << " evicted_space=" << counters.evictedForSpace << "\n";
 }
-
-// ---------------------------------------------------------------------------
-// Modes
-// ---------------------------------------------------------------------------
 
 int RunIngestOrReaders(const BenchOptions &options) {
   const AutoCleanDataDir dataDirGuard(MakeDataDir(options.dataDir),
@@ -1266,9 +1192,6 @@ int RunIngestOrReaders(const BenchOptions &options) {
   TokenBucket *rateOrNull =
       options.rateMegabytesPerSecond > 0.0 ? &rate : nullptr;
 
-  // Readers, if any, start at the very beginning: this mode has no
-  // dataset-prep phase (unlike --mixed), so "the tail" and "the start"
-  // are the same point when readers spawn.
   std::string rotateError;
   if (!RotateIfNeeded(sink, state, nullptr, rotateError)) {
     std::cerr << "storage: " << rotateError << "\n";
@@ -1445,9 +1368,8 @@ int RunLargeEventMode(const BenchOptions &options) {
   return 0;
 }
 
-// Internal A/B: the same group count written twice - once at the sink's
-// default fsync cadence, once with an extra ::fsync() forced externally.
-// Comparing p99 between the two phases is a positive control.
+// Internal A/B: the same group count at the default fsync cadence and with
+// an extra forced ::fsync(); the p99 comparison is a positive control.
 int RunFsyncControl(const BenchOptions &options) {
   const AutoCleanDataDir dataDirGuard(MakeDataDir(options.dataDir),
                                       options.dataDir.empty());
@@ -1609,8 +1531,8 @@ int RunMixed(const BenchOptions &options) {
   const auto benchStart = Clock::now();
   std::atomic<std::uint64_t> historianAggregateBytes{0};
 
-  // Whole-process read_bytes around every reader thread's lifetime: the
-  // upper bound the per-thread counters of all readers must fit under.
+  // Whole-process read_bytes: the upper bound for every reader thread's
+  // counter.
   std::uint64_t processIoBeforeReaders = 0, processIoAfterReaders = 0;
   std::string processIoError;
   bool processIoWindowOk =
@@ -1681,9 +1603,6 @@ int RunMixed(const BenchOptions &options) {
   std::cout << "WRITER bytes=" << writer.BytesWritten()
             << " max_lag_ms=" << writer.MaxUnwrittenAgeMilliseconds() << "\n";
 
-  // Let historians circle until they collectively read at least the
-  // dataset size or a safety cap elapses; too small a run fails the
-  // WITNESS check below rather than hanging.
   const auto historianDeadline = Clock::now() + std::chrono::minutes(10);
   while (historianAggregateBytes.load(std::memory_order_relaxed) <
              datasetBytes &&
@@ -1722,8 +1641,6 @@ int RunMixed(const BenchOptions &options) {
   }
   PrintGroupsWitness(*options.groups);
 
-  // Computed before the near-sync block needs it: the CONTROL check adds
-  // this to the near-sync readers' thread-io and compares against process-io.
   std::uint64_t historianThreadIoSum = 0;
   bool anyHistorianIoAccountingBad = false;
   for (const auto &stats : historianStats) {
@@ -1783,9 +1700,6 @@ int RunMixed(const BenchOptions &options) {
             << nearSyncApplicationTotal
             << " pass=" << (nearSyncApplicationTotal > 0) << "\n";
   if (nearSyncApplicationTotal == 0) witnessesOk = false;
-  // A failed accounting call leaves its field at 0, indistinguishable from
-  // a legitimate "everything served from page cache" result - printed as
-  // unreliable rather than silently trusted.
   if (anyNearSyncIoAccountingBad) {
     std::cout << "NEAR_SYNC_DISK near-sync-disk-read-bytes: unreliable (I/O "
                  "accounting failed for at least one reader, see stderr)\n";
@@ -1867,9 +1781,6 @@ int RunMixed(const BenchOptions &options) {
   if (sampler) {
     const auto sample = sampler->Result();
     if (!sample.available) {
-      // Reaching this branch means a cgroup v2 hierarchy was found but
-      // memory.stat itself is unreadable - an instrument fault, gated
-      // the same way a missing key is.
       std::cerr << "MEMORY instrument error: memory.stat could not be read "
                    "after a cgroup v2 hierarchy was found\n";
       std::cout << "WITNESS memory-pressure: pass=0 (instrument unavailable, "
@@ -1901,9 +1812,6 @@ int RunMixed(const BenchOptions &options) {
     }
   } else {
 #if defined(__linux__)
-    // Linux, but no cgroup v2 hierarchy found (v1 host, or
-    // /proc/self/cgroup unreadable): absent is not "no pressure", it is nothing
-    // measured.
     std::cerr << "MEMORY instrument error: no cgroup v2 hierarchy found in "
                  "/proc/self/cgroup\n";
     std::cout << "WITNESS memory-pressure: pass=0 (instrument unavailable, see "

@@ -27,8 +27,6 @@
 
 namespace binlog_streamer {
 
-// Sub-packets larger than this (up to MAX_PAYLOAD_PER_PACKET) stream to
-// the sink directly instead of needing to fit here.
 inline constexpr std::size_t STREAM_READ_BUFFER_SIZE = 1024 * 1024;
 
 }  // namespace binlog_streamer

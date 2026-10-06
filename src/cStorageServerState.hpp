@@ -41,16 +41,12 @@ class StorageServerState : public ServerState {
                      std::filesystem::path dataDir)
       : m_catalog(catalog), m_dataDir(std::move(dataDir)) {}
 
-  // Previous_gtids of the first stored file: everything before it is
-  // history the relay never had or has already removed.
   std::string GtidPurged() const override;
-  // Previous_gtids of the last stored file plus the transactions that
-  // file holds on disk. The file is scanned only from where the previous
-  // call stopped, so asking often costs little.
+  // The file is scanned only from where the previous call stopped, so asking
+  // often costs little.
   std::string GtidExecuted() const override;
-  // The newest stored file's own header, not a running session's
-  // greeting: after a restart with the source down, the header is what
-  // is left to read it from.
+  // From the newest stored file's own header: after a restart with the source
+  // down, nothing else is left to read it from.
   std::string SourceVersion() const override;
   std::string BinlogChecksum() const override;
   std::optional<PreviousGtidsEvent> PreviousGtids(

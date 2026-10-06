@@ -34,8 +34,6 @@ struct StorageDiskLimits {
   std::uint64_t highWatermark = 0;
   std::uint64_t lowWatermark = 0;
   std::uint64_t minFreeSpace = 0;
-  // Writer thread, when a pass leaves the limits exceeded after the previous
-  // one met them, or the reverse.
   std::function<void(const PurgeResult &)> onSpaceShortChange;
 };
 }  // namespace binlog_streamer

@@ -29,8 +29,6 @@ namespace binlog_streamer {
 namespace {
 
 TEST(ErrPacketCodecTest, ParsesFixture) {
-  // header 0xFF, error_code=1236 (0x04D4 LE), '#', sqlstate "HY000", message
-  // "boom"
   std::vector<std::uint8_t> payload{0xFF, 0xD4, 0x04, '#', 'H',
                                     'Y',  '0',  '0',  '0'};
   const std::string message = "boom";
@@ -93,8 +91,6 @@ TEST(ErrPacketCodecTest, EncodeWritesGeneralStateForSqlStateOfWrongLength) {
   }
 }
 
-// A server refusing a connection before its greeting has no
-// CLIENT_PROTOCOL_41 to go by and sends the message right after the code.
 TEST(ErrPacketCodecTest, EncodeWritesNoSqlStateMarkerForEmptySqlState) {
   ErrPacket value;
   value.errorCode = 1130;

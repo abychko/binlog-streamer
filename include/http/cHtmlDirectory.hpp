@@ -30,18 +30,14 @@
 
 namespace binlog_streamer {
 
-// The files of the status page, served from one directory: "/" is its
-// index.html, "/name.ext" the file of that name. No subdirectories, no
-// dot files, nothing outside the directory; the file is read at every
-// request, since an edit is meant to show at the next reload.
+// No subdirectories, dot files or paths outside the directory; a file is
+// re-read on every request.
 class HtmlDirectory {
  public:
   explicit HtmlDirectory(std::filesystem::path directory);
 
-  // nullopt for a path this does not serve or a file that is not there.
   std::optional<HttpResponse> Serve(std::string_view path) const;
 
-  // By the extension; "application/octet-stream" for one not known.
   static std::string_view ContentType(std::string_view fileName);
 
  private:

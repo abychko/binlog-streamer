@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Usage: source_integration_test.sh <path-to-binary>
-# CTest driver for a real dump/event-stream run against a live source.
-# Skipped when BINLOG_STREAMER_TEST_SOURCE_YML is unset, or the binary is
-# not a developer-mode build.
+# Skipped when BINLOG_STREAMER_TEST_SOURCE_YML is unset, or the binary is not a
+# developer-mode build.
 set -u
 
 BINARY="${1:?usage: source_integration_test.sh <path-to-binary>}"
@@ -27,9 +26,8 @@ if [ ! -e "$SOURCE_YML" ]; then
     exit 1
 fi
 
-# storage.data_dir must be a real, writable, throwaway directory: an
-# existing file left there by an earlier run makes a fresh relay refuse to
-# start ("resuming an existing file is not supported yet").
+# storage.data_dir must be a real, writable, throwaway directory: a file left
+# there by an earlier run makes a fresh relay refuse to start.
 WORKDIR="$(mktemp -d)"
 chmod 700 "$WORKDIR"
 DATA_DIR="$WORKDIR/data"
@@ -38,8 +36,7 @@ mkdir -p "$DATA_DIR"
 cp "$SOURCE_YML" "$WORKDIR/source.yml"
 chmod 640 "$WORKDIR/source.yml"
 
-# server_id distinct from the other integration tests that can run against
-# the same source in the same ctest invocation.
+# server_id distinct from the other integration tests sharing the source.
 cat > "$WORKDIR/settings.yml" <<SETTINGS
 server:
   server_id: 999003
@@ -48,7 +45,6 @@ storage:
   retention:
     policy: age
     period: 30d
-  # Keep the test independent of the host file-system free space.
   disk:
     max_size: 2T
     purge_high_watermark: 1900G
@@ -75,8 +71,6 @@ trap cleanup EXIT
 "$BINARY" --config "$SETTINGS_YML" >/dev/null 2>"$STDERR_LOG" &
 RELAY_PID=$!
 
-# Poll for the dump to start (up to 30s) instead of a fixed sleep: a slow
-# source or probe round trip shouldn't make this flaky on a loaded machine.
 DUMP_STARTED=0
 for _ in $(seq 1 300); do
     if grep -q "dump requested" "$STDERR_LOG" 2>/dev/null; then
@@ -84,7 +78,7 @@ for _ in $(seq 1 300); do
         break
     fi
     if ! kill -0 "$RELAY_PID" 2>/dev/null; then
-        break # exited before reaching dump - report below, not here
+        break
     fi
     sleep 0.1
 done
@@ -97,7 +91,6 @@ fi
 
 kill -TERM "$RELAY_PID"
 
-# Wait for a clean exit (up to 10s) rather than assuming it is immediate.
 EXITED=0
 for _ in $(seq 1 100); do
     if ! kill -0 "$RELAY_PID" 2>/dev/null; then

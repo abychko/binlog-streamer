@@ -27,11 +27,9 @@
 
 namespace binlog_streamer {
 
-// A CA and a server certificate it signed, the way auto_generate_certs
-// gives a MySQL server a certificate to start with
-// (sql/auth/sql_authentication.cc): RSA 2048, SHA-256, valid ten years, the CA
-// self-signed. Self-signed means encryption only: a peer verifying the chain
-// against its own CA store, or the name, rejects it - as it rejects MySQL's.
+// RSA 2048, SHA-256, valid ten years, self-signed CA, as auto_generate_certs
+// does (sql/auth/sql_authentication.cc). Encryption only: a peer verifying the
+// chain or the name rejects it.
 struct GeneratedCertificates {
   std::string caCertPem;
   std::string caKeyPem;
@@ -41,8 +39,6 @@ struct GeneratedCertificates {
 
 class TlsCertificateGenerator {
  public:
-  // name goes into the subjects, e.g. "binlog-streamer" gives
-  // CN=binlog-streamer_Auto_Generated_CA_Certificate.
   static bool Generate(const std::string &name, GeneratedCertificates &out,
                        std::string &error);
 };

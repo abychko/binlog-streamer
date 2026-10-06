@@ -34,8 +34,8 @@
 namespace binlog_streamer {
 class StorageCatalog;
 
-// Writer thread only: that thread owns the index and disk. A reader
-// pin keeps that file and everything after it, as in MySQL.
+// Writer thread only. A reader pin keeps that file and everything after it, as
+// in MySQL.
 class StoragePurger {
  public:
   StoragePurger(std::filesystem::path dataDir, StorageCatalog &catalog,

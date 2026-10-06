@@ -34,8 +34,6 @@ namespace binlog_streamer {
 class ComBinlogDumpGtidCommand {
  public:
   static std::vector<std::uint8_t> Encode(const BinlogDumpGtidCommand &value);
-  // Includes the command byte. GTID set is returned undecoded; trailing
-  // bytes are ignored, matching the server's own leniency.
   static bool Parse(std::span<const std::uint8_t> payload,
                     BinlogDumpGtidCommand &value, std::string &error);
 };

@@ -27,7 +27,6 @@ namespace binlog_streamer {
 struct ReaderCounters {
   std::uint64_t readFromCache = 0;
   std::uint64_t readFromDisk = 0;
-  // Subset of readFromDisk below each file's catalog headerLength.
   std::uint64_t readFromDiskHeader = 0;
   std::uint64_t seamCrossings = 0;
 };

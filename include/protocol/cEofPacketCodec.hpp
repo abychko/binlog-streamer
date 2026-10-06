@@ -31,9 +31,8 @@
 
 namespace binlog_streamer {
 
-// Header byte 0xFE is ambiguous: a lenenc-integer prefix, or (under
-// CLIENT_DEPRECATE_EOF) an OK packet's header. Disambiguated by length -
-// a 0xFE lenenc integer needs at least 9 bytes, so a shorter packet is EOF.
+// 0xFE is ambiguous with an OK header under CLIENT_DEPRECATE_EOF; a 0xFE lenenc
+// integer needs 9+ bytes, so a shorter packet is EOF.
 class EofPacketCodec {
  public:
   static bool IsEofPacket(std::span<const std::uint8_t> payload);

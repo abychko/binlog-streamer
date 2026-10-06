@@ -50,7 +50,6 @@ TEST(CommandLineTest, ConfigWithEqualsValue) {
 }
 
 TEST(CommandLineTest, DefaultPathWithoutConfigOption) {
-  // Must not touch the filesystem: the default is a compile-time constant.
   const auto result = Parse({});
   ASSERT_TRUE(result.value) << ::testing::PrintToString(result.errors);
   EXPECT_EQ(result.value->settingsPath, DEFAULT_SETTINGS_PATH);
@@ -96,9 +95,8 @@ TEST(CommandLineTest, ConfigWithEmptyEqualsValueIsAnError) {
 }
 
 TEST(CommandLineTest, ConfigWithEmptySeparateValueIsAnError) {
-  // The empty string is consumed as "no value" (not as a literal path) and
-  // then re-parsed as its own (unexpected) argument, so this reports two
-  // errors, unlike the single-error cases above.
+  // The empty string is consumed as "no value" and re-parsed as its own
+  // unexpected argument: two errors.
   const auto result = Parse({"--config", ""});
   EXPECT_FALSE(result.value);
   const auto found = std::find_if(
@@ -109,8 +107,7 @@ TEST(CommandLineTest, ConfigWithEmptySeparateValueIsAnError) {
 }
 
 TEST(CommandLineTest, ConfigFollowedByAnotherOptionIsAnError) {
-  // The next argument looking like an option (starts with "--") is taken as
-  // evidence --config's value was omitted, rather than as a literal path.
+  // An option-like next argument ("--...") means --config's value was omitted.
   const auto result = Parse({"--config", "--validate-config"});
   EXPECT_FALSE(result.value);
   ASSERT_EQ(result.errors.size(), 1u);
@@ -127,8 +124,8 @@ TEST(CommandLineTest, BareArgumentIsAnError) {
 }
 
 TEST(CommandLineTest, RepeatedConfigOptionKeepsTheLastValue) {
-  // Matches mysqld, where a repeated option takes its last value (checked
-  // with Percona Server 8.4 and 8.0: --port=1111 --port=2222 gives 2222).
+  // Matches mysqld, where a repeated option takes its last value (checked with
+  // Percona Server 8.4 and 8.0: --port=1111 --port=2222 gives 2222).
   const auto result =
       Parse({"--config", "/tmp/first.yml", "--config", "/tmp/second.yml"});
   ASSERT_TRUE(result.value) << ::testing::PrintToString(result.errors);

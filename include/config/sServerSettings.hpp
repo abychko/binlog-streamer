@@ -32,11 +32,9 @@ namespace binlog_streamer {
 
 struct ServerSettings {
   std::uint32_t serverId = 0;
-  // How many replicas may be connected at once; the one past it is
-  // refused with ERR 1040, as a server refuses it.
   unsigned maxConnections = DEFAULT_MAX_CONNECTIONS;
-  // How long a dump that caught up holds what it queued for the events
-  // that follow, so they go in one write; zero sends at once.
+  // How long a caught-up dump holds queued events so they go out in one write;
+  // zero sends at once.
   std::chrono::microseconds sendLinger = DEFAULT_SEND_LINGER;
   bool operator==(const ServerSettings &) const = default;
 };

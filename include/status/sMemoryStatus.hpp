@@ -28,7 +28,6 @@
 
 namespace binlog_streamer {
 
-// The event cache: what the relay holds in RAM, against its reservation.
 struct MemoryStatus {
   std::uint64_t maxBytes = 0;
   std::uint64_t bytes = 0;

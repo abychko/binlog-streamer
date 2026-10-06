@@ -94,8 +94,8 @@ bool ColumnDefinition41Codec::Parse(std::span<const std::uint8_t> payload,
 }
 
 // Layout as the server writes it (sql/protocol_classic.cc,
-// Protocol_classic::send_field_metadata()): six strings, the 0x0C length of
-// the fixed block, the fixed fields and two zero filler bytes.
+// send_field_metadata()): six strings, the 0x0C length of the fixed block, the
+// fixed fields and two filler bytes.
 void ColumnDefinition41Codec::Encode(const ColumnDefinition41 &value,
                                      std::vector<std::uint8_t> &out) {
   LengthEncodedString::Encode(value.catalog, out);

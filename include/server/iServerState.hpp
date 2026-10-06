@@ -42,23 +42,13 @@ class ServerState {
  public:
   virtual ~ServerState() = default;
 
-  // Counterpart of a server's gtid_purged.
   virtual std::string GtidPurged() const = 0;
 
-  // Counterpart of a server's gtid_executed; may trail what was
-  // received in the last moments.
   virtual std::string GtidExecuted() const = 0;
 
-  // The server_version of the Format_description_event of the newest
-  // stored file: the source this relay serves the events of. Empty while
-  // nothing is stored - the relay then has no version to name and no
-  // events to hand out.
   virtual std::string SourceVersion() const = 0;
 
-  // "CRC32" or "NONE", counterpart of a server's binlog_checksum.
   virtual std::string BinlogChecksum() const = 0;
-  // nullopt for a file the relay does not hold. A relay whose source is
-  // this relay asks for it to learn where its start file begins.
   virtual std::optional<PreviousGtidsEvent> PreviousGtids(
       const std::string &fileName) const = 0;
 };

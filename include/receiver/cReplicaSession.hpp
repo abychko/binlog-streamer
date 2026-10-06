@@ -41,27 +41,21 @@
 
 namespace binlog_streamer {
 
-// Does not retry itself - StartupSequence owns the retry loop.
 class ReplicaSession {
  public:
-  // transport must already support being (re)connected. replicaUuid
-  // must be the same value across attempts (generated once via
-  // SessionUuid::Generate(), not here).
   ReplicaSession(Transport &transport, const SourceSettings &source,
                  const ServerSettings &server, std::string replicaUuid,
                  std::string relayName, std::string relayVersion,
                  ReplicaSessionOptions options = {});
 
-  // Does not itself start a dump; that's StartDump(). Stops one step
-  // earlier when options.registerAsReplica is false.
   SessionResult Run();
 
-  // Only valid after Run() returned Registered (or CheckGtidMode() for
-  // a probe) - calling it otherwise is undetected here.
+  // Valid only after Run() returned Registered (or CheckGtidMode() for a
+  // probe); not checked.
   std::optional<SessionResult> StartDump(const GtidSet &gtidSet);
 
-  // ok is false only for a transport failure or server-side ERR; a
-  // NULL/empty result leaves value at nullopt but ok true.
+  // ok is false only on a transport failure or server ERR; a NULL or empty
+  // result is ok with value nullopt.
   struct TextQueryResult {
     bool ok = false;
     std::optional<std::string> value;
@@ -69,8 +63,6 @@ class ReplicaSession {
   };
   TextQueryResult QueryText(std::string_view sql);
 
-  // Same ok/failure split as QueryText(); columns is empty when there's
-  // no matching row, not on failure.
   struct RowQueryResult {
     bool ok = false;
     std::vector<std::optional<std::string>> columns;
@@ -79,17 +71,13 @@ class ReplicaSession {
   RowQueryResult QueryRow(std::string_view sql, std::size_t columnCount);
 
   std::uint8_t NextSequenceId() const { return m_channel.NextSequenceId(); }
-  // The compressing decorator, not the socket: whoever reads the dump
-  // after this session must read it through the same layer, and through
-  // the same frame counter, the session left the connection on.
+  // The compressing decorator, not the socket: read the dump through it, with
+  // the same frame counter.
   Transport &transport() { return m_compressed; }
-  // False until the source accepted a compression request, so a caller
-  // reading the dump itself knows whether packet sequence ids inside
-  // the stream are still meaningful.
+  // False until the source accepted compression; sequence ids inside the dump
+  // stream are meaningful only then.
   bool compressed() const { return m_compressed.Enabled(); }
-  // True once the handshake switched the connection to TLS.
   bool encrypted() const { return m_tls.Enabled(); }
-  // Empty unless encrypted(): "TLSv1.3 TLS_AES_256_GCM_SHA384".
   std::string tlsDescription() const {
     return encrypted() ? m_tls.Version() + " " + m_tls.Cipher() : "";
   }
@@ -99,7 +87,6 @@ class ReplicaSession {
   std::optional<SessionResult> Handshake();
   std::optional<SessionResult> Authenticate();
   std::optional<SessionResult> CheckVersion();
-  // (only a transport failure stops the session here)
   std::optional<SessionResult> ReportClockSkew();
   std::optional<SessionResult> CheckServerId();
   std::optional<SessionResult> SetHeartbeatPeriod();
@@ -113,14 +100,9 @@ class ReplicaSession {
   SessionResult Transient(std::string message) const;
   SessionResult Permanent(std::string message) const;
 
-  // Under the compressing layer: TLS encrypts the compressed frames, as
-  // it does between a replica and its source. Both pass bytes through
-  // untouched until the handshake turns them on, and back on every
-  // reconnect.
   TlsTransport m_tls;
   CompressedTransport m_compressed;
-  TlsContext m_tlsContext;  // loaded on the first handshake that needs it
-  // Own the settings so their lifetime does not depend on the caller.
+  TlsContext m_tlsContext;
   const SourceSettings m_source;
   const ServerSettings m_server;
   std::string m_replicaUuid;

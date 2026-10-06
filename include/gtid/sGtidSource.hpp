@@ -29,9 +29,8 @@
 
 namespace binlog_streamer {
 
-// tag empty means untagged. Member order (uuid, then tag) is
-// load-bearing: the defaulted comparison sorts by UUID first, matching
-// GtidSet's ordering.
+// Member order (uuid, then tag) is load-bearing: the defaulted comparison sorts
+// by UUID first.
 struct GtidSource {
   Uuid uuid;
   std::string tag;

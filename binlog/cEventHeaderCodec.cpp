@@ -47,8 +47,7 @@ bool EventHeaderCodec::Parse(
                        (static_cast<std::uint32_t>(data[16]) << 24);
   value.flags = static_cast<std::uint16_t>(data[17]) |
                 static_cast<std::uint16_t>(data[18] << 8);
-  return true;  // a fixed-size span always carries the fields this layout needs
-                // - see the header comment
+  return true;
 }
 
 }  // namespace binlog_streamer

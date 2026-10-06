@@ -30,15 +30,11 @@
 
 namespace binlog_streamer {
 
-// 0xFB (251) means SQL NULL on the wire; this codec's Encode() never
-// produces that marker on its own.
+// 0xFB means SQL NULL on the wire; Encode() never produces it.
 class LengthEncodedInteger {
  public:
   static void Encode(std::uint64_t value, std::vector<std::uint8_t> &out);
 
-  // Returns 0 if data doesn't contain a complete integer yet. isNull
-  // true means the NULL marker (0xFB) was read; value is left untouched
-  // then.
   static std::size_t Decode(std::span<const std::uint8_t> data,
                             std::uint64_t &value, bool &isNull);
 };

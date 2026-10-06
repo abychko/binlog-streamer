@@ -92,8 +92,6 @@ TEST(CachingSha2FullAuthPasswordTest, CyclesTheNonceForPasswordsLongerThanIt) {
       << parseError;
   const auto nonce = MakeNonce();
 
-  // 25 bytes: longer than the 20-byte nonce, so recovering it correctly
-  // requires the XOR index to wrap back to 0 mid-password.
   const std::string password(25, 'a');
   std::vector<std::uint8_t> ciphertext;
   std::string error;
@@ -109,9 +107,6 @@ TEST(CachingSha2FullAuthPasswordTest, CyclesTheNonceForPasswordsLongerThanIt) {
 }
 
 TEST(CachingSha2FullAuthPasswordTest, RejectsPasswordTooLongForKeyCapacity) {
-  // 2048-bit key -> 256-byte cipher, so 214+ bytes of (password + NUL)
-  // exceed the OAEP/SHA-1 capacity (256 - 42) well before any RSA_size()
-  // truncation could hide the mismatch.
   const auto keyPair =
       CachingSha2FullAuthPasswordTestSupport::GenerateRsaKeyPair();
   RsaPublicKey publicKey;
@@ -128,14 +123,10 @@ TEST(CachingSha2FullAuthPasswordTest, RejectsPasswordTooLongForKeyCapacity) {
   EXPECT_FALSE(error.empty());
 }
 
-// A password this far past the limit is rejected by OpenSSL's own RSA-OAEP
-// even without our capacity check, so the test above alone can't prove our
-// check ran. These two pin the exact boundary, one byte on each side.
 TEST(CachingSha2FullAuthPasswordTest,
      AcceptsPasswordAtTheOaepCapacityBoundary) {
-  // 2048-bit key -> 256-byte cipher, OAEP/SHA-1 capacity 214 bytes of
-  // (password+NUL); 213 chars + NUL = 214, the largest size the
-  // reference client itself would still encrypt.
+  // 2048-bit key: OAEP/SHA-1 capacity is 214 bytes of password+NUL; 213 chars +
+  // NUL is the largest size that fits.
   const auto keyPair =
       CachingSha2FullAuthPasswordTestSupport::GenerateRsaKeyPair();
   RsaPublicKey publicKey;
@@ -167,9 +158,6 @@ TEST(CachingSha2FullAuthPasswordTest,
   std::string error;
   EXPECT_FALSE(CachingSha2FullAuthPassword::Encrypt(password, nonce, publicKey,
                                                     ciphertext, error));
-  // Pins the source of the rejection to our own capacity check, not to
-  // OpenSSL's own OAEP length enforcement inside EVP_PKEY_encrypt (which
-  // would instead report "RSA-OAEP encryption failed").
   EXPECT_EQ(
       error,
       "password is too long to be encrypted with the source's RSA public key");

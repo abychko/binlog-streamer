@@ -69,8 +69,8 @@ bool WriteFile(const std::filesystem::path &path, const std::string &content,
     }
     offset += static_cast<std::size_t>(count);
   }
-  // Written under a fresh mode too: O_CREAT's mode does not apply to a
-  // file that already existed.
+  // Written under a fresh mode too: O_CREAT's mode does not apply to a file
+  // that already existed.
   if (fchmod(fd, mode) != 0 || close(fd) != 0) {
     error = "cannot write " + path.string() + ": " + std::strerror(errno);
     return false;

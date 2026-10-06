@@ -27,9 +27,8 @@
 
 namespace binlog_streamer {
 
-// Self-pipe trick: a byte on the write end makes poll() on the read end
-// return immediately. Wake() is safe from a signal handler; every other
-// method must run on the normal thread.
+// Self-pipe: Wake() is async-signal-safe; every other method must run on the
+// normal thread.
 class WakeupPipe {
  public:
   WakeupPipe() = default;
@@ -37,17 +36,12 @@ class WakeupPipe {
   WakeupPipe(const WakeupPipe &) = delete;
   WakeupPipe &operator=(const WakeupPipe &) = delete;
 
-  // Both ends are non-blocking (Wake() must never block, even from a
-  // signal handler) and close-on-exec.
   bool Open(std::string &error);
 
-  // Async-signal-safe: only write() on an fd already open and
-  // non-blocking. Return value not surfaced - EAGAIN (pipe full) just
-  // means a wakeup is already pending.
+  // Async-signal-safe: a write() on a non-blocking fd. EAGAIN means a wakeup is
+  // already pending.
   void Wake() const;
 
-  // Reads and discards every queued byte so an already-handled wakeup
-  // doesn't make a later poll() return on stale data.
   void Drain() const;
 
   int ReadFd() const { return m_readFd; }

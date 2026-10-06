@@ -36,34 +36,29 @@ inline constexpr std::uint32_t SERVER_CAPABILITIES =
     CLIENT_PLUGIN_AUTH | CLIENT_CONNECT_ATTRS |
     CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_DEPRECATE_EOF;
 
-// Only auth plugin this relay's login accepts; the account's password is
-// known to this relay in cleartext already, so RSA/full authentication is
-// unneeded.
+// The only auth plugin the login accepts; the account's password is known here
+// in cleartext, so full authentication is unneeded.
 inline constexpr char CACHING_SHA2_PASSWORD_PLUGIN_NAME[] =
     "caching_sha2_password";
 
-// connect_timeout's default (sql/sys_vars.cc, Sys_connect_timeout); applied
-// as the read/write timeout on each login-phase operation, not as one shared
-// deadline across the whole exchange.
+// connect_timeout's default (sql/sys_vars.cc); applied to each login-phase
+// operation, not as one deadline for the whole exchange.
 inline constexpr std::chrono::milliseconds LOGIN_TIMEOUT{10'000};
 
-// wait_timeout's default (include/mysql_com.h, NET_WAIT_TIMEOUT); passed as
-// PacketChannel::ReadPacket()'s idleTimeout, so it bounds only waiting for a
-// *new* command - COMMAND_READ_TIMEOUT bounds finishing one already arriving.
+// wait_timeout's default (NET_WAIT_TIMEOUT in include/mysql_com.h); bounds only
+// waiting for a new command, COMMAND_READ_TIMEOUT bounds finishing one already
+// arriving.
 inline constexpr std::chrono::milliseconds COMMAND_WAIT_TIMEOUT{8 * 60 * 60 *
                                                                 1000};
 
-// net_read_timeout's default (include/mysql_com.h, NET_READ_TIMEOUT).
+// net_read_timeout's default (NET_READ_TIMEOUT in include/mysql_com.h).
 inline constexpr std::chrono::milliseconds COMMAND_READ_TIMEOUT{30'000};
 
-// net_write_timeout's default (include/mysql_com.h, NET_WRITE_TIMEOUT).
+// net_write_timeout's default (NET_WRITE_TIMEOUT in include/mysql_com.h).
 inline constexpr std::chrono::milliseconds COMMAND_WRITE_TIMEOUT{60'000};
 
-// One cap for both the login exchange and every post-login command.
 inline constexpr std::size_t INCOMING_PACKET_LIMIT = 16UL * 1024UL * 1024UL;
 
-// OK_Packet::statusFlags for a freshly authenticated session
-// (include/mysql_com.h, SERVER_STATUS_AUTOCOMMIT).
 inline constexpr std::uint16_t SERVER_STATUS_AUTOCOMMIT = 2;
 
 }  // namespace binlog_streamer

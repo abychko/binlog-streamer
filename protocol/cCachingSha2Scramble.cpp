@@ -32,9 +32,8 @@ std::array<std::uint8_t, CachingSha2Scramble::LENGTH> Sha256(
     std::span<const std::uint8_t> parts0,
     std::span<const std::uint8_t> parts1 = {}) {
   std::array<std::uint8_t, CachingSha2Scramble::LENGTH> digest{};
-  // EVP_Digest (rather than the deprecated one-shot SHA256()) so the
-  // build stays clean under OpenSSL 3's -Wdeprecated-declarations with
-  // -Werror (bs-warnings).
+  // EVP_Digest, not the deprecated one-shot SHA256(), to build cleanly under
+  // OpenSSL 3 with -Werror.
   EVP_MD_CTX *ctx = EVP_MD_CTX_new();
   EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr);
   if (!parts0.empty()) EVP_DigestUpdate(ctx, parts0.data(), parts0.size());
@@ -53,10 +52,9 @@ CachingSha2Scramble::Compute(
     std::span<const std::uint8_t, SCRAMBLE_LENGTH> nonce) {
   const std::span<const std::uint8_t> passwordBytes(
       reinterpret_cast<const std::uint8_t *>(password.data()), password.size());
-  const auto digestStage1 = Sha256(passwordBytes);  // SHA2(password)
-  const auto digestStage2 = Sha256(digestStage1);   // SHA2(digestStage1)
-  const auto scrambleStage1 =
-      Sha256(digestStage2, nonce);  // SHA2(digestStage2 || nonce)
+  const auto digestStage1 = Sha256(passwordBytes);
+  const auto digestStage2 = Sha256(digestStage1);
+  const auto scrambleStage1 = Sha256(digestStage2, nonce);
 
   std::array<std::uint8_t, LENGTH> scramble{};
   for (std::size_t i = 0; i < LENGTH; ++i)

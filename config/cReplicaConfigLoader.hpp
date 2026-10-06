@@ -33,8 +33,6 @@ namespace binlog_streamer {
 
 class ReplicaConfigLoader {
  public:
-  // expectedOwner: the account replica.yml must be owned by, and with it
-  // the files ssl_ca/ssl_cert/ssl_key name.
   ReplicaConfigLoader(ProtectedFileReader &reader, std::string expectedOwner)
       : reader_(reader), expectedOwner_(std::move(expectedOwner)) {}
   LoadResult<ReplicaSettings> Load(const std::string &path);

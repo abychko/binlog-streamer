@@ -37,23 +37,11 @@ struct ReplicaSettings {
   IpAddress listenAddress{};
   std::uint16_t listenPort = DEFAULT_LISTEN_PORT;
   std::vector<ReplicaClient> clients;
-  // What the relay offers a replica; the replica picks the zstd level.
-  // Set to None to keep every replica uncompressed, whatever it asks for.
-  // Offered by default, as a server's own protocol_compression_algorithms
-  // is (include/compression.h): offering costs nothing until a replica
-  // takes it up.
   CompressionAlgorithm compression = CompressionAlgorithm::Zstd;
-  // The relay's certificate, as a server's ssl_cert/ssl_key; left empty,
-  // the relay generates its own next to auto.cnf on the first start, as
-  // auto_generate_certs does. sslCa names the CA a replica's own
-  // certificate is checked against when it presents one.
   std::string sslCa;
   std::string sslCert;
   std::string sslKey;
-  // TLS is offered to every replica; this refuses the ones that decline
-  // it, as require_secure_transport does (ERR 3159).
   bool requireSecureTransport = false;
-  // The files' contents, read while the configuration is loaded.
   TlsMaterial tls;
 };
 

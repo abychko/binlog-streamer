@@ -40,8 +40,6 @@ PublicKeyFileReader MakeReader() {
 
 TEST(PublicKeyFileReaderTest, ReadsWholeFileAcrossMultipleReadCalls) {
   ProtectedFileFixture fixture;
-  // Larger than the reader's internal 8192-byte read buffer, so the read loop
-  // must iterate more than once.
   const std::string content(20000, 'x');
   const auto path = fixture.WriteFile("key.pem", content, 0644);
   auto reader = MakeReader();
@@ -97,9 +95,8 @@ TEST(PublicKeyFileReaderTest, DirectoryInsteadOfFileFails) {
   std::string error;
   EXPECT_EQ(reader.Read(subdirectory.string(), content, error),
             ProtectedFileStatus::Failed);
-  // Text checked, not just non-emptiness: without the S_ISREG check,
-  // read() on a directory fails with EISDIR and this test would still
-  // pass for the wrong reason.
+  // Text checked: without the S_ISREG check, read() on a directory fails with
+  // EISDIR and the test would still pass.
   EXPECT_NE(error.find("not a regular file"), std::string::npos);
 }
 

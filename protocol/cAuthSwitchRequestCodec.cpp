@@ -27,9 +27,8 @@ namespace binlog_streamer {
 
 bool AuthSwitchRequestCodec::IsAuthSwitchRequest(
     std::span<const std::uint8_t> payload) {
-  // 0xFE means AuthSwitchRequest only during authentication negotiation:
-  // the same byte means EOF (or OK, with CLIENT_DEPRECATE_EOF) in a result
-  // set. Callers only use this codec while negotiating auth, so that's moot.
+  // 0xFE is AuthSwitchRequest only during auth negotiation; in a result set it
+  // means EOF (or OK with CLIENT_DEPRECATE_EOF).
   return !payload.empty() && payload[0] == 0xFE;
 }
 

@@ -35,12 +35,9 @@ class AuthMoreDataCodec {
  public:
   static bool IsAuthMoreData(std::span<const std::uint8_t> payload);
 
-  // data is empty for the two single-byte signals, and non-empty (e.g.
-  // the RSA public key) when signal is Other.
   static bool Parse(std::span<const std::uint8_t> payload,
                     AuthMoreDataSignal &signal,
                     std::span<const std::uint8_t> &data, std::string &error);
-  // False for AuthMoreDataSignal::Other, which names no single byte.
   static bool EncodeSignal(AuthMoreDataSignal signal,
                            std::vector<std::uint8_t> &out);
 };

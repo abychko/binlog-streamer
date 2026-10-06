@@ -45,7 +45,7 @@ void EncodeFixedHeader(const HandshakeResponse41 &value,
   out.push_back(static_cast<std::uint8_t>(value.maxPacketSize >> 16));
   out.push_back(static_cast<std::uint8_t>(value.maxPacketSize >> 24));
   out.push_back(value.characterSet);
-  out.insert(out.end(), 23, std::uint8_t{0});  // reserved, must be zero
+  out.insert(out.end(), 23, std::uint8_t{0});
 }
 
 }  // namespace
@@ -57,15 +57,14 @@ void HandshakeResponse41Codec::EncodeSslRequest(
 
 bool HandshakeResponse41Codec::IsSslRequest(
     std::span<const std::uint8_t> payload) {
-  // The server reads the bit before anything else, whatever follows
+  // The server reads this bit before anything else
   // (sql/auth/sql_authentication.cc, parse_client_handshake_packet).
   return payload.size() >= FIXED_HEADER_SIZE &&
          (static_cast<std::uint32_t>(payload[1]) & (CLIENT_SSL >> 8)) != 0;
 }
 
-// Field layout mirrors the reference client (sql-common/client.cc).
-// auth response is always LengthEncodedString - for scrambles this relay
-// sends (<= 32 bytes), byte-identical to lenenc and legacy forms.
+// The auth response is always a LengthEncodedString; for scrambles of up to 32
+// bytes it is byte-identical to the other forms.
 void HandshakeResponse41Codec::Encode(const HandshakeResponse41 &value,
                                       std::vector<std::uint8_t> &out) {
   EncodeFixedHeader(value, out);
@@ -92,8 +91,8 @@ void HandshakeResponse41Codec::Encode(const HandshakeResponse41 &value,
     out.insert(out.end(), attrs.begin(), attrs.end());
   }
 
-  // Last byte of the packet, after the attributes; a peer reads it only
-  // when it advertised the bit itself (sql-common/client.cc).
+  // Last byte of the packet; a peer reads it only when it advertised the bit
+  // itself (sql-common/client.cc).
   if ((value.capabilities & CLIENT_ZSTD_COMPRESSION_ALGORITHM) != 0)
     out.push_back(value.zstdCompressionLevel);
 }
@@ -112,10 +111,9 @@ bool ReadNulTerminated(std::span<const std::uint8_t> payload, std::size_t &pos,
 
 }  // namespace
 
-// Field order and the two auth-response length forms mirror the server
-// parser (sql/auth/sql_authentication.cc): without
-// CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA it's one raw byte, otherwise a
-// LengthEncodedInteger prefix; unread trailing bytes match the server too.
+// Without CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA the auth response length is one
+// raw byte, otherwise a LengthEncodedInteger prefix; unread trailing bytes are
+// ignored, as in the server.
 bool HandshakeResponse41Codec::Parse(std::span<const std::uint8_t> payload,
                                      HandshakeResponse41 &value,
                                      std::string &error) {
@@ -223,9 +221,8 @@ bool HandshakeResponse41Codec::Parse(std::span<const std::uint8_t> payload,
     pos += static_cast<std::size_t>(attrsLength);
   }
 
-  // Left at 0 when the client asked for zstd but sent no level: the
-  // caller rejects the connection, as a server does for any level
-  // outside 1...22 (sql/auth/sql_authentication.cc).
+  // Left 0 when the client asked for zstd but sent no level; the caller rejects
+  // it, as a server does for a level outside 1..22.
   if ((parsed.capabilities & CLIENT_ZSTD_COMPRESSION_ALGORITHM) != 0 &&
       pos < payload.size())
     parsed.zstdCompressionLevel = payload[pos];

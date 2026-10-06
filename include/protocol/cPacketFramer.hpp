@@ -34,30 +34,22 @@ namespace binlog_streamer {
 // Not thread-safe: sequenceId is caller-owned.
 class PacketFramer {
  public:
-  // An exact MAX_PAYLOAD_PER_PACKET chunk is always followed by another
-  // (zero-length if nothing remains) - this is Decode()'s only
-  // end-of-packet signal.
+  // An exact MAX_PAYLOAD_PER_PACKET chunk is followed by another, possibly
+  // empty one: Decode()'s only end-of-packet signal.
   static void Encode(std::span<const std::uint8_t> payload,
                      std::uint8_t &sequenceId, std::vector<std::uint8_t> &out);
-  // One packet whose payload is head followed by body, without joining
-  // them first.
   static void Encode(std::span<const std::uint8_t> head,
                      std::span<const std::uint8_t> body,
                      std::uint8_t &sequenceId, std::vector<std::uint8_t> &out);
 
-  // NeedMoreBytes: bytesNeeded is a lower bound. SequenceMismatch:
-  // sequenceId is left unchanged. verifySequence false is for a stream
-  // under protocol compression, where the ids of these sub-packets are
-  // neither checked nor monotonic (sql-common/net_serv.cc) - the frame
-  // counter is checked instead, by CompressedTransport.
+  // NeedMoreBytes: bytesNeeded is a lower bound. verifySequence false is for
+  // streams under protocol compression, where inner sequence ids are not
+  // checked (sql-common/net_serv.cc).
   static PacketDecodeResult Decode(std::span<const std::uint8_t> data,
                                    std::uint8_t &sequenceId,
                                    std::vector<std::uint8_t> &payload,
                                    bool verifySequence = true);
 
-  // Same framing as Decode() but without copying payload or mutating
-  // sequenceId - lets PacketChannel check for a complete packet on every
-  // buffer growth without paying for the copy until it has one.
   static PacketDecodeResult Measure(std::span<const std::uint8_t> data,
                                     std::uint8_t sequenceId,
                                     bool verifySequence = true);

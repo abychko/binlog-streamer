@@ -57,7 +57,6 @@ class StorageReader : public BinlogStorageReader {
   ReaderCounters Counters() const;
 
  private:
-  // Published file: committed position. Other files: size in the catalog.
   bool Boundary(const FileCursor &cursor, std::uint64_t &boundary,
                 std::string &error) const;
 

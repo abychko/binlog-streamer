@@ -32,7 +32,6 @@ struct WriterTask {
   std::string name;
   std::vector<std::uint8_t> fde;
   std::vector<std::uint8_t> pge;
-  // Events completed before this file operation was posted.
   std::uint64_t completedEvents = 0;
 };
 }  // namespace binlog_streamer

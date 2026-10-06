@@ -70,8 +70,7 @@ TEST(BinlogIndexFileTest, LoadOnMissingIndexReturnsAnEmptyIndexNotAnError) {
   TempDirectoryFixture fixture;
   const std::string path = fixture.Path(std::string(INDEX_FILE_NAME)).string();
 
-  std::vector<std::string> names = {
-      "leftover"};  // Load() must clear this, not merely leave it alone
+  std::vector<std::string> names = {"leftover"};
   std::string error;
   ASSERT_TRUE(BinlogIndexFile::Load(path, names, error)) << error;
   EXPECT_TRUE(names.empty());
@@ -88,8 +87,6 @@ TEST(BinlogIndexFileTest, LoadWithLeftoverTmpReadsTheOldIndexUnaffected) {
       BinlogIndexFile::Replace(path, {"binlog.000001", "binlog.000002"}, error))
       << error;
 
-  // Simulates a Replace() that wrote+fsynced its ".tmp" but never reached
-  // rename(2); the leftover names a file the "real" index does not hold.
   {
     std::ofstream tmp(tmpPath, std::ios::binary);
     tmp << "binlog.999999\n";
@@ -99,8 +96,6 @@ TEST(BinlogIndexFileTest, LoadWithLeftoverTmpReadsTheOldIndexUnaffected) {
   ASSERT_TRUE(BinlogIndexFile::Load(path, loaded, error)) << error;
   EXPECT_EQ(loaded,
             (std::vector<std::string>{"binlog.000001", "binlog.000002"}));
-  // The leftover itself is untouched - the startup directory scan is
-  // what removes it, not Load() (see header comment).
   EXPECT_TRUE(std::filesystem::exists(tmpPath));
 }
 
@@ -153,7 +148,6 @@ TEST(BinlogIndexFileTest, LoadRejectsACarriageReturnLeftInTheName) {
   TempDirectoryFixture fixture;
   const auto path = fixture.Path(std::string(INDEX_FILE_NAME));
   {
-    // Load() only splits on '\n' and does not trim a trailing '\r'.
     std::ofstream file(path, std::ios::binary);
     file << "binlog.000001\r\n";
   }
@@ -187,8 +181,7 @@ TEST(BinlogIndexFileTest, ReplaceRejectsAnEmptyName) {
   std::string error;
   EXPECT_FALSE(BinlogIndexFile::Replace(path, {""}, error));
   EXPECT_FALSE(error.empty());
-  EXPECT_FALSE(
-      std::filesystem::exists(path));  // rejected before any file was touched
+  EXPECT_FALSE(std::filesystem::exists(path));
 }
 
 TEST(BinlogIndexFileTest, ReplaceRejectsANameContainingAPathSeparator) {
@@ -204,8 +197,6 @@ TEST(BinlogIndexFileTest, ReplaceRejectsANameContainingAnEmbeddedNewline) {
   TempDirectoryFixture fixture;
   const std::string path = fixture.Path(std::string(INDEX_FILE_NAME)).string();
 
-  // Without this check, this name would silently become two lines
-  // ("bin" and "log.000001") the next time Load() reads it back.
   std::string error;
   EXPECT_FALSE(BinlogIndexFile::Replace(path, {"bin\nlog.000001"}, error));
   EXPECT_FALSE(error.empty());
@@ -237,9 +228,6 @@ TEST(BinlogIndexFileTest, AppendGrowsAFreshIndexOneNameAtATime) {
             (std::vector<std::string>{"binlog.000001", "binlog.000002"}));
 }
 
-// A concurrent reader must never see a torn or missing index - only the old
-// content or the new one, in full. fsync(2) here is real, not stubbed: this
-// checks syscall ordering, not timing.
 TEST(BinlogIndexFileTest, IndexIsNeverPartiallyOrMissingWhileReplaced) {
   TempDirectoryFixture fixture;
   const std::string path = fixture.Path(std::string(INDEX_FILE_NAME)).string();
@@ -262,8 +250,6 @@ TEST(BinlogIndexFileTest, IndexIsNeverPartiallyOrMissingWhileReplaced) {
     }
   });
 
-  // The second name always differs from the fixed first one so Replace()'s
-  // duplicate check never rejects an iteration.
   constexpr int iterations = 500;
   for (int i = 0;
        i < iterations && !sawBadIndex.load(std::memory_order_relaxed); ++i) {

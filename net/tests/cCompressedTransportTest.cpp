@@ -44,8 +44,6 @@ constexpr std::size_t TEST_MAX_PACKET_SIZE = 16UL * 1024UL * 1024UL;
 constexpr PacketChannelOptions TEST_OPTIONS{TEST_TIMEOUT, TEST_TIMEOUT,
                                             TEST_MAX_PACKET_SIZE, "peer"};
 
-// Bytes that zstd cannot shrink, to reach the "compressed is not smaller"
-// branch without depending on how well a given level does on a given input.
 std::vector<std::uint8_t> Incompressible(std::size_t size) {
   std::vector<std::uint8_t> data(size);
   std::uint32_t state = 0x12345678;
@@ -64,8 +62,6 @@ std::vector<std::uint8_t> Compressible(std::size_t size) {
   return data;
 }
 
-// Wraps an already-encoded body in the 7-byte header, so the tests below
-// can build a frame carrying anything, valid or not.
 void AppendBody(std::vector<std::uint8_t> &out,
                 std::span<const std::uint8_t> body, std::uint8_t sequenceId,
                 std::size_t plainLength) {
@@ -79,8 +75,6 @@ void AppendBody(std::vector<std::uint8_t> &out,
   out.insert(out.end(), body.begin(), body.end());
 }
 
-// Builds a frame the way a peer would, through the reference libraries
-// directly rather than through the code under test.
 void AppendFrame(std::vector<std::uint8_t> &out,
                  std::span<const std::uint8_t> payload, std::uint8_t sequenceId,
                  bool compress) {
@@ -96,8 +90,6 @@ void AppendFrame(std::vector<std::uint8_t> &out,
   AppendBody(out, body, sequenceId, payload.size());
 }
 
-// The same through zlib's own compress2(), the call MySQL makes
-// (mysys/my_compress.cc, zlib_compress_alloc).
 void AppendZlibFrame(std::vector<std::uint8_t> &out,
                      std::span<const std::uint8_t> payload,
                      std::uint8_t sequenceId) {
@@ -117,8 +109,6 @@ std::size_t Load3(const std::uint8_t *bytes) {
          (static_cast<std::size_t>(bytes[2]) << 16);
 }
 
-// Reads everything the transport will deliver, in small pieces, so the
-// test also exercises serving one frame across several Read() calls.
 std::vector<std::uint8_t> ReadAll(CompressedTransport &transport,
                                   std::size_t expected, std::string &error) {
   std::vector<std::uint8_t> received;
@@ -151,7 +141,7 @@ TEST(CompressedTransportTest, PassesBytesThroughUntilEnabled) {
   const std::vector<std::uint8_t> payload{9, 8, 7};
   ASSERT_TRUE(transport.Write(payload, TEST_TIMEOUT, error)) << error;
   ASSERT_EQ(inner.writes.size(), 1u);
-  EXPECT_EQ(inner.writes[0], payload);  // no frame header added
+  EXPECT_EQ(inner.writes[0], payload);
 }
 
 TEST(CompressedTransportTest, PayloadBelowTheCompressionThresholdGoesAsIs) {
@@ -169,7 +159,7 @@ TEST(CompressedTransportTest, PayloadBelowTheCompressionThresholdGoesAsIs) {
   ASSERT_EQ(frame.size(), COMPRESSED_HEADER_SIZE + payload.size());
   EXPECT_EQ(Load3(frame.data()), payload.size());
   EXPECT_EQ(frame[3], 0u);
-  EXPECT_EQ(Load3(frame.data() + 4), 0u)  // 0: not compressed
+  EXPECT_EQ(Load3(frame.data() + 4), 0u)
       << "a payload shorter than MIN_COMPRESS_LENGTH must not be compressed";
   EXPECT_TRUE(std::equal(payload.begin(), payload.end(),
                          frame.begin() + COMPRESSED_HEADER_SIZE));
@@ -219,7 +209,7 @@ TEST(CompressedTransportTest, PayloadLongerThanOneFrameIsSplit) {
   EXPECT_EQ(Load3(inner.writes[0].data() + 4), MAX_COMPRESSED_FRAME_PAYLOAD);
   EXPECT_EQ(inner.writes[0][3], 0u);
   EXPECT_EQ(inner.writes[1][3], 1u);
-  EXPECT_EQ(Load3(inner.writes[1].data()), 1u);  // one byte, stored as is
+  EXPECT_EQ(Load3(inner.writes[1].data()), 1u);
 }
 
 TEST(CompressedTransportTest, ReadsBackWhatAnotherInstanceWrote) {
@@ -250,8 +240,6 @@ TEST(CompressedTransportTest, ReassemblesAFrameDeliveredOneByteAtATime) {
   std::string error;
   EXPECT_EQ(ReadAll(transport, payload.size(), error), payload) << error;
 
-  // The read that starts a frame waits on the caller's timeout; every
-  // read continuing it waits on the continuation timeout.
   ASSERT_FALSE(inner.readTimeouts.empty());
   EXPECT_EQ(inner.readTimeouts.front(), TEST_TIMEOUT);
   for (std::size_t i = 1; i < inner.readTimeouts.size(); ++i)
@@ -289,7 +277,6 @@ TEST(CompressedTransportTest, ResetSequenceStartsTheCounterOver) {
 
 TEST(CompressedTransportTest, RejectsAFrameWhoseBodyIsNotZstd) {
   test::FakeTransport inner;
-  // Declares 100 bytes before compression, carries bytes zstd cannot read.
   inner.incoming = {4, 0, 0, 0, 100, 0, 0, 'j', 'u', 'n', 'k'};
 
   CompressedTransport transport(inner, TEST_CONTINUATION_TIMEOUT);
@@ -307,7 +294,7 @@ TEST(CompressedTransportTest, RejectsAFrameWhoseDeclaredLengthIsWrong) {
   const std::vector<std::uint8_t> payload = Compressible(100);
   test::FakeTransport inner;
   AppendFrame(inner.incoming, payload, 0, true);
-  inner.incoming[4] = 99;  // one byte short of what the frame decompresses to
+  inner.incoming[4] = 99;
 
   CompressedTransport transport(inner, TEST_CONTINUATION_TIMEOUT);
   transport.Enable(CompressionAlgorithm::Zstd, DEFAULT_ZSTD_COMPRESSION_LEVEL);
@@ -324,7 +311,7 @@ TEST(CompressedTransportTest, RejectsAFrameThatDecompressesToLessThanDeclared) {
   const std::vector<std::uint8_t> payload = Compressible(100);
   test::FakeTransport inner;
   AppendFrame(inner.incoming, payload, 0, true);
-  // One byte more than the frame decompresses to: zstd fits in the buffer
+  // One byte more than the frame decompresses to: zstd fits it in the buffer
   // and reports no error, so only the length check catches this.
   inner.incoming[4] = 101;
 
@@ -364,7 +351,6 @@ TEST(CompressedTransportTest, ResumesAFrameInterruptedPartWayThrough) {
   test::FakeTransport inner;
   AppendFrame(inner.incoming, payload, 0, true);
   inner.maxBytesPerRead = 4;
-  // Interrupted after the first four bytes of the frame have arrived.
   inner.scriptedOutcomes = {ReadOutcome::Data, ReadOutcome::Interrupted};
 
   CompressedTransport transport(inner, TEST_CONTINUATION_TIMEOUT);
@@ -377,14 +363,11 @@ TEST(CompressedTransportTest, ResumesAFrameInterruptedPartWayThrough) {
   EXPECT_EQ(ReadAll(transport, payload.size(), error), payload) << error;
 }
 
-// The whole point of the decorator: a channel above it reads ordinary
-// packets, whatever the frames below carry.
-
 TEST(CompressedTransportTest, ChannelReadsSeveralPacketsFromOneFrame) {
   std::vector<std::uint8_t> packets;
-  std::uint8_t sequenceId = 7;  // the ids inside a frame are not checked
+  std::uint8_t sequenceId = 7;
   PacketFramer::Encode(std::vector<std::uint8_t>{1, 2, 3}, sequenceId, packets);
-  sequenceId = 0;  // and need not even be monotonic
+  sequenceId = 0;
   PacketFramer::Encode(std::vector<std::uint8_t>{4, 5}, sequenceId, packets);
   sequenceId = 200;
   PacketFramer::Encode(std::vector<std::uint8_t>{6}, sequenceId, packets);
@@ -427,7 +410,7 @@ TEST(CompressedTransportTest, ChannelReadsAPacketSplitAcrossFrames) {
 }
 
 TEST(CompressedTransportTest, ChannelStillChecksPacketIdsWithoutCompression) {
-  std::uint8_t sequenceId = 3;  // a channel starts at 0, so this mismatches
+  std::uint8_t sequenceId = 3;
   test::FakeTransport inner;
   PacketFramer::Encode(std::vector<std::uint8_t>{1, 2, 3}, sequenceId,
                        inner.incoming);
@@ -460,13 +443,10 @@ TEST(CompressedTransportTest, ChannelResetSequenceAlsoResetsTheFrameCounter) {
 }
 
 TEST(CompressedTransportTest, ChannelKeepsItsLimitOnTheDecompressedStream) {
-  // One frame carrying a packet header that declares more than the
-  // channel's limit: the limit applies above the decorator, to the
-  // decompressed stream, as it does in mysqld.
   constexpr std::size_t SMALL_LIMIT = 1024;
   const PacketChannelOptions options{TEST_TIMEOUT, TEST_TIMEOUT, SMALL_LIMIT,
                                      "peer"};
-  const std::vector<std::uint8_t> header{0x00, 0x10, 0x00, 0x00};  // 4096 bytes
+  const std::vector<std::uint8_t> header{0x00, 0x10, 0x00, 0x00};
   test::FakeTransport inner;
   AppendFrame(inner.incoming, header, 0, false);
 
@@ -479,10 +459,6 @@ TEST(CompressedTransportTest, ChannelKeepsItsLimitOnTheDecompressedStream) {
   EXPECT_FALSE(channel.ReadPacket(payload, error));
   EXPECT_EQ(error, "packet from peer larger than the 1024-byte limit");
 }
-
-// zlib, the algorithm CLIENT_COMPRESS names. Only what differs from zstd
-// is repeated here: the framing, the sequence ids, the reassembly and the
-// channel above them are one code path, exercised by the tests above.
 
 TEST(CompressedTransportTest, ZlibFrameIsWhatTheReferenceZlibProduces) {
   test::FakeTransport inner;
@@ -498,9 +474,8 @@ TEST(CompressedTransportTest, ZlibFrameIsWhatTheReferenceZlibProduces) {
   ASSERT_EQ(Load3(frame.data() + 4), payload.size());
   ASSERT_EQ(Load3(frame.data()), frame.size() - COMPRESSED_HEADER_SIZE);
 
-  // The peer is MySQL, which inflates the body with plain uncompress()
-  // (mysys/my_compress.cc, zlib_uncompress): what this transport writes
-  // has to be an RFC 1950 stream, not a raw deflate one.
+  // The peer inflates the body with plain uncompress() (mysys/my_compress.cc):
+  // this transport must write an RFC 1950 stream, not raw deflate.
   std::vector<std::uint8_t> inflated(payload.size());
   uLongf inflatedSize = static_cast<uLongf>(inflated.size());
   ASSERT_EQ(
@@ -571,7 +546,6 @@ TEST(CompressedTransportTest, ZlibPayloadThatWouldNotShrinkGoesAsIs) {
 
 TEST(CompressedTransportTest, RejectsAFrameWhoseBodyIsNotZlib) {
   test::FakeTransport inner;
-  // Declares 100 bytes before compression, carries bytes zlib cannot read.
   inner.incoming = {4, 0, 0, 0, 100, 0, 0, 'j', 'u', 'n', 'k'};
 
   CompressedTransport transport(inner, TEST_CONTINUATION_TIMEOUT);
@@ -590,7 +564,7 @@ TEST(CompressedTransportTest,
   const std::vector<std::uint8_t> payload = Compressible(100);
   test::FakeTransport inner;
   AppendZlibFrame(inner.incoming, payload, 0);
-  inner.incoming[4] = 99;  // one byte short of what the frame inflates to
+  inner.incoming[4] = 99;
 
   CompressedTransport transport(inner, TEST_CONTINUATION_TIMEOUT);
   transport.Enable(CompressionAlgorithm::Zlib, DEFAULT_ZLIB_COMPRESSION_LEVEL);
@@ -607,8 +581,6 @@ TEST(CompressedTransportTest, RejectsAZlibFrameThatInflatesToLessThanDeclared) {
   const std::vector<std::uint8_t> payload = Compressible(100);
   test::FakeTransport inner;
   AppendZlibFrame(inner.incoming, payload, 0);
-  // One byte more than the frame inflates to: zlib fits in the buffer and
-  // reports no error, so only the length check catches this.
   inner.incoming[4] = 101;
 
   CompressedTransport transport(inner, TEST_CONTINUATION_TIMEOUT);
@@ -624,9 +596,8 @@ TEST(CompressedTransportTest, RejectsAZlibFrameThatInflatesToLessThanDeclared) {
 }
 
 TEST(CompressedTransportTest, ZlibLevelOutsideItsRangeIsClamped) {
-  // The relay never asks for one - CLIENT_COMPRESS carries no level - but
-  // a level clamped into zstd's 1..22 would leave zlib's compress2()
-  // rejecting it with Z_STREAM_ERROR and the frame going uncompressed.
+  // The relay never asks for one, but a level clamped into zstd's 1..22 would
+  // make zlib's compress2() reject it with Z_STREAM_ERROR.
   test::FakeTransport inner;
   CompressedTransport transport(inner, TEST_CONTINUATION_TIMEOUT);
   transport.Enable(CompressionAlgorithm::Zlib, MAX_ZSTD_COMPRESSION_LEVEL);

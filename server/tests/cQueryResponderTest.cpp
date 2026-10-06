@@ -260,8 +260,6 @@ TEST_F(QueryResponderTest, AnUnknownVariableInAListIsNamedAloneInTheError) {
 }
 
 TEST_F(QueryResponderTest, AKeywordIsReadOnlyWhereAWordEnds) {
-  // The space after SELECT is not what makes it a keyword: a longer word
-  // starting with it is a different statement, and a sign is not a letter.
   EXPECT_EQ(responder.Respond("SELECTED @@server_id", session).errorCode, 1235);
   EXPECT_EQ(responder.Respond("SETTINGS @a = 1", session).errorCode, 1235);
   ExpectRow("SELECT@@server_id", "@@server_id", "1001");
@@ -276,9 +274,8 @@ TEST_F(QueryResponderTest, ReadsNamesWrittenInBackticks) {
 }
 
 TEST_F(QueryResponderTest, WhatIsNotAVariableReferenceIsError1235) {
-  // Not "a variable the relay does not have" - a statement it did not
-  // read. Answering 1193 here would tell a client its source is too old
-  // for a name it never asked about.
+  // Not an unknown variable but an unread statement: answering 1193 would tell
+  // a client its source is too old for a name it never asked about.
   for (const std::string &sql :
        {std::string("SELECT @@"), std::string("SELECT @@global."),
         std::string("SELECT @@server_id server_id"),

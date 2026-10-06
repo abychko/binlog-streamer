@@ -39,8 +39,6 @@ namespace {
 
 using test::TempDirectoryFixture;
 
-// A minimal but valid stored file: magic + FDE (server 5.5.62, no checksum
-// trailer) + an empty Previous_gtids_event, nothing past it.
 void WriteFreshFile(const std::filesystem::path &path, std::uint32_t serverId,
                     bool inUse) {
   std::vector<std::uint8_t> fdeBody(57, 0x00);
@@ -50,10 +48,9 @@ void WriteFreshFile(const std::filesystem::path &path, std::uint32_t serverId,
     fdeBody[2 + i] = static_cast<std::uint8_t>(version[i]);
   fdeBody[56] = 19;  // commonHeaderLength
 
-  const auto pgeBody =
-      GtidSet().Encode(/*skipTaggedGtids=*/false);  // 8 zero bytes, empty set
+  const auto pgeBody = GtidSet().Encode(/*skipTaggedGtids=*/false);
 
-  std::vector<std::uint8_t> file{0xfe, 0x62, 0x69, 0x6e};  // BINLOG_MAGIC
+  std::vector<std::uint8_t> file{0xfe, 0x62, 0x69, 0x6e};
 
   const std::uint32_t fdeEventLength =
       static_cast<std::uint32_t>(19 + fdeBody.size());
@@ -88,8 +85,6 @@ void WriteIndex(const std::filesystem::path &dataDir,
       << error;
 }
 
-// Most tests below do not care whether the index existed beforehand -
-// the few that do call catalog.Load() directly instead of this helper.
 bool LoadCatalog(StorageCatalog &catalog, const std::filesystem::path &dataDir,
                  std::string &error) {
   bool indexExisted = false;
@@ -120,9 +115,7 @@ TEST(StorageCatalogTest, LoadsFilesListedInTheIndexIntoTheCatalogInOrder) {
   EXPECT_FALSE(catalog.At(0).inUse);
   EXPECT_EQ(catalog.At(1).name, "binlog.000002");
   EXPECT_EQ(catalog.At(1).number, 2u);
-  EXPECT_TRUE(
-      catalog.At(1)
-          .inUse);  // the last file in the index is allowed to still be open
+  EXPECT_TRUE(catalog.At(1).inUse);
   EXPECT_EQ(catalog.At(1).serverId, 7u);
   EXPECT_TRUE(catalog.At(1).previousGtids.IsEmpty());
 }
@@ -142,8 +135,6 @@ TEST(StorageCatalogTest, RemovesALeftoverIndexTmpFile) {
   EXPECT_FALSE(std::filesystem::exists(fixture.Path("binlog.index.tmp")));
 }
 
-// ".tmp" cleanup is unconditional housekeeping, independent of any
-// remnant/refusal decision on the digits-named files.
 TEST(StorageCatalogTest,
      RemovesTheIndexTmpFileEvenWhenARefusalExistsElsewhere) {
   TempDirectoryFixture fixture;
@@ -154,7 +145,7 @@ TEST(StorageCatalogTest,
   {
     std::ofstream stray(fixture.Path("not-a-binlog-name"));
     stray << "garbage";
-  }  // forces a refusal
+  }
 
   StorageCatalog catalog;
   std::string error;
@@ -168,7 +159,7 @@ TEST(StorageCatalogTest,
   WriteFreshFile(fixture.Path("binlog.000001"), /*serverId=*/1, /*inUse=*/true);
   WriteIndex(fixture.Directory(), {"binlog.000001"});
   WriteFreshFile(fixture.Path("binlog.000002"), /*serverId=*/1,
-                 /*inUse=*/true);  // index append never happened
+                 /*inUse=*/true);
 
   StorageCatalog catalog;
   std::string error;
@@ -183,7 +174,7 @@ TEST(StorageCatalogTest,
   WriteFreshFile(fixture.Path("binlog.000005"), /*serverId=*/1, /*inUse=*/true);
   WriteIndex(fixture.Directory(), {"binlog.000005"});
   WriteFreshFile(fixture.Path("binlog.000003"), /*serverId=*/1,
-                 /*inUse=*/false);  // purge never finished removing it
+                 /*inUse=*/false);
 
   StorageCatalog catalog;
   std::string error;
@@ -192,8 +183,6 @@ TEST(StorageCatalogTest,
   EXPECT_FALSE(std::filesystem::exists(fixture.Path("binlog.000003")));
 }
 
-// A file inside the indexed range with no safe rule must be refused, not
-// swept up as a remnant.
 TEST(StorageCatalogTest, RefusesAFileInsideTheIndexedRangeThatIsNotIndexed) {
   TempDirectoryFixture fixture;
   WriteFreshFile(fixture.Path("binlog.000001"), /*serverId=*/1,
@@ -201,20 +190,18 @@ TEST(StorageCatalogTest, RefusesAFileInsideTheIndexedRangeThatIsNotIndexed) {
   WriteFreshFile(fixture.Path("binlog.000003"), /*serverId=*/1, /*inUse=*/true);
   WriteIndex(fixture.Directory(), {"binlog.000001", "binlog.000003"});
   WriteFreshFile(fixture.Path("binlog.000002"), /*serverId=*/1,
-                 /*inUse=*/false);  // not indexed, not a safe remnant
+                 /*inUse=*/false);
 
   StorageCatalog catalog;
   std::string error;
   EXPECT_FALSE(LoadCatalog(catalog, fixture.Directory(), error));
   EXPECT_NE(error.find("binlog.000002"), std::string::npos) << error;
-  EXPECT_TRUE(std::filesystem::exists(
-      fixture.Path("binlog.000002")));  // refused, not deleted
+  EXPECT_TRUE(std::filesystem::exists(fixture.Path("binlog.000002")));
 }
 
 TEST(StorageCatalogTest, RefusesAnIndexedFileMissingFromDisk) {
   TempDirectoryFixture fixture;
-  WriteIndex(fixture.Directory(),
-             {"binlog.000001"});  // never actually written to disk
+  WriteIndex(fixture.Directory(), {"binlog.000001"});
 
   StorageCatalog catalog;
   std::string error;
@@ -225,7 +212,7 @@ TEST(StorageCatalogTest, RefusesAnIndexedFileMissingFromDisk) {
 TEST(StorageCatalogTest, RefusesWhenAnEarlierFileHasTheInUseBitSet) {
   TempDirectoryFixture fixture;
   WriteFreshFile(fixture.Path("binlog.000001"), /*serverId=*/1,
-                 /*inUse=*/true);  // not the last file - illegal
+                 /*inUse=*/true);
   WriteFreshFile(fixture.Path("binlog.000002"), /*serverId=*/1,
                  /*inUse=*/false);
   WriteIndex(fixture.Directory(), {"binlog.000001", "binlog.000002"});
@@ -236,18 +223,16 @@ TEST(StorageCatalogTest, RefusesWhenAnEarlierFileHasTheInUseBitSet) {
   EXPECT_NE(error.find("binlog.000001"), std::string::npos) << error;
 }
 
-// Every indexed file's header is read and checked before anything is
-// deleted, so a remnant survives an IN_USE-bit violation elsewhere.
 TEST(StorageCatalogTest,
      LeavesARemnantOnDiskWhenAnEarlierFileHasTheInUseBitSet) {
   TempDirectoryFixture fixture;
   WriteFreshFile(fixture.Path("binlog.000001"), /*serverId=*/1,
-                 /*inUse=*/true);  // not the last file - illegal
+                 /*inUse=*/true);
   WriteFreshFile(fixture.Path("binlog.000002"), /*serverId=*/1,
                  /*inUse=*/false);
   WriteIndex(fixture.Directory(), {"binlog.000001", "binlog.000002"});
   WriteFreshFile(fixture.Path("binlog.000003"), /*serverId=*/1,
-                 /*inUse=*/false);  // would otherwise be a safe ">last" remnant
+                 /*inUse=*/false);
 
   StorageCatalog catalog;
   std::string error;
@@ -255,8 +240,6 @@ TEST(StorageCatalogTest,
   EXPECT_TRUE(std::filesystem::exists(fixture.Path("binlog.000003")));
 }
 
-// Same as the test above, for the other phase-two failure: an unreadable
-// header.
 TEST(StorageCatalogTest,
      LeavesARemnantOnDiskWhenAnIndexedFilesHeaderCannotBeRead) {
   TempDirectoryFixture fixture;
@@ -266,7 +249,7 @@ TEST(StorageCatalogTest,
   }
   WriteIndex(fixture.Directory(), {"binlog.000001"});
   WriteFreshFile(fixture.Path("binlog.000002"), /*serverId=*/1,
-                 /*inUse=*/false);  // would otherwise be a safe ">last" remnant
+                 /*inUse=*/false);
 
   StorageCatalog catalog;
   std::string error;
@@ -274,22 +257,17 @@ TEST(StorageCatalogTest,
   EXPECT_TRUE(std::filesystem::exists(fixture.Path("binlog.000002")));
 }
 
-// Nothing is deleted while any refusal exists, even a legitimate remnant
-// elsewhere in the directory.
 TEST(StorageCatalogTest, DoesNotDeleteAnythingWhenAnyRefusalExistsElsewhere) {
   TempDirectoryFixture fixture;
   WriteFreshFile(fixture.Path("binlog.000001"), /*serverId=*/1, /*inUse=*/true);
-  WriteIndex(
-      fixture.Directory(),
-      {"binlog.000001", "binlog.000002"});  // 000002 indexed but never written
+  WriteIndex(fixture.Directory(), {"binlog.000001", "binlog.000002"});
   WriteFreshFile(fixture.Path("binlog.000003"), /*serverId=*/1,
-                 /*inUse=*/true);  // would otherwise be a safe ">last" remnant
+                 /*inUse=*/true);
 
   StorageCatalog catalog;
   std::string error;
   EXPECT_FALSE(LoadCatalog(catalog, fixture.Directory(), error));
-  EXPECT_TRUE(std::filesystem::exists(fixture.Path(
-      "binlog.000003")));  // nothing deleted despite being a would-be remnant
+  EXPECT_TRUE(std::filesystem::exists(fixture.Path("binlog.000003")));
 }
 
 TEST(StorageCatalogTest, RefusesAnUnparsableStrayFileName) {
@@ -342,25 +320,21 @@ TEST(StorageCatalogTest, RefusesAFileWithADifferentBasenameThanTheIndex) {
   WriteFreshFile(fixture.Path("binlog.000001"), /*serverId=*/1, /*inUse=*/true);
   WriteIndex(fixture.Directory(), {"binlog.000001"});
   WriteFreshFile(fixture.Path("other.000002"), /*serverId=*/1,
-                 /*inUse=*/false);  // a different source's naming
+                 /*inUse=*/false);
 
   StorageCatalog catalog;
   std::string error;
   EXPECT_FALSE(LoadCatalog(catalog, fixture.Directory(), error));
   EXPECT_NE(error.find("other.000002"), std::string::npos) << error;
-  // A distinct reason: this basename matches neither index edge.
   EXPECT_NE(error.find("basename matches neither"), std::string::npos) << error;
 }
 
-// A missing index is a state this project is only ever in before creating
-// its first file, so a stray file here is refused, not swept up as a remnant.
 TEST(StorageCatalogTest, RefusesASingleFileWhenTheIndexIsMissingEntirely) {
   TempDirectoryFixture fixture;
   WriteFreshFile(fixture.Path("binlog.000001"), /*serverId=*/1, /*inUse=*/true);
-  // binlog.index never written at all.
 
   StorageCatalog catalog;
-  bool indexExisted = true;  // starts wrong on purpose - Load() has to set it
+  bool indexExisted = true;
   std::string error;
   EXPECT_FALSE(catalog.Load(fixture.Directory(), indexExisted, error));
   EXPECT_FALSE(indexExisted);
@@ -372,7 +346,6 @@ TEST(StorageCatalogTest, RefusesTwoFilesWhenTheIndexIsMissingEntirely) {
   WriteFreshFile(fixture.Path("binlog.000001"), /*serverId=*/1,
                  /*inUse=*/false);
   WriteFreshFile(fixture.Path("binlog.000002"), /*serverId=*/1, /*inUse=*/true);
-  // binlog.index never written at all.
 
   StorageCatalog catalog;
   bool indexExisted = true;
@@ -383,13 +356,11 @@ TEST(StorageCatalogTest, RefusesTwoFilesWhenTheIndexIsMissingEntirely) {
   EXPECT_TRUE(std::filesystem::exists(fixture.Path("binlog.000002")));
 }
 
-// An index present but empty is the window between writing it and the
-// first file's append succeeding, so one file here is a legitimate remnant.
 TEST(StorageCatalogTest, RemovesASingleFileWhenTheIndexIsPresentButEmpty) {
   TempDirectoryFixture fixture;
-  WriteIndex(fixture.Directory(), {});  // present, zero entries
+  WriteIndex(fixture.Directory(), {});
   WriteFreshFile(fixture.Path("binlog.000001"), /*serverId=*/1,
-                 /*inUse=*/true);  // its own index append never happened
+                 /*inUse=*/true);
 
   StorageCatalog catalog;
   bool indexExisted = false;
@@ -400,8 +371,6 @@ TEST(StorageCatalogTest, RemovesASingleFileWhenTheIndexIsPresentButEmpty) {
   EXPECT_FALSE(std::filesystem::exists(fixture.Path("binlog.000001")));
 }
 
-// Two files past an empty index can't both be the one pending append, so
-// both are refused.
 TEST(StorageCatalogTest, RefusesTwoFilesWhenTheIndexIsPresentButEmpty) {
   TempDirectoryFixture fixture;
   WriteIndex(fixture.Directory(), {});
@@ -418,8 +387,6 @@ TEST(StorageCatalogTest, RefusesTwoFilesWhenTheIndexIsPresentButEmpty) {
   EXPECT_TRUE(std::filesystem::exists(fixture.Path("binlog.000002")));
 }
 
-// Two files past the last indexed number can't both be the one pending
-// append either, so both are refused.
 TEST(StorageCatalogTest, RefusesTwoFilesNewerThanTheLastIndexedNumber) {
   TempDirectoryFixture fixture;
   WriteFreshFile(fixture.Path("binlog.000001"), /*serverId=*/1, /*inUse=*/true);
@@ -437,9 +404,6 @@ TEST(StorageCatalogTest, RefusesTwoFilesNewerThanTheLastIndexedNumber) {
   EXPECT_TRUE(std::filesystem::exists(fixture.Path("binlog.000003")));
 }
 
-// A legal basename change mid-index leaves first/last entries without a
-// shared basename; a stray file sharing only the first entry's basename is
-// not a safe remnant at either edge, so it is refused.
 TEST(StorageCatalogTest,
      RefusesAStrayFileSharingTheFirstEntrysBasenameButOutsideItsRemnantRange) {
   TempDirectoryFixture fixture;
@@ -458,8 +422,6 @@ TEST(StorageCatalogTest,
   EXPECT_TRUE(std::filesystem::exists(fixture.Path("binlog.000011")));
 }
 
-// The other edge: a stray file sharing the last entry's basename and past
-// its number is a genuine remnant, judged against that entry.
 TEST(StorageCatalogTest,
      RemovesAStrayFileSharingTheLastEntrysBasenameAndPastItsNumber) {
   TempDirectoryFixture fixture;
@@ -483,7 +445,7 @@ TEST(StorageCatalogTest, AddAppendsARecordAndCloseUpdatesItsSizeAndInUseFlag) {
   StoredFileRecord record;
   record.name = "binlog.000001";
   record.inUse = true;
-  record.size = 90;  // header-only size, before any event bytes
+  record.size = 90;
   catalog.Add(record);
   ASSERT_EQ(catalog.Size(), 1u);
   EXPECT_TRUE(catalog.At(0).inUse);
@@ -494,9 +456,6 @@ TEST(StorageCatalogTest, AddAppendsARecordAndCloseUpdatesItsSizeAndInUseFlag) {
   EXPECT_EQ(catalog.At(0).size, 1234u);
 }
 
-// Callers that want the oldest or the newest record take it in one lock:
-// an index from Size() can name another record, or none, by the time At()
-// reads it, because Remove() drops from the front.
 TEST(StorageCatalogTest, FirstAndLastFollowTheEndsOfTheCatalog) {
   StorageCatalog catalog;
   EXPECT_FALSE(catalog.First().has_value());
@@ -554,8 +513,6 @@ TEST(StorageCatalogTest, RemoveDropsTheOldestRecordAndFailsOnceEmpty) {
   EXPECT_FALSE(catalog.Remove(error));
 }
 
-// Three files with growing Previous_gtids, as in real storage. Takes catalog
-// by reference: StorageCatalog isn't copyable/movable (shared_mutex member).
 void FillCatalogWithGrowingHistory(StorageCatalog &catalog) {
   std::string error;
 
@@ -662,7 +619,7 @@ TEST(StorageCatalogTest, PinBlocksRemovalUntilReleased) {
   EXPECT_EQ(removeError, "binlog.000001 is pinned by 1 reader(s)");
   EXPECT_EQ(catalog.Size(), 1u);
 
-  pin.reset();  // destroying the handle releases the pin
+  pin.reset();
   EXPECT_TRUE(catalog.Remove(removeError)) << removeError;
   EXPECT_EQ(catalog.Size(), 0u);
 }
@@ -687,9 +644,6 @@ TEST(StorageCatalogTest,
   EXPECT_TRUE(catalog.Remove(error)) << error;
 }
 
-// Pin() and Remove() share a lock, so whichever thread wins decides the
-// other's outcome; neither can both succeed nor both fail. Many iterations
-// catch a version that checks presence outside that lock.
 TEST(StorageCatalogTest, PinAgainstRemoveHasNoThirdOutcome) {
   constexpr int ITERATIONS = 2000;
   for (int i = 0; i < ITERATIONS; ++i) {
@@ -734,8 +688,7 @@ TEST(
   // GTIDs - a shortcut on replicaSet.IsEmpty() would wrongly refuse this.
   StorageCatalog catalog;
   StoredFileRecord first;
-  first.name =
-      "binlog.000001";  // previousGtids left default-constructed: empty
+  first.name = "binlog.000001";
   catalog.Add(first);
   StoredFileRecord second;
   second.name = "binlog.000002";
@@ -783,7 +736,6 @@ TEST(StorageCatalogTest, BytesBetweenCountsAcrossFilesInOneLook) {
       catalog.BytesBetween("binlog.999999", 4, "binlog.000002", 4).has_value());
   EXPECT_FALSE(
       catalog.BytesBetween("binlog.000002", 4, "binlog.999999", 4).has_value());
-  // Purging a file before both points leaves the distance as it was.
   std::string error;
   ASSERT_TRUE(catalog.Remove(error));
   EXPECT_EQ(catalog.BytesBetween("binlog.000002", 4, "binlog.000003", 7),

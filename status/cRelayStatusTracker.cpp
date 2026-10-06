@@ -142,10 +142,9 @@ RelayStatus RelayStatusTracker::Snapshot() const {
     source.clock = SourceClockNow(nowSteady);
     replicas = m_replicas;
   }
-  // Each position is read no earlier than the ones it runs ahead of - a
-  // replica has sent no more than is published, and nothing is published
-  // before it is seen - so a position that moves on between the reads adds
-  // to a distance and never turns it negative.
+  // Each position is read no earlier than the ones it runs ahead of, so a
+  // position moving on between the reads only adds to a distance and never
+  // turns it negative.
   status.replicas.reserve(replicas.size());
   for (const auto &registration : replicas) {
     ReplicaStatus replica;
@@ -178,8 +177,8 @@ RelayStatus RelayStatusTracker::Snapshot() const {
   }
 
   if (m_storage != nullptr && !source.seen.file.empty()) {
-    // The catalog carries the open file at the size it had when it was
-    // added; what has been received into it since is on disk too.
+    // The catalog carries the open file at the size it had when it was added;
+    // what has been received into it since is on disk too.
     const auto seenOffset =
         m_storage->Offset(source.seen.file, source.seen.position);
     if (seenOffset && *seenOffset > storage.bytes) storage.bytes = *seenOffset;

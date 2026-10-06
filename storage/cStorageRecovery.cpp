@@ -32,9 +32,6 @@
 namespace binlog_streamer {
 namespace {
 
-// Previous_gtids of the last stored file plus every transaction that
-// file holds complete: the boundary a dump starts from, whichever way
-// the relay arrived at it.
 bool StartSetOf(const StoredFileRecord &last, const TailScanResult &scan,
                 GtidSet &startSet, std::string &error) {
   startSet = last.previousGtids;
@@ -62,8 +59,6 @@ bool StorageRecovery::Recover(const std::filesystem::path &dataDir,
   }
   state.empty = false;
 
-  // Re-checked here rather than trusted from catalog.Load(): this
-  // function's contract does not depend on how catalog was populated.
   for (std::size_t i = 0; i + 1 < count; ++i) {
     const StoredFileRecord record = catalog.At(i);
     if (record.inUse) {

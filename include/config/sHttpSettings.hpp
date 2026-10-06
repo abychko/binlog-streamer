@@ -30,13 +30,9 @@
 
 namespace binlog_streamer {
 
-// Where the relay's own state is served (/status.json and the status
-// page). Plain HTTP with no authentication: what a reverse proxy in front
-// adds, TLS included.
 struct HttpSettings {
   IpAddress listenAddress{};
   std::uint16_t listenPort = DEFAULT_HTTP_LISTEN_PORT;
-  // The status page and whatever it loads, served as files from here.
   std::filesystem::path htmlDir = DEFAULT_HTTP_HTML_DIR;
   bool operator==(const HttpSettings &) const = default;
 };

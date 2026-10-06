@@ -31,17 +31,14 @@
 
 namespace binlog_streamer {
 
-// Header is 0x00, or 0xFE under CLIENT_DEPRECATE_EOF - IsOkPacket()
-// takes that capability explicitly since the byte alone can't
-// disambiguate 0xFE from EOF_Packet.
+// Header is 0x00, or 0xFE under CLIENT_DEPRECATE_EOF, so IsOkPacket() takes the
+// capability.
 class OkPacketCodec {
  public:
   static bool IsOkPacket(std::uint8_t headerByte, bool clientDeprecateEof);
   static bool Parse(std::span<const std::uint8_t> payload,
                     bool clientSessionTrack, OkPacket &value,
                     std::string &error);
-  // info follows Parse()'s rule: LengthEncodedString under
-  // CLIENT_SESSION_TRACK when non-empty, plain rest-of-packet otherwise.
   static void Encode(const OkPacket &value, bool clientSessionTrack,
                      std::vector<std::uint8_t> &out);
 };

@@ -37,17 +37,14 @@ void RsaPublicKey::Deleter::operator()(EVP_PKEY *key) const noexcept {
 
 bool RsaPublicKey::Parse(std::span<const std::uint8_t> pem, RsaPublicKey &key,
                          std::string &error) {
-  // Reject empty input before BIO_new_mem_buf: an empty span's data() may
-  // be null, and BIO_new_mem_buf refuses a NULL buf with a misleading
-  // "failed to allocate" error instead of "malformed".
+  // An empty span's data() may be null, and BIO_new_mem_buf then fails with a
+  // misleading 'failed to allocate'.
   if (pem.empty()) {
     error = "malformed RSA public key PEM";
     return false;
   }
-  // BIO_new_mem_buf takes length as int, but a reassembled packet has no
-  // upper bound - past INT_MAX the cast below would go negative, making
-  // BIO_new_mem_buf read via strlen() out of bounds instead of the given
-  // length.
+  // BIO_new_mem_buf takes an int length; past INT_MAX the cast would go
+  // negative and it would read via strlen().
   if (pem.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
     error = "RSA public key PEM is too large";
     return false;
@@ -61,9 +58,8 @@ bool RsaPublicKey::Parse(std::span<const std::uint8_t> pem, RsaPublicKey &key,
   std::unique_ptr<EVP_PKEY, Deleter> parsed(
       PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr));
   if (!parsed) {
-    // Matches the reference client's own failed-parse handling: a
-    // failed parse still leaves an entry on OpenSSL's error queue,
-    // which would otherwise resurface against a later, unrelated call.
+    // A failed parse leaves an entry on OpenSSL's error queue; clear it so it
+    // does not surface in a later, unrelated call.
     ERR_clear_error();
     error = "malformed RSA public key PEM";
     return false;

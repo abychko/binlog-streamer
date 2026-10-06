@@ -34,36 +34,23 @@
 #include "net/iTransport.hpp"
 #include "protocol/eCompressionAlgorithm.hpp"
 
-// Keeps <zstd.h> out of this header, so consumers need no include path
-// for the submodule.
 struct ZSTD_CCtx_s;
 struct ZSTD_DCtx_s;
 
 namespace binlog_streamer {
 
-// Header of a compressed packet: 3-byte compressed length, 1-byte
-// sequence id of its own, 3-byte length before compression.
 inline constexpr std::size_t COMPRESSED_HEADER_SIZE = 7;
-// Below this, MySQL stores the payload as is and writes 0 as the length
-// before compression (MIN_COMPRESS_LENGTH, include/my_sys.h).
+// Below this, MySQL stores the payload as is and writes 0 as the uncompressed
+// length (MIN_COMPRESS_LENGTH).
 inline constexpr std::size_t MIN_COMPRESS_LENGTH = 50;
-// Both lengths in the header are three bytes wide.
 inline constexpr std::size_t MAX_COMPRESSED_FRAME_PAYLOAD = 0xFFFFFF;
 
-// Wraps a transport in MySQL's compressed protocol: the byte stream
-// above it is the ordinary packet stream, the one below it is a series
-// of compressed frames. Passes bytes through untouched until Enable(),
-// because the wire turns compressed only after the final authentication
-// OK.
-//
-// Frames and the packets inside them are not aligned: one frame may
-// carry several packets, and a packet may span frames. The sequence ids
-// of those inner packets are neither checked nor monotonic under
-// compression - only the frame counter here is (sql-common/net_serv.cc).
+// Passes bytes through until Enable(): the wire turns compressed only after the
+// final authentication OK. Frames and packets are not aligned: a frame may
+// carry several packets and a packet may span frames. Inner sequence ids are
+// not checked, only the frame counter (sql-common/net_serv.cc).
 class CompressedTransport final : public Transport {
  public:
-  // continuationTimeout applies to every read that finishes a frame
-  // already begun; the read that starts one uses the caller's timeout.
   CompressedTransport(Transport &inner,
                       std::chrono::milliseconds continuationTimeout)
       : m_inner(inner), m_continuationTimeout(continuationTimeout) {}
@@ -75,8 +62,6 @@ class CompressedTransport final : public Transport {
   void Enable(CompressionAlgorithm algorithm, int level);
   bool Enabled() const { return m_algorithm != CompressionAlgorithm::None; }
 
-  // The frame counter resets with the packet sequence id, on the same
-  // command boundary.
   void ResetSequence() { m_frameSequenceId = 0; }
 
   bool Connect(const std::string &host, std::uint16_t port,
@@ -92,8 +77,6 @@ class CompressedTransport final : public Transport {
   void Close() override;
 
  private:
-  // Data once a whole frame has been decoded into m_plain; anything else
-  // leaves the partly-read frame buffered for the next call.
   ReadOutcome ReadFrame(std::chrono::milliseconds timeout, std::string &error);
   ReadOutcome FillFrom(std::uint8_t *destination, std::size_t size,
                        std::size_t &filled, std::chrono::milliseconds timeout,
@@ -117,8 +100,6 @@ class CompressedTransport final : public Transport {
   ByteBuffer m_body;
   std::size_t m_bodyFilled = 0;
   bool m_bodySized = false;
-  // Set by the first read that delivers any byte of the current frame;
-  // later reads of that frame no longer wait on the caller's timeout.
   bool m_frameStarted = false;
 
   ByteBuffer m_plain;

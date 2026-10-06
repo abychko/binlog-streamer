@@ -35,9 +35,6 @@ class HandshakeV10Codec {
  public:
   static bool Parse(std::span<const std::uint8_t> payload, HandshakeV10 &value,
                     std::string &error);
-  // authPluginData is written as given (SCRAMBLE_LENGTH nonce + trailing
-  // 0x00). Fails without CLIENT_PLUGIN_AUTH, on a wrong-sized
-  // authPluginData, or a NUL in a string field.
   static bool Encode(const HandshakeV10 &value, std::vector<std::uint8_t> &out,
                      std::string &error);
 };

@@ -30,9 +30,6 @@
 
 namespace binlog_streamer {
 
-// The status page's view of storage: the catalog for what is on disk, the
-// published position for how far of it replicas may read, the cache for
-// what is in RAM, and the disk limit the purger keeps the catalog under.
 class StorageStatusFacts : public StorageFacts {
  public:
   // Nothing is owned; the cache may be null for a run without one.

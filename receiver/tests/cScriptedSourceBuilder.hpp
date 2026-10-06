@@ -50,8 +50,8 @@ class ScriptedSourceBuilder {
     Push(ScriptedSourcePayloads::Greeting(
         serverVersion, CACHING_SHA2_PASSWORD_PLUGIN_NAME,
         ScriptedSourcePayloads::Scramble(), extraCapabilities));
-    SkipClientPacket();                                // HandshakeResponse41
-    Push(ScriptedSourcePayloads::AuthMoreData(0x03));  // fast_auth_success
+    SkipClientPacket();
+    Push(ScriptedSourcePayloads::AuthMoreData(0x03));
     Push(ScriptedSourcePayloads::Ok(false));
   }
 
@@ -62,8 +62,7 @@ class ScriptedSourceBuilder {
     Push(ScriptedSourcePayloads::ColumnCount(1));
     Push(ScriptedSourcePayloads::ColumnDefinition(columnName));
     Push(ScriptedSourcePayloads::TextRow(std::move(value)));
-    Push(ScriptedSourcePayloads::Ok(
-        true));  // row terminator under CLIENT_DEPRECATE_EOF
+    Push(ScriptedSourcePayloads::Ok(true));
   }
 
   void AppendSingleColumnError(std::uint16_t code, const std::string &message) {
@@ -84,34 +83,29 @@ class ScriptedSourceBuilder {
     Push(ScriptedSourcePayloads::Err(code, message));
   }
 
-  // Factored out so full-authentication scenarios, which skip
-  // ThroughReplicaUuid()'s fixed prefix, can share it too.
   void AppendPreDumpQueries(const std::string &sourceServerId,
                             const std::string &gtidMode,
                             const std::string &sourceUuid) {
     AppendSingleColumnRow("UNIX_TIMESTAMP()", "1700000000");
     AppendSingleColumnRow("@@GLOBAL.SERVER_ID", sourceServerId);
-    AppendCommandOk();  // heartbeat period
-    AppendCommandOk();  // checksum SET
+    AppendCommandOk();
+    AppendCommandOk();
     AppendSingleColumnRow("@source_binlog_checksum", "CRC32");
     AppendSingleColumnRow("@@GLOBAL.GTID_MODE", gtidMode);
     AppendSingleColumnRow("@@GLOBAL.SERVER_UUID", sourceUuid);
-    AppendCommandOk();  // @slave_uuid/@replica_uuid
+    AppendCommandOk();
   }
 
-  // Appended after MySQL's perform_full_authentication plugin callback.
   void AppendFullAuthenticationExchange(
       bool requestsPublicKey, std::span<const std::uint8_t> publicKeyPem = {}) {
     if (requestsPublicKey) {
-      SkipClientPacket();  // the 0x02 public key request
+      SkipClientPacket();
       Push(ScriptedSourcePayloads::AuthMoreData(publicKeyPem));
     }
-    SkipClientPacket();  // the RSA-OAEP-encrypted password
+    SkipClientPacket();
     Push(ScriptedSourcePayloads::Ok(false));
   }
 
-  // sourceServerId/gtidMode/sourceUuid let a caller fail one step while
-  // keeping earlier ones successful.
   static ScriptedSourceBuilder ThroughReplicaUuid(
       const std::string &sourceServerId, const std::string &gtidMode = "ON",
       const std::string &sourceUuid = "11111111-1111-1111-1111-111111111111",

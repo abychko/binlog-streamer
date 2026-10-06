@@ -51,7 +51,7 @@ TEST(TextRowCodecTest, ParsesTwoColumnsWithoutNull) {
 TEST(TextRowCodecTest, ParsesNullColumn) {
   std::vector<std::uint8_t> payload;
   LengthEncodedString::Encode("name", payload);
-  payload.push_back(0xFB);  // NULL marker
+  payload.push_back(0xFB);
 
   TextRow value;
   std::string error;
@@ -61,8 +61,7 @@ TEST(TextRowCodecTest, ParsesNullColumn) {
 }
 
 TEST(TextRowCodecTest, RejectsColumnValueShorterThanDeclared) {
-  const std::vector<std::uint8_t> payload{
-      5, 'a', 'b'};  // declares 5 bytes, only 2 present
+  const std::vector<std::uint8_t> payload{5, 'a', 'b'};
   TextRow value;
   std::string error;
   EXPECT_FALSE(TextRowCodec::Parse(payload, 1, value, error));
@@ -73,7 +72,6 @@ TEST(TextRowCodecTest, EncodesExactBytesWithNullAndEmptyValue) {
   value.columns = {std::string("ab"), std::nullopt, std::string()};
   std::vector<std::uint8_t> out = {0xEE};
   TextRowCodec::Encode(value, out);
-  // An empty string is a zero length, not the NULL marker.
   ASSERT_EQ(out, (std::vector<std::uint8_t>{0xEE, 2, 'a', 'b', 0xFB, 0}));
 
   TextRow parsed;
@@ -92,7 +90,7 @@ TEST(TextRowCodecTest, EncodesLongValueWithMultiByteLength) {
   TextRowCodec::Encode(value, out);
   ASSERT_EQ(out.size(), 3u + 300u);
   EXPECT_EQ(out[0], 0xFC);
-  EXPECT_EQ(out[1], 0x2C);  // 300 = 0x012C
+  EXPECT_EQ(out[1], 0x2C);
   EXPECT_EQ(out[2], 0x01);
 }
 

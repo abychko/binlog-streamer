@@ -27,12 +27,9 @@
 
 namespace binlog_streamer {
 
-// The five values of MySQL's --ssl-mode, in its order of strictness
-// (include/mysql.h, enum mysql_ssl_mode): a relay connecting to its
-// source is a client, and takes the client's setting.
 enum class SslMode {
-  Disabled,        // never asks for TLS
-  Preferred,       // TLS if the source offers it, plain otherwise
+  Disabled,
+  Preferred,
   Required,        // TLS or no session; the certificate is not checked
   VerifyCa,        // plus the chain has to end in ssl_ca
   VerifyIdentity,  // plus the certificate has to name the host

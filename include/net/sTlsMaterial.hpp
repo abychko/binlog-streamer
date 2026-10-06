@@ -27,10 +27,8 @@
 
 namespace binlog_streamer {
 
-// PEM text, not paths: read once where the paths are validated, so a
-// context is built from the bytes that passed validation (as
-// SourceSettings::sourcePublicKeyPem is). Any of the three may be empty;
-// which ones have to be set depends on the side (cTlsContext.hpp).
+// PEM text, not paths, so a context is built from the bytes that passed
+// validation.
 struct TlsMaterial {
   std::string caPem;
   std::string certPem;

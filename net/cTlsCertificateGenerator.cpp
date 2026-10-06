@@ -56,8 +56,8 @@ std::string OpenSslError(const std::string &what) {
 KeyPtr GenerateKey() { return KeyPtr(EVP_RSA_gen(KEY_BITS), &EVP_PKEY_free); }
 
 bool SetRandomSerial(X509 *certificate) {
-  // 20 bytes, the largest serial RFC 5280 allows, top bit clear so it
-  // stays positive.
+  // 20 bytes, the largest serial RFC 5280 allows, top bit cleared so it stays
+  // positive.
   unsigned char bytes[20];
   if (RAND_bytes(bytes, sizeof(bytes)) != 1) return false;
   bytes[0] &= 0x7F;
@@ -80,7 +80,6 @@ bool AddExtension(X509 *certificate, X509 *issuer, int nid, const char *value) {
   return added == 1;
 }
 
-// issuer null: self-signed with its own key.
 X509Ptr MakeCertificate(const std::string &commonName, EVP_PKEY *key,
                         X509 *issuer, EVP_PKEY *issuerKey, bool isCa,
                         std::string &error) {

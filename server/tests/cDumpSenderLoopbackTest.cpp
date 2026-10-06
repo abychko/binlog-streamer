@@ -21,10 +21,6 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-// End to end over a real loopback socket and the relay's own client-side
-// receiver, not mocks: what arrives must match the stored files byte for
-// byte, except where a source alters an event too.
-
 #include "server/cReplicaListener.hpp"
 
 #include "binlog/cCrc32.hpp"
@@ -84,8 +80,6 @@ void WriteChecksum(std::vector<std::uint8_t> &event) {
     event[covered + i] = static_cast<std::uint8_t>(crc >> (8 * i));
 }
 
-// position is where the event starts; its header carries where it ends
-// (position + length), as a stored event does.
 std::vector<std::uint8_t> MakeEvent(std::uint8_t type,
                                     const std::vector<std::uint8_t> &body,
                                     std::uint64_t position) {
@@ -112,16 +106,14 @@ std::vector<std::uint8_t> FormatDescriptionBody(std::uint32_t created) {
   body.resize(2 + 50, 0);
   AppendLE(body, created, 4);
   body.push_back(static_cast<std::uint8_t>(EVENT_HEADER_LENGTH));
-  body.resize(body.size() + 41,
-              0);  // post-header lengths, not looked at by anything here
+  body.resize(body.size() + 41, 0);
   body.push_back(1);
   return body;
 }
 
 struct BuiltFile {
   std::vector<std::uint8_t> bytes;
-  std::uint64_t headerLength =
-      0;  // magic, Format_description and Previous_gtids
+  std::uint64_t headerLength = 0;
   std::vector<std::uint64_t> transactionEnds;
 };
 
@@ -146,7 +138,7 @@ std::vector<std::uint8_t> GtidBody(std::int64_t gno) {
   const auto uuid = SourceUuidBytes();
   body.insert(body.end(), uuid.begin(), uuid.end());
   AppendLE(body, static_cast<std::uint64_t>(gno), 8);
-  body.push_back(2);  // LOGICAL_TIMESTAMP_TYPECODE
+  body.push_back(2);
   AppendLE(body, static_cast<std::uint64_t>(gno - 1), 8);
   AppendLE(body, static_cast<std::uint64_t>(gno), 8);
   return body;
@@ -179,8 +171,6 @@ BuiltFile BuildFile(std::uint32_t created, const GtidSet &previousGtids,
   };
   std::vector<std::uint8_t> description =
       MakeEvent(15, FormatDescriptionBody(created), file.bytes.size());
-  // A source computes this checksum with the flag clear and sets the flag
-  // afterwards, which is why the flag can be cleared again without one.
   if (inUse)
     description[FLAGS_OFFSET] |=
         static_cast<std::uint8_t>(EVENT_FLAG_BINLOG_IN_USE);
@@ -282,14 +272,11 @@ class CollectingSink : public EventSink {
   std::vector<std::uint32_t> heartbeatPositions;
   std::vector<std::chrono::steady_clock::time_point> heartbeatTimes;
   std::size_t heartbeatsWanted = 0;
-  // When the first stored byte arrived.
   std::chrono::steady_clock::time_point startedAt{};
-  // When the last expected byte arrived.
   std::chrono::steady_clock::time_point completedAt{};
   int artificialEvents = 0;
   std::uint32_t artificialServerId = 0;
-  std::vector<std::vector<std::uint8_t>>
-      rotates;  // each synthesized rotate, header included
+  std::vector<std::vector<std::uint8_t>> rotates;
 
  private:
   std::size_t m_expectedBytes;
@@ -301,10 +288,6 @@ constexpr int StyleBit(WaitStyle style) {
   return style == WaitStyle::Block ? 2 : 1;
 }
 
-// Simulates what a dump sees when a file is about to be closed: storage
-// as-is, except once told to it reports the published position as moved
-// while nothing is readable yet. Also notes each way of waiting the dump
-// asked for, as StyleBit()s.
 class UnreadableTailReader : public BinlogStorageReader {
  public:
   UnreadableTailReader(BinlogStorageReader &storage,
@@ -351,14 +334,13 @@ class UnreadableTailReader : public BinlogStorageReader {
 class DumpSenderLoopbackTest : public ::testing::Test {
  protected:
   std::filesystem::path dataDir;
-  std::atomic<bool> movedButUnreadable{false};  // see UnreadableTailReader
-  std::atomic<int> waitStyles{0};               // see UnreadableTailReader
+  std::atomic<bool> movedButUnreadable{false};
+  std::atomic<int> waitStyles{0};
   std::atomic<bool> stopRequested{false};
   WakeupPipe wakeupPipe;
   StorageCatalog catalog;
   PublishedPositionTracker published;
-  GtidSet firstFileGtids;  // what the first file adds: the second one's
-                           // Previous_gtids
+  GtidSet firstFileGtids;
   BuiltFile first;
   BuiltFile second;
 
@@ -375,8 +357,6 @@ class DumpSenderLoopbackTest : public ::testing::Test {
     ASSERT_TRUE(
         firstFileGtids.AddFromText(std::string(SOURCE_UUID) + ":1-3", error))
         << error;
-    // One body is larger than a protocol packet can carry, so its event
-    // travels as two.
     first = BuildFile(1700000123, GtidSet(),
                       {{1, 100}, {2, 17UL * 1024UL * 1024UL}, {3, 300}}, false);
     second = BuildFile(0, firstFileGtids, {{4, 50}, {5, 60}}, true);
@@ -413,16 +393,13 @@ class DumpSenderLoopbackTest : public ::testing::Test {
     std::size_t checksumLength = CHECKSUM_LENGTH;
   };
 
-  std::string relayChecksum =
-      "CRC32";  // what the relay reports as @@global.binlog_checksum
-  std::chrono::microseconds sendLinger{0};  // server.send_linger
+  std::string relayChecksum = "CRC32";
+  std::chrono::microseconds sendLinger{0};
 
   std::uint16_t listenPort = 0;
   StreamResult lastStream;
   ReplicaListener *activeListener = nullptr;
 
-  // Safe to call from a second thread: reports failures with ADD_FAILURE
-  // rather than an ASSERT_* that would only abort the calling thread.
   StreamResult RunClient(const Client &client, const std::string &replicaGtids,
                          CollectingSink &sink) {
     StreamResult failed;
@@ -520,15 +497,14 @@ TEST_F(DumpSenderLoopbackTest,
                                      first.bytes.end());
   std::vector<std::uint8_t> secondEvents(second.bytes.begin() + 4,
                                          second.bytes.end());
-  secondEvents[FLAGS_OFFSET] &= static_cast<std::uint8_t>(
-      ~EVENT_FLAG_BINLOG_IN_USE);  // the one change a source makes too
+  secondEvents[FLAGS_OFFSET] &=
+      static_cast<std::uint8_t>(~EVENT_FLAG_BINLOG_IN_USE);
   expected.insert(expected.end(), secondEvents.begin(), secondEvents.end());
 
   CollectingSink sink(expected.size());
   Receive("", expected.size(), sink);
 
   EXPECT_TRUE(sink.stored == expected);
-  // one synthesized rotate ahead of each of the two files
   EXPECT_EQ(sink.artificialEvents, 2);
   EXPECT_EQ(sink.artificialServerId, RELAY_SERVER_ID);
 }
@@ -536,9 +512,9 @@ TEST_F(DumpSenderLoopbackTest,
 TEST_F(
     DumpSenderLoopbackTest,
     ARotateAfterAChecksummedFileCarriesAChecksumEvenForAReplicaThatAskedForNone) {
-  // mysqlbinlog asks for no checksums and then reads every event after a
-  // CRC32 Format_description as checksummed: a rotate without one would
-  // lose the last four bytes of the file name it announces.
+  // mysqlbinlog asks for no checksums yet reads every event after a CRC32
+  // Format_description as checksummed: a rotate without one would lose the last
+  // four bytes of the file name it announces.
   relayChecksum = "NONE";
   std::vector<std::uint8_t> expected(first.bytes.begin() + 4,
                                      first.bytes.end());
@@ -556,12 +532,10 @@ TEST_F(
   ASSERT_EQ(sink.rotates.size(), 2U);
   const std::string firstName = "binlog.000001";
   const std::string secondName = "binlog.000002";
-  // Ahead of the first file nothing says the stream is checksummed yet.
   ASSERT_EQ(sink.rotates[0].size(), EVENT_HEADER_LENGTH + 8 + firstName.size());
   EXPECT_EQ(std::string(sink.rotates[0].end() - firstName.size(),
                         sink.rotates[0].end()),
             firstName);
-  // Ahead of the second one it is, and the checksum is right.
   const std::vector<std::uint8_t> &rotate = sink.rotates[1];
   ASSERT_EQ(rotate.size(),
             EVENT_HEADER_LENGTH + 8 + secondName.size() + CHECKSUM_LENGTH);
@@ -616,8 +590,7 @@ TEST_F(DumpSenderLoopbackTest,
   expected.insert(expected.end(), freshBytes.begin(), freshBytes.end());
 
   CollectingSink sink(expected.size());
-  sink.heartbeatsWanted =
-      3;  // one for what was left out, and idle ones a second apart
+  sink.heartbeatsWanted = 3;
   Receive(std::string(SOURCE_UUID) + ":1-100", expected.size(), sink,
           std::chrono::seconds(1), [&] {
             std::this_thread::sleep_for(std::chrono::milliseconds(2500));
@@ -631,10 +604,8 @@ TEST_F(DumpSenderLoopbackTest,
 
   EXPECT_TRUE(sink.stored == expected);
   ASSERT_GE(sink.heartbeatPositions.size(), 3u);
-  EXPECT_EQ(sink.heartbeatPositions.front(),
-            second.bytes.size());  // everything stored so far was left out
-  EXPECT_EQ(sink.heartbeatPositions[1],
-            second.bytes.size());  // and nothing moved while it waited
+  EXPECT_EQ(sink.heartbeatPositions.front(), second.bytes.size());
+  EXPECT_EQ(sink.heartbeatPositions[1], second.bytes.size());
 }
 
 TEST_F(DumpSenderLoopbackTest,
@@ -665,9 +636,6 @@ TEST_F(DumpSenderLoopbackTest,
 
 TEST_F(DumpSenderLoopbackTest,
        ASkippedEventNotYetWhollyPublishedIsNotPassedOver) {
-  // A transaction the replica has is stored whole but published only up to
-  // the middle of its payload: the dump may stand before that event, never
-  // past it.
   const std::vector<std::uint8_t> partial =
       TransactionBytes(Transaction{6, 5000}, second.bytes.size());
   std::ofstream(dataDir / "binlog.000002", std::ios::binary | std::ios::app)
@@ -694,9 +662,9 @@ TEST_F(DumpSenderLoopbackTest,
 
 TEST_F(DumpSenderLoopbackTest,
        AReplicaWithAHoleInStoredHistoryGetsTheHoleAndNothingItHas) {
-  // Three files begin with nothing, 1-3 and 1-5; the replica has 1-3 and 5.
-  // The newest file already assumes 4, so the stream has to start from the
-  // middle one: 4 and 6 arrive, 5 and the whole first file do not.
+  // Files begin with nothing, 1-3 and 1-5; the replica has 1-3 and 5. The
+  // newest file already assumes 4, so the stream must start from the middle
+  // one: 4 and 6 arrive, 5 and the whole first file do not.
   std::string error;
   ASSERT_TRUE(catalog.Close(second.bytes.size(), error)) << error;
   GtidSet secondFileGtids;
@@ -758,8 +726,6 @@ TEST_F(DumpSenderLoopbackTest,
   CollectingSink sink(expected.size());
   Receive(std::string(SOURCE_UUID) + ":1-5", expected.size(), sink,
           std::chrono::seconds(30), [&] {
-            // Past the linger of the file's own header: the dump is
-            // caught up and waiting.
             std::this_thread::sleep_for(std::chrono::milliseconds(700));
             publishedAt = std::chrono::steady_clock::now();
             published.Advance("binlog.000002",
@@ -768,7 +734,6 @@ TEST_F(DumpSenderLoopbackTest,
 
   EXPECT_TRUE(sink.stored == expected) << lastStream.message;
   EXPECT_GE(sink.completedAt - publishedAt, std::chrono::milliseconds(200));
-  // The linger already gathers what arrives meanwhile: no polling on top.
   EXPECT_EQ(waitStyles.load(), StyleBit(WaitStyle::Block));
 }
 
@@ -790,8 +755,6 @@ TEST_F(DumpSenderLoopbackTest, WithoutASendLingerACaughtUpDumpPollsFirst) {
 
 TEST_F(DumpSenderLoopbackTest,
        WithASendLingerAClosedFileIsFollowedWithoutAPause) {
-  // The end of the closed first file is no reason to wait: the rest of it
-  // goes out as soon as it is read, not a linger later.
   const std::vector<std::uint8_t> expected(first.bytes.begin() + 4,
                                            first.bytes.end());
   sendLinger = std::chrono::seconds(1);
@@ -843,7 +806,6 @@ TEST_F(DumpSenderLoopbackTest,
   CollectingSink sink(SIZE_MAX);
   Receive(std::string(SOURCE_UUID) + ":1-5", expected.size(), sink,
           std::chrono::seconds(1), [&] {
-            // Caught up and lingering over the file's header.
             std::this_thread::sleep_for(std::chrono::milliseconds(1300));
             published.Advance("binlog.000002",
                               second.bytes.size() + next.size());
@@ -869,8 +831,7 @@ TEST_F(DumpSenderLoopbackTest,
   movedButUnreadable.store(true);
 
   CollectingSink sink(expected.size());
-  sink.heartbeatsWanted =
-      3;  // one for what was left out, the others a second apart
+  sink.heartbeatsWanted = 3;
   Receive(std::string(SOURCE_UUID) + ":1-100", expected.size(), sink,
           std::chrono::seconds(1));
 
@@ -891,23 +852,18 @@ TEST_F(DumpSenderLoopbackTest,
 
   std::chrono::steady_clock::duration stopTook{};
   CollectingSink sink(expected.size());
-  // A deadline of the test's own: the sink keeps receiving until the relay
-  // ends the dump, and a relay that never does is stopped here after five
-  // heartbeats a second apart. Left unbounded, a regression would hang
-  // until ctest killed the whole binary, taking every later test with it.
+  // The test's own deadline: a relay that never ends the dump is stopped after
+  // five heartbeats instead of hanging until ctest kills the whole binary.
   sink.heartbeatsWanted = 5;
   Receive(std::string(SOURCE_UUID) + ":1-100", expected.size(), sink,
           std::chrono::seconds(1), [&] {
-            std::this_thread::sleep_for(
-                std::chrono::milliseconds(500));  // the dump is waiting by now
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
             const auto start = std::chrono::steady_clock::now();
             activeListener->Stop();
             stopTook = std::chrono::steady_clock::now() - start;
           });
 
   EXPECT_LT(stopTook, std::chrono::seconds(5));
-  // StoppedBySink here would mean the deadline above ran out with the dump
-  // still open.
   EXPECT_EQ(lastStream.reason, StreamEndReason::ConnectionClosed)
       << lastStream.message;
 }
@@ -961,8 +917,6 @@ TEST_F(DumpSenderLoopbackTest, AReplicaOlderThanTheStoredHistoryGetsError1236) {
 
 TEST_F(DumpSenderLoopbackTest,
        AClientWithServerIdZeroGetsTheStoredHistoryAndThenEof) {
-  // What mysqlbinlog is without --stop-never: it does not register, its
-  // server_id is 0, and it expects the stream to end where the history does.
   std::vector<std::uint8_t> expected(first.bytes.begin() + 4,
                                      first.bytes.end());
   std::vector<std::uint8_t> secondEvents(second.bytes.begin() + 4,
@@ -974,7 +928,7 @@ TEST_F(DumpSenderLoopbackTest,
   Client client;
   client.serverId = 0;
   client.registerAsReplica = false;
-  CollectingSink sink(SIZE_MAX);  // never stops the stream itself
+  CollectingSink sink(SIZE_MAX);
   Receive(client, "", expected.size(), sink);
 
   EXPECT_EQ(lastStream.reason, StreamEndReason::EndOfStream)
@@ -983,9 +937,6 @@ TEST_F(DumpSenderLoopbackTest,
 }
 
 TEST_F(DumpSenderLoopbackTest, ANewDumpFromTheSameReplicaEndsItsEarlierOne) {
-  // A replica reconnecting while the relay still serves its previous
-  // connection: the earlier dump is closed, as a source kills the zombie
-  // dump thread of the same replica.
   const std::size_t headerBytes =
       static_cast<std::size_t>(second.headerLength) - 4;
   const std::string everything = std::string(SOURCE_UUID) + ":1-100";
@@ -998,11 +949,9 @@ TEST_F(DumpSenderLoopbackTest, ANewDumpFromTheSameReplicaEndsItsEarlierOne) {
     Client later;
     later.heartbeatPeriod = std::chrono::seconds(1);
     CollectingSink laterSink(headerBytes);
-    laterSink.heartbeatsWanted = 4;  // outlives the earlier dump's end
+    laterSink.heartbeatsWanted = 4;
     laterStream = RunClient(later, everything, laterSink);
   };
-  // Left alone the earlier dump would go on forever; this bound is what
-  // ends the test if it is not closed.
   CollectingSink sink(headerBytes);
   sink.heartbeatsWanted = 8;
   Receive(earlier, everything, headerBytes, sink);

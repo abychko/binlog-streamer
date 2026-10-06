@@ -53,7 +53,6 @@ std::vector<std::uint8_t> ComRegisterSlaveCommand::Encode(
 
 namespace {
 
-// One raw length byte plus that many bytes; false if payload ends first.
 bool ReadShortString(std::span<const std::uint8_t> payload, std::size_t &pos,
                      std::string &value) {
   if (pos == payload.size()) return false;

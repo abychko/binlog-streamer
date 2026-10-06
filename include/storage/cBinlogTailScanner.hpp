@@ -31,13 +31,10 @@
 
 namespace binlog_streamer {
 
-// Same approach the source's own crash recovery uses on its last
-// binlog file.
 class BinlogTailScanner {
  public:
-  // Stops without error at the first event that can't be trusted as
-  // complete - an unfinished write leaves exactly this shape, not
-  // corruption.
+  // Stops without error at the first event that cannot be trusted as complete:
+  // an unfinished write leaves exactly this shape.
   static bool Scan(const std::filesystem::path &path, std::uint64_t startOffset,
                    std::size_t checksumLength, TailScanResult &result,
                    std::string &error);

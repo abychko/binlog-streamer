@@ -39,8 +39,6 @@ void AppendLittleEndian(std::vector<std::uint8_t> &out, std::uint64_t value,
     out.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
 }
 
-// Local mirror of LengthEncodedInteger::Encode (protocol/), so this test
-// doesn't depend on bs-protocol.
 std::vector<std::uint8_t> Lenenc(std::uint64_t value) {
   std::vector<std::uint8_t> out;
   if (value < 251) {
@@ -172,9 +170,8 @@ TEST(GtidEventCodecTest,
 }
 
 TEST(GtidEventCodecTest, AcceptsALogicalClockWithoutCommitTimestamps) {
-  // Mirrors the source: with no commit timestamps there is no
-  // transaction_length attempt, so this must stay a success even with a
-  // trailing checksum right behind it.
+  // No commit timestamps means no transaction_length attempt: still a success
+  // with a trailing checksum.
   auto body =
       BuildBody(22934, /*withLogicalClock=*/true,
                 /*originalTimestampDiffers=*/false, /*transactionLength=*/0);
@@ -284,8 +281,6 @@ std::vector<std::uint8_t> BuildTaggedBody(const TaggedBodyOptions &options) {
   Append(fields, Varint(9));
   Append(fields, Varint(80411));
 
-  // The size varint counts the whole message including itself, so a first
-  // pass is needed to know how many bytes the size varint itself will need.
   std::vector<std::uint8_t> body;
   Append(body, Varint(1));
   const std::size_t sizeBytes = Varint(fields.size() + 3).size();
@@ -352,8 +347,6 @@ TEST(GtidEventCodecTest, ATaggedBodyWithoutTransactionLengthLeavesItUnset) {
 TEST(GtidEventCodecTest, TheSyntheticEncoderMatchesTheRealBytes) {
   TaggedBodyOptions options;
   auto body = BuildTaggedBody(options);
-  // BuildTaggedBody always writes SAMPLE_UUID_BYTES; swap in the real uuid
-  // by hand since the helper takes no uuid parameter.
   std::vector<std::uint8_t> expected(REAL_TAGGED_BODY_WITH_CRC.begin(),
                                      REAL_TAGGED_BODY_WITH_CRC.end() - 4);
   std::vector<std::uint8_t> realUuidFields;
@@ -367,8 +360,8 @@ TEST(GtidEventCodecTest, TheSyntheticEncoderMatchesTheRealBytes) {
   ASSERT_NE(at, body.end());
   body.erase(at, at + static_cast<std::ptrdiff_t>(sampleUuidFields.size()));
   body.insert(at, realUuidFields.begin(), realUuidFields.end());
-  // The swap changes the message size by the two uuids' varint-length
-  // difference, so the header's size byte (index 1) is excluded below.
+  // The size byte (index 1) is excluded: the uuid swap changes the message
+  // size.
   EXPECT_EQ(std::vector<std::uint8_t>(body.begin() + 3, body.end()),
             std::vector<std::uint8_t>(expected.begin() + 3, expected.end()));
   EXPECT_EQ(body[0], expected[0]);
@@ -406,8 +399,8 @@ TEST(GtidEventCodecTest,
   for (std::size_t length = 0; length < whole.size(); ++length) {
     const std::vector<std::uint8_t> cut(
         whole.begin(), whole.begin() + static_cast<std::ptrdiff_t>(length));
-    // Stop before the trailing field 9: cutting after transaction_length
-    // would be a legitimately shorter message, not a truncation.
+    // Stop before field 9: cutting after transaction_length is a shorter
+    // message, not a truncation.
     if (length >= whole.size() - 4) break;
     EXPECT_FALSE(GtidEventCodec::ParseTagged(cut, 0, value, error))
         << "length " << length;

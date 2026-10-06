@@ -29,9 +29,6 @@
 
 namespace binlog_streamer {
 
-// Byte order matches the server's in-memory layout, not a numeric value:
-// there is no endianness to speak of, bytes are compared and copied
-// verbatim.
 struct Uuid {
   std::array<std::uint8_t, 16> bytes{};
 

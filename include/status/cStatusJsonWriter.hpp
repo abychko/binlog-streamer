@@ -28,9 +28,6 @@
 
 namespace binlog_streamer {
 
-// Every number is a plain number in seconds or bytes and every unknown is
-// null, so a monitoring system cuts what it needs out with JSONPath and
-// never parses text. Formatting for people is the status page's job.
 class StatusJsonWriter {
  public:
   static std::string Write(const RelayStatus &status);

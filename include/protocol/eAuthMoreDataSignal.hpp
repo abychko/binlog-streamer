@@ -25,8 +25,6 @@
 
 namespace binlog_streamer {
 
-// Other covers every payload that isn't a single-byte signal, including
-// the RSA public key AuthMoreData.
 enum class AuthMoreDataSignal {
   FastAuthSuccess,
   PerformFullAuthentication,

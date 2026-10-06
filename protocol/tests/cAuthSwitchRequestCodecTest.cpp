@@ -29,7 +29,6 @@ namespace binlog_streamer {
 namespace {
 
 TEST(AuthSwitchRequestCodecTest, RecognizesAndParsesFixture) {
-  // 0xFE + "caching_sha2_password\0" + 20 bytes of plugin data
   std::vector<std::uint8_t> payload{0xFE};
   const std::string plugin = "caching_sha2_password";
   payload.insert(payload.end(), plugin.begin(), plugin.end());
@@ -55,8 +54,7 @@ TEST(AuthSwitchRequestCodecTest, RejectsWrongHeaderByte) {
 }
 
 TEST(AuthSwitchRequestCodecTest, RejectsMissingTerminator) {
-  const std::vector<std::uint8_t> payload{0xFE, 'a', 'b',
-                                          'c'};  // no NUL after the plugin name
+  const std::vector<std::uint8_t> payload{0xFE, 'a', 'b', 'c'};
   AuthSwitchRequest value;
   std::string error;
   EXPECT_FALSE(AuthSwitchRequestCodec::Parse(payload, value, error));
@@ -65,9 +63,7 @@ TEST(AuthSwitchRequestCodecTest, RejectsMissingTerminator) {
 TEST(AuthSwitchRequestCodecTest, EncodesExactBytesThatParseReadsBack) {
   AuthSwitchRequest value;
   value.pluginName = "ab";
-  value.pluginData = {
-      0x01, 0x00, 0x02,
-      0x00};  // NUL bytes inside and at the end of the data survive
+  value.pluginData = {0x01, 0x00, 0x02, 0x00};
   std::vector<std::uint8_t> out = {0xEE};
   AuthSwitchRequestCodec::Encode(value, out);
   ASSERT_EQ(out, (std::vector<std::uint8_t>{0xEE, 0xFE, 'a', 'b', 0x00, 0x01,

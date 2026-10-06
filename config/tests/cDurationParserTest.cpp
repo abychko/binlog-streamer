@@ -54,12 +54,11 @@ TEST(DurationParserTest, ParsesEachSuffix) {
 }
 
 TEST(DurationParserTest, RejectsMalformedInput) {
-  ExpectFails("7D");                 // only lowercase suffixes are accepted
-  ExpectFails("7");                  // no suffix
-  ExpectFails("0h");                 // zero is not a positive duration
-  ExpectFails("1.5h");               // fractional
-  ExpectFails("9999999999999999d");  // overflows std::chrono::seconds::rep
-                                     // after the day multiplier
+  ExpectFails("7D");
+  ExpectFails("7");
+  ExpectFails("0h");
+  ExpectFails("1.5h");
+  ExpectFails("9999999999999999d");
 }
 
 TEST(DurationParserTest, ParsesADelayInMicrosecondsOrMilliseconds) {

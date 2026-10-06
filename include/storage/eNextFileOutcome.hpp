@@ -25,9 +25,8 @@
 
 namespace binlog_streamer {
 
-// NotYetAvailable is not a failure - it's the ordinary state of a file
-// still open, or a gap before its successor is indexed; call Read()
-// again rather than looping Next() alone.
+// NotYetAvailable is not a failure: a file still open, or a gap before its
+// successor is indexed. Call Read() again.
 enum class NextFileOutcome {
   Found,
   NotYetAvailable,

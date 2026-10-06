@@ -35,10 +35,8 @@ class ReloadSignalThread {
  public:
   using Handler = std::function<void()>;
 
-  // Call before any other thread starts, so every thread inherits the mask
-  // and a SIGHUP arriving before Start() waits instead of ending the process.
-  // Also undoes signal state inherited from the parent: SIG_IGN for SIGHUP
-  // and any other blocked signal.
+  // Call before any other thread starts, so every thread inherits the mask.
+  // Also undoes inherited signal state.
   static void BlockReloadSignal();
 
   explicit ReloadSignalThread(Handler handler);

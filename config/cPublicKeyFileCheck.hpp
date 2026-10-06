@@ -30,9 +30,8 @@
 
 namespace binlog_streamer {
 
-// Integrity-only, not confidentiality: the key isn't secret (the source
-// hands it to any client), so world-read is fine. What is refused is
-// replacing it, which would let an attacker recover the auth password.
+// Integrity only: the key is public, so world-read is fine; what is refused is
+// a writable file.
 class PublicKeyFileCheck {
  public:
   static std::vector<std::string> CheckFile(const struct stat &status,

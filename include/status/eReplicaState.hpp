@@ -26,9 +26,9 @@
 namespace binlog_streamer {
 
 enum class ReplicaState {
-  Connected,   // logged in, no dump requested yet
-  CatchingUp,  // reading stored events behind the published position
-  Streaming,   // sent everything stored, waiting for new events
+  Connected,
+  CatchingUp,
+  Streaming,
 };
 
 }  // namespace binlog_streamer

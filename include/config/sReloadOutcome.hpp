@@ -30,10 +30,8 @@
 namespace binlog_streamer {
 
 struct ReloadOutcome {
-  // The running accounts, each with the hosts the reloaded file gives it.
   std::vector<ReplicaClient> clients;
   unsigned changedHosts = 0;
-  // Changes found in the files but not applied until a restart.
   std::vector<std::string> ignored;
 };
 

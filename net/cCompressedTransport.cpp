@@ -31,8 +31,6 @@
 
 namespace binlog_streamer {
 namespace {
-// A frame buffer that grew past this for one large frame is let go after
-// it, as PacketChannel does with its write buffer.
 constexpr std::size_t FRAME_BUFFER_KEEP = 1024 * 1024;
 
 std::size_t Load3(const std::uint8_t *bytes) {
@@ -65,7 +63,6 @@ void CompressedTransport::Enable(CompressionAlgorithm algorithm, int level) {
 bool CompressedTransport::Connect(const std::string &host, std::uint16_t port,
                                   std::chrono::milliseconds timeout,
                                   std::string &error) {
-  // A reconnect starts a new handshake, which is never compressed.
   m_algorithm = CompressionAlgorithm::None;
   m_frameSequenceId = 0;
   DiscardFrame();
@@ -93,8 +90,8 @@ ReadOutcome CompressedTransport::Read(std::span<std::uint8_t> buffer,
   if (!Enabled()) return m_inner.Read(buffer, bytesRead, timeout, error);
   if (buffer.empty()) return ReadOutcome::Data;
 
-  // An empty frame delivers no bytes, and Data with none would look like
-  // end of stream to the caller; read on until something arrives.
+  // An empty frame delivers no bytes, and Data with none would look like end of
+  // stream; read on.
   while (m_plainOffset == m_plain.size()) {
     const ReadOutcome outcome = ReadFrame(timeout, error);
     if (outcome != ReadOutcome::Data) return outcome;
@@ -217,14 +214,11 @@ bool CompressedTransport::Write(std::span<const std::uint8_t> data,
 bool CompressedTransport::WriteFrame(std::span<const std::uint8_t> chunk,
                                      std::chrono::milliseconds timeout,
                                      std::string &error) {
-  std::size_t plainLength = 0;  // stays 0 when the payload goes as it is
+  std::size_t plainLength = 0;
   m_frameOut.resize(COMPRESSED_HEADER_SIZE);
   if (chunk.size() >= MIN_COMPRESS_LENGTH) {
-    // Failing to shrink the payload is as much a reason to send it
-    // uncompressed as an outright error is, and the two algorithms draw
-    // that line one byte apart: zlib_compress_alloc gives up on
-    // complen >= len, zstd_compress_alloc only on res > len
-    // (mysys/my_compress.cc).
+    // zlib gives up at complen >= len, zstd only at res > len
+    // (mysys/my_compress.cc); the payload is sent uncompressed either way.
     if (m_algorithm == CompressionAlgorithm::Zlib) {
       const std::size_t bound = compressBound(static_cast<uLong>(chunk.size()));
       m_frameOut.resize(COMPRESSED_HEADER_SIZE + bound);

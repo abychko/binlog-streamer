@@ -31,19 +31,16 @@
 
 namespace binlog_streamer {
 
-// No lookahead: a group's end is learned from the GTID event that opens it.
 class TransactionBoundaryTracker {
  public:
-  // gtidEvent is null except for a Gtid/AnonymousGtid/GtidTagged header.
   BoundaryOutcome OnEvent(const EventHeader &header, std::uint64_t fileOffset,
                           const GtidEvent *gtidEvent, std::string &error);
   bool InGroup() const;
-  // Call when the tracked file changes: a group never spans two files.
   void Reset();
 
  private:
   bool inGroup_ = false;
-  std::uint64_t groupEndOffset_ = 0;  // meaningful only while inGroup_
+  std::uint64_t groupEndOffset_ = 0;
 };
 
 }  // namespace binlog_streamer

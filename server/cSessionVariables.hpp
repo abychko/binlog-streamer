@@ -29,7 +29,7 @@
 
 namespace binlog_streamer {
 
-// Names are case-insensitive, as on a server; caller lower-cases them.
+// Names are case-insensitive, as on a server; the caller lower-cases them.
 class SessionVariables {
  public:
   void Set(const std::string &name, std::string value) {

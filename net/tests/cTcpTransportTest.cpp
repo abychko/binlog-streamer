@@ -40,8 +40,7 @@
 namespace binlog_streamer {
 namespace {
 
-// No SA_RESTART: makes poll()/recv() return EINTR instead of silently
-// resuming. sigaction(), not signal(), to make sa_flags explicit.
+// No SA_RESTART, so poll()/recv() return EINTR instead of resuming.
 void NoopSignalHandler(int) {}
 
 void InstallSignalHandlerWithoutRestart(int signalNumber) {
@@ -52,8 +51,6 @@ void InstallSignalHandlerWithoutRestart(int signalNumber) {
   sigaction(signalNumber, &action, nullptr);
 }
 
-// Loopback TCP listener on an OS-assigned port, for tests needing a real
-// socket pair (EINTR/SIGPIPE are properties of the real syscalls).
 class LoopbackListener {
  public:
   LoopbackListener() {
@@ -85,9 +82,8 @@ class LoopbackListener {
   std::uint16_t m_port = 0;
 };
 
-// Sends RST instead of FIN: a plain close() lets the peer's writes succeed
-// into its send buffer until it fills, not the fast failure the SIGPIPE
-// test below needs. SO_LINGER{1,0} forces a reset.
+// Sends RST instead of FIN: after a plain close() the peer's writes keep
+// succeeding into its send buffer until it fills.
 void CloseWithReset(int fd) {
   struct linger resetOnClose{1, 0};
   setsockopt(fd, SOL_SOCKET, SO_LINGER, &resetOnClose, sizeof(resetOnClose));
@@ -150,8 +146,6 @@ TEST(TcpTransportTest, ReadReturnsInterruptedWhenStopIsRequestedDuringEintr) {
   std::uint8_t buffer[8] = {};
   std::size_t bytesRead = 0;
   std::string error;
-  // No one ever sends anything: the only way this Read() returns before
-  // its 5s timeout is by noticing the stop request after EINTR.
   const ReadOutcome outcome =
       transport.Read(buffer, bytesRead, std::chrono::milliseconds(5000), error);
   interrupter.join();
@@ -160,10 +154,6 @@ TEST(TcpTransportTest, ReadReturnsInterruptedWhenStopIsRequestedDuringEintr) {
   EXPECT_EQ(outcome, ReadOutcome::Interrupted);
   EXPECT_EQ(bytesRead, 0u);
 }
-
-// The next two tests call WakeupPipe::Wake() directly rather than raising a
-// signal: they exercise the self-pipe mechanism itself, not signal delivery
-// (already covered above).
 
 TEST(
     TcpTransportTest,
@@ -187,8 +177,6 @@ TEST(
   std::size_t bytesRead = 0;
   std::string error;
   const auto start = std::chrono::steady_clock::now();
-  // No one ever sends anything: the only way this returns before its 5s
-  // timeout is poll() noticing the wakeup pipe's read end.
   const ReadOutcome outcome =
       transport.Read(buffer, bytesRead, std::chrono::milliseconds(5000), error);
   const auto elapsed = std::chrono::steady_clock::now() - start;
@@ -202,9 +190,6 @@ TEST(
 TEST(
     TcpTransportTest,
     ReadReturnsInterruptedWhenWokenBetweenTwoCallsWithNoDataAndNoSignalInvolved) {
-  // The scenario the self-pipe closes: a signal handled between two Read()
-  // calls (not blocked in any syscall) sets nothing poll() could get EINTR
-  // from; only the already-readable pipe makes the second Read() notice it.
   LoopbackListener listener;
   WakeupPipe wakeupPipe;
   std::string wakeupError;
@@ -244,10 +229,6 @@ TEST(
   EXPECT_LT(elapsed, std::chrono::milliseconds(2000));
 }
 
-// The race two threads sharing one WakeupPipe must survive: draining the
-// pipe on one thread's Read() could leave another already-woken thread
-// finding it empty and waiting out its timeout instead of returning
-// Interrupted.
 TEST(TcpTransportTest, WakeInterruptsTwoBlockedReadsOnOneSharedWakeupPipe) {
   LoopbackListener listener;
   WakeupPipe wakeupPipe;
@@ -273,9 +254,6 @@ TEST(TcpTransportTest, WakeInterruptsTwoBlockedReadsOnOneSharedWakeupPipe) {
   ReadOutcome outcomeB = ReadOutcome::Failed;
   std::chrono::steady_clock::duration elapsedA{};
   std::chrono::steady_clock::duration elapsedB{};
-  // No one ever sends anything on either socket: the only way either
-  // Read() below returns before its 5s timeout is poll() noticing the
-  // shared wakeup pipe's read end.
   std::thread readerA([&] {
     std::uint8_t buffer[8] = {};
     std::size_t bytesRead = 0;
@@ -295,9 +273,6 @@ TEST(TcpTransportTest, WakeInterruptsTwoBlockedReadsOnOneSharedWakeupPipe) {
     elapsedB = std::chrono::steady_clock::now() - start;
   });
 
-  // Not load-bearing for correctness (a reader not yet in poll() when
-  // Wake() runs is the other half of the race, covered via the queued
-  // byte) - only makes this test exercise two simultaneously blocked readers.
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
   wakeupPipe.Wake();
 
@@ -353,12 +328,8 @@ TEST(TcpTransportTest, WriteAfterPeerResetFailsWithoutKillingTheProcess) {
   ASSERT_GE(acceptedSocket, 0);
   CloseWithReset(acceptedSocket);
 
-  std::this_thread::sleep_for(
-      std::chrono::milliseconds(50));  // let the RST arrive over loopback
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-  // One write may land in the kernel's send buffer before the RST is
-  // noticed; a bounded number of large writes should observe it -
-  // exhausting the budget without a failure is itself the test failure below.
   const std::vector<std::uint8_t> chunk(1024 * 1024, 0x55);
   bool sawFailure = false;
   std::string error;
@@ -367,23 +338,17 @@ TEST(TcpTransportTest, WriteAfterPeerResetFailsWithoutKillingTheProcess) {
       sawFailure = true;
   }
 
-  // Reaching this line at all (rather than the process dying to an
-  // unhandled SIGPIPE) is itself part of what this test proves.
   EXPECT_TRUE(sawFailure) << "expected Write() to eventually fail after the "
                              "peer reset the connection";
 }
 
-// poll() re-checks its descriptors after waking, so a reader that emptied
-// the pipe could leave others asleep: the pending wakeup must survive an
-// interrupted Read().
 TEST(TcpTransportTest, AnInterruptedReadLeavesTheWakeupPendingForOtherReaders) {
   int sockets[2];
   ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), 0);
   WakeupPipe wakeupPipe;
   std::string error;
   ASSERT_TRUE(wakeupPipe.Open(error)) << error;
-  std::atomic<bool> stopRequested{
-      false};  // left unset: only the pipe reports the stop here
+  std::atomic<bool> stopRequested{false};
   TcpTransport transport(&stopRequested, &wakeupPipe);
   ASSERT_TRUE(transport.Accept(sockets[0], error)) << error;
 

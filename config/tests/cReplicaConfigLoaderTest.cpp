@@ -100,8 +100,6 @@ TEST(ReplicaConfigLoaderTest, EmptyFileGivesDefaultsAndNoClients) {
   EXPECT_TRUE(result.value->clients.empty());
 }
 
-// A comment-only document also yields zero documents from LoadAll; the Null
-// normalization in cYamlMapReader.cpp::Document must apply here too.
 TEST(ReplicaConfigLoaderTest, CommentOnlyFileGivesDefaultsAndNoClients) {
   ProtectedFileFixture fixture;
   const auto result = LoadReplica(fixture, "# just a comment\n");
@@ -126,9 +124,6 @@ TEST(ReplicaConfigLoaderTest, ScalarClientsKeyWithoutValueIsNotAnError) {
   EXPECT_TRUE(result.value->clients.empty());
 }
 
-// listen_address/listen_port left empty (an unfilled template) mean "not
-// set", same as the file being absent - unlike every other optional
-// scalar leaf in this codebase, where present-but-empty is an error.
 TEST(ReplicaConfigLoaderTest, EmptyListenPortDefaultsWhenListenAddressIsSet) {
   ProtectedFileFixture fixture;
   const auto result =
@@ -151,10 +146,6 @@ TEST(ReplicaConfigLoaderTest, EmptyListenAddressDefaultsWhenListenPortIsSet) {
   EXPECT_EQ(result.value->listenAddress, defaultAddress);
 }
 
-// A non-scalar listen_port is a type error, not "not set":
-// OptionalNonEmptyString only treats an absent, null or empty-scalar node as
-// "not set" and raises "wrong type" for anything else, same as String() for
-// every other leaf.
 TEST(ReplicaConfigLoaderTest, NonScalarListenPortIsAWrongTypeError) {
   ProtectedFileFixture fixture;
   const auto result = LoadReplica(fixture, "listen_port: [3307]\n");
@@ -197,7 +188,6 @@ TEST(ReplicaConfigLoaderTest, CompressionDefaultsToZstdAndIsNamedNotFlagged) {
 
 TEST(ReplicaConfigLoaderTest, UnknownCompressionAlgorithmIsAnError) {
   ProtectedFileFixture fixture;
-  // Not a boolean key: "true" names no algorithm.
   for (const std::string value : {"true", "lz4", "zstd,zlib"}) {
     const auto result = LoadReplica(fixture, "compression: " + value + "\n");
     EXPECT_FALSE(result.value) << value;
@@ -232,9 +222,6 @@ TEST(ReplicaConfigLoaderTest, DuplicateUserIsAnError) {
   EXPECT_EQ(result.errors[0].message, "duplicate user");
 }
 
-// Unlike the top-level listen_address/listen_port above, an empty value
-// inside a client entry stays an error: a client with an empty user is a
-// real administrator mistake, not an unfilled template.
 TEST(ReplicaConfigLoaderTest, EmptyClientUserIsAnError) {
   ProtectedFileFixture fixture;
   const auto result = LoadReplica(fixture,

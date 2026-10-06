@@ -30,9 +30,6 @@ namespace binlog_streamer {
 
 namespace {
 
-// The texts a MySQL source sends for the same refusals
-// (share/messages_to_clients.txt), so that a replica's error log reads the
-// same behind the relay as behind a source.
 constexpr char PURGED_REQUIRED_GTIDS[] =
     "Cannot replicate because the source purged required binary logs. "
     "Replicate the missing "
@@ -53,8 +50,8 @@ constexpr char REPLICA_HAS_MORE_GTIDS[] =
     "transactions that have been committed on source but are not included in "
     "GTID_EXECUTED.";
 
-// A file can be removed between being chosen and being opened; the choice
-// is then simply made again.
+// A file can be removed between being chosen and being opened; the choice is
+// then made again.
 constexpr int OPEN_ATTEMPTS = 3;
 
 std::string Lower(std::string text) {
@@ -77,9 +74,8 @@ DumpStart DumpStartResolver::Resolve(const BinlogDumpGtidCommand &command,
     return result;
   }
 
-  // The relay issues no GTIDs of its own, so any the replica holds under
-  // the relay's UUID (tagged or not) are ones it does not have; the
-  // textual form names every UUID the set contains.
+  // The relay issues no GTIDs of its own, so any the replica holds under the
+  // relay's UUID (tagged or not) are ones it cannot have.
   if (!serverUuid.empty() &&
       Lower(result.replicaSet.ToText()).find(Lower(serverUuid)) !=
           std::string::npos) {

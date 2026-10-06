@@ -59,7 +59,7 @@ TEST(RotateEventCodecTest, ExcludesTrailingChecksumFromFileName) {
 }
 
 TEST(RotateEventCodecTest, RejectsBodyShorterThanThePositionField) {
-  const std::vector<std::uint8_t> body{1, 2, 3};  // fewer than 8 bytes
+  const std::vector<std::uint8_t> body{1, 2, 3};
   RotateEvent value;
   std::string error;
   EXPECT_FALSE(RotateEventCodec::Parse(body, 0, value, error));

@@ -37,17 +37,13 @@ namespace binlog_streamer::test {
 struct DriverOptions {
   SourceSettings source;
   ServerSettings server;
-  std::string startGtidSetText;  // empty means an empty GTID set (dump from the
-                                 // earliest the source still has)
-  std::uint64_t stopAfterGtidEvents =
-      0;                             // 0 = no target (see cFileEventSink.hpp)
-  std::uint64_t waitHeartbeats = 0;  // 0 = no target
+  std::string startGtidSetText;
+  std::uint64_t stopAfterGtidEvents = 0;
+  std::uint64_t waitHeartbeats = 0;
   std::chrono::seconds heartbeatPeriod{30};
 };
 
 struct DriverResult {
-  // FileEventSink's own stop condition was reached (StoppedBySink with
-  // ReachedTargets() true), not the stream ending for any other reason.
   bool ok = false;
   std::string message;
   StreamEndReason reason = StreamEndReason::MalformedStream;
@@ -64,13 +60,12 @@ struct DriverResult {
   std::uint64_t largestEventSubPackets = 0;
 };
 
-// Connects as an unregistered dump connection, like mysqlbinlog: registering
-// as a replica could collide with a real one's server_id.
+// Connects as an unregistered dump connection, like mysqlbinlog: registering as
+// a replica could collide with a real one's server_id.
 class StreamDriver {
  public:
-  // stopRequested is polled like TcpTransport polls it on EINTR - it is
-  // the caller's job (main.cpp) to make a signal actually arrive (e.g.
-  // an alarm()) to interrupt an in-progress read.
+  // stopRequested is polled on EINTR; the caller (main.cpp) must make a signal
+  // arrive (e.g. alarm()) to interrupt a read in progress.
   StreamDriver(DriverOptions options, const std::atomic<bool> *stopRequested);
 
   DriverResult Run(std::ostream &sinkStream);

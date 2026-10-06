@@ -38,8 +38,6 @@ ByteBuffer &ByteBuffer::operator=(ByteBuffer &&other) noexcept {
 }
 
 void ByteBuffer::resize(std::size_t newSize) {
-  // Doubling keeps a buffer that grows in small steps from copying itself
-  // on every step.
   if (newSize > m_capacity) Reallocate(std::max(newSize, 2 * m_capacity));
   m_size = newSize;
 }

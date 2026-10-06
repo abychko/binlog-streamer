@@ -1,5 +1,3 @@
-# FakeTransport (cFakeTransport.hpp) is header-only; a consumer links this
-# target for the include path.
 ADD_LIBRARY(bs-net-test-support INTERFACE)
 TARGET_INCLUDE_DIRECTORIES(bs-net-test-support INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 TARGET_LINK_LIBRARIES(bs-net-test-support INTERFACE bs-net)

@@ -31,18 +31,13 @@
 
 namespace binlog_streamer {
 
-// body excludes the Common-Header but still carries the trailing
-// checksum; checksumLength says how many trailing bytes to drop before
-// parsing.
+// The body excludes the Common-Header but carries the trailing checksum;
+// checksumLength says how many bytes to drop.
 class HeartbeatEventCodec {
  public:
-  // v1: the whole body (after trimming checksum) is the file name text;
-  // cannot fail structurally, so no error out-parameter.
   static void ParseV1(std::span<const std::uint8_t> body,
                       std::size_t checksumLength, HeartbeatEvent &value);
 
-  // Unknown TLV types are skipped by length rather than rejected, for
-  // forward compatibility.
   static bool ParseV2(std::span<const std::uint8_t> body,
                       std::size_t checksumLength, HeartbeatEvent &value,
                       std::string &error);

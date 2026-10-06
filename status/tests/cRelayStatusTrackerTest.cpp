@@ -31,7 +31,6 @@
 namespace binlog_streamer {
 namespace {
 
-// Two files of known sizes, the second one published up to a point.
 class FakeStorageFacts : public StorageFacts {
  public:
   std::size_t Files() const override { return sizes.size(); }
@@ -70,8 +69,6 @@ class FakeStorageFacts : public StorageFacts {
                                              {"binlog.000002", 600}};
   std::string publishedFile = "binlog.000002";
   std::uint64_t publishedPosition = 400;
-  // Runs once the published position has been read: what moves on here
-  // moves between the status's reads.
   std::function<void()> afterPublished;
 };
 
@@ -147,15 +144,15 @@ TEST(RelayStatusTrackerTest, SourceGoesThroughAttemptsConnectionAndLoss) {
   EXPECT_EQ(status.storage.position, 400u);
   EXPECT_EQ(status.storage.behindBytes, std::optional<std::uint64_t>(100));
 
-  // A heartbeat: the source has nothing more, so the lag is zero whatever
-  // the last event's timestamp was.
+  // A heartbeat: the source has nothing more, so the lag is zero whatever the
+  // last event's timestamp was.
   tracker.Source().Idle(500);
   status = tracker.Snapshot();
   EXPECT_EQ(status.source.behindSeconds, std::optional<std::uint64_t>(0));
   EXPECT_TRUE(status.source.seen.idle);
 
-  // A file storage does not hold yet: the received position cannot be
-  // placed, and the byte lag is unknown rather than wrong.
+  // A file storage does not hold yet: the byte lag is unknown rather than
+  // wrong.
   tracker.Source().SetFile("binlog.000003", 4);
   status = tracker.Snapshot();
   EXPECT_FALSE(status.storage.behindBytes.has_value());
@@ -166,15 +163,13 @@ TEST(RelayStatusTrackerTest, SourceGoesThroughAttemptsConnectionAndLoss) {
   EXPECT_FALSE(status.source.connected);
   EXPECT_FALSE(status.source.clock.has_value());
   EXPECT_FALSE(status.source.behindSeconds.has_value());
-  // What the source reported about itself stays, and so does where the
-  // stream stood.
   EXPECT_EQ(status.source.serverUuid, "uuid-7");
   EXPECT_EQ(status.source.seen.file, "binlog.000003");
 }
 
 TEST(RelayStatusTrackerTest, DiskBytesCountTheOpenFileAsReceived) {
-  // The catalog knows the open file at 100 bytes; 500 have been received
-  // into it, so 1500 are on disk, not 1100.
+  // The catalog knows the open file at 100 bytes; 500 have been received into
+  // it, so 1500 are on disk, not 1100.
   FakeStorageFacts storage;
   storage.sizes["binlog.000002"] = 100;
   RelayStatusTracker tracker("relay", "1.0", 10, &storage);
@@ -182,7 +177,6 @@ TEST(RelayStatusTrackerTest, DiskBytesCountTheOpenFileAsReceived) {
   tracker.Source().SetFile("binlog.000002", 4);
   tracker.Source().Advance(500, 1'700'000'090);
   EXPECT_EQ(tracker.Snapshot().storage.bytes, 1500u);
-  // A closed file's size stands; nothing received past it changes it.
   tracker.Source().SetFile("binlog.000001", 4);
   tracker.Source().Advance(10, 1'700'000'090);
   EXPECT_EQ(tracker.Snapshot().storage.bytes, 1100u);
@@ -226,7 +220,6 @@ TEST(RelayStatusTrackerTest, ReplicasAreListedWhileRegistered) {
   EXPECT_GE(*status.replicas[0].behindSeconds, 3600u);
   EXPECT_LE(*status.replicas[0].behindSeconds, 3601u);
 
-  // Sent everything published and waiting: streaming, nothing behind.
   first->Progress().SetFile("binlog.000002", 4);
   first->Progress().Advance(400, sourceClock - 1);
   first->Progress().Idle(400);
@@ -235,7 +228,6 @@ TEST(RelayStatusTrackerTest, ReplicasAreListedWhileRegistered) {
   EXPECT_EQ(status.replicas[0].behindBytes, std::optional<std::uint64_t>(0));
   EXPECT_EQ(status.replicas[0].behindSeconds, std::optional<std::uint64_t>(0));
 
-  // A file purged from under the replica: the byte lag is unknown.
   storage.sizes.erase("binlog.000001");
   second->SetDumping(true);
   second->Progress().SetFile("binlog.000001", 4);
@@ -248,15 +240,14 @@ TEST(RelayStatusTrackerTest, ReplicasAreListedWhileRegistered) {
   status = tracker.Snapshot();
   ASSERT_EQ(status.replicas.size(), 1u);
   EXPECT_EQ(status.replicas[0].facts.user, "replica2");
-  // Unregistering twice, or something never registered, changes nothing.
   tracker.UnregisterReplica(first);
   EXPECT_EQ(tracker.Snapshot().replicas.size(), 1u);
 }
 
 TEST(RelayStatusTrackerTest, ReplicaThatSendsMoreDuringASnapshotStaysKnown) {
-  // A streaming replica is at the published edge; while the status reads,
-  // more is published and sent. Read after the published position, its
-  // own would be ahead of it and the byte lag lost.
+  // A streaming replica is at the published edge; more is published and sent
+  // while the status reads. Read after the published position, its own would be
+  // ahead of it and the byte lag lost.
   FakeStorageFacts storage;
   RelayStatusTracker tracker("relay", "1.0", 10, &storage);
   auto replica = tracker.RegisterReplica(

@@ -31,16 +31,13 @@
 
 namespace binlog_streamer {
 
-// SHA2(password)=X, SHA2(X)=Y, SHA2(Y||nonce)=Z, scramble=XOR(X,Z) - the
-// exact composition the server's fast path expects. Does not cover full
-// authentication (CachingSha2FullAuthPassword).
+// SHA2(password)=X, SHA2(X)=Y, SHA2(Y||nonce)=Z, scramble=XOR(X,Z).
 class CachingSha2Scramble {
  public:
   static constexpr std::size_t LENGTH = 32;
 
-  // nonce is the handshake's combined auth-plugin-data truncated to
-  // SCRAMBLE_LENGTH (20) - HandshakeV10.authPluginData may be one byte
-  // longer. The fixed extent catches a wrong-sized nonce at compile time.
+  // nonce is the combined auth-plugin-data truncated to SCRAMBLE_LENGTH (20);
+  // the handshake's may be one byte longer.
   static std::array<std::uint8_t, LENGTH> Compute(
       std::string_view password,
       std::span<const std::uint8_t, SCRAMBLE_LENGTH> nonce);

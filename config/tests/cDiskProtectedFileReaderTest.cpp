@@ -41,8 +41,6 @@ DiskProtectedFileReader MakeReader() {
 
 TEST(DiskProtectedFileReaderTest, ReadsWholeFileAcrossMultipleReadCalls) {
   ProtectedFileFixture fixture;
-  // Larger than the reader's internal 8192-byte read buffer, so the read loop
-  // must iterate more than once.
   const std::string content(20000, 'x');
   const auto path = fixture.WriteFile("secret.yml", content);
   auto reader = MakeReader();
@@ -88,9 +86,8 @@ TEST(DiskProtectedFileReaderTest, DirectoryInsteadOfFileFails) {
   EXPECT_EQ(reader.Read(subdirectory.string(), content, errors),
             ProtectedFileStatus::Failed);
   ASSERT_EQ(errors.size(), 1u);
-  // Text checked, not just non-emptiness: without the S_ISREG check,
-  // read() on a directory fails with EISDIR and this test would still
-  // pass for the wrong reason.
+  // Text checked: without the S_ISREG check, read() on a directory fails with
+  // EISDIR and the test would still pass.
   EXPECT_NE(errors[0].message.find("not a regular file"), std::string::npos);
 }
 
@@ -101,8 +98,6 @@ TEST(DiskProtectedFileReaderTest, FifoFailsWithoutBlocking) {
   auto reader = MakeReader();
   std::string content;
   std::vector<ConfigError> errors;
-  // O_NONBLOCK in the reader keeps this from hanging even though nothing
-  // has opened the write end of the FIFO.
   EXPECT_EQ(reader.Read(fifo.string(), content, errors),
             ProtectedFileStatus::Failed);
   EXPECT_FALSE(errors.empty());
@@ -111,8 +106,7 @@ TEST(DiskProtectedFileReaderTest, FifoFailsWithoutBlocking) {
 TEST(DiskProtectedFileReaderTest, DirectoryViolationErrorNamesTheDirectory) {
   ProtectedFileFixture fixture;
   fixture.WriteFile("secret.yml", "host: db\n");
-  ASSERT_EQ(chmod(fixture.Directory().c_str(), 0777),
-            0);  // group/other-writable directory
+  ASSERT_EQ(chmod(fixture.Directory().c_str(), 0777), 0);
   auto reader = MakeReader();
   std::string content;
   std::vector<ConfigError> errors;
@@ -120,8 +114,6 @@ TEST(DiskProtectedFileReaderTest, DirectoryViolationErrorNamesTheDirectory) {
                         errors),
             ProtectedFileStatus::Failed);
   ASSERT_EQ(errors.size(), 1u);
-  // Identified by the "file" field equal to the directory path, not by
-  // the word "directory" in the message text.
   EXPECT_EQ(errors[0].file, fixture.Directory().string());
 }
 
@@ -138,9 +130,6 @@ TEST(DiskProtectedFileReaderTest, ModeViolationMessageNamesTheFixCommand) {
   EXPECT_NE(errors[0].message.find("chmod 0640"), std::string::npos);
 }
 
-// A missing expected group does not hide an unrelated mode violation found
-// on the same file, but the redundant "wrong group" (a direct consequence
-// of the sentinel gid) is not repeated next to "does not exist" either.
 TEST(DiskProtectedFileReaderTest,
      MissingGroupAndModeViolationCombineIntoOneError) {
   ProtectedFileFixture fixture;

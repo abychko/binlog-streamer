@@ -30,16 +30,14 @@
 
 namespace binlog_streamer {
 
-// StartSetResolver's only dependency on the network, so its logic is
-// testable against a scripted fake instead of a real source.
 class BinlogProbe {
  public:
   virtual ~BinlogProbe() = default;
 
   virtual ProbeResult Probe(const GtidSet &startSet) = 0;
 
-  // !ok is permanent if the file is missing or predates GTIDs, transient
-  // on a transport failure.
+  // !ok is permanent if the file is missing or predates GTIDs, transient on a
+  // transport failure.
   virtual PreviousGtidsResult PreviousGtidsText(std::string_view fileName) = 0;
 };
 

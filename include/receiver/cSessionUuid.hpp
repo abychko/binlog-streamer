@@ -27,12 +27,8 @@
 
 namespace binlog_streamer {
 
-// Also used to detect an (astronomically unlikely) collision with the
-// source's own server_uuid.
 class SessionUuid {
  public:
-  // RFC 4122 v4, lowercase canonical text. Not a security token, so
-  // std::random_device (not a CSPRNG) is fine here.
   static std::string Generate();
 };
 

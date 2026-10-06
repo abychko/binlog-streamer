@@ -31,11 +31,10 @@ namespace binlog_streamer {
 
 struct GtidEvent {
   Uuid uuid;
-  std::string tag;  // empty for untagged forms
+  std::string tag;
   std::int64_t gno = 0;
   std::uint64_t transactionLength = 0;
-  bool hasTransactionLength = false;  // false, not transactionLength==0,
-                                      // when the source is too old to send it
+  bool hasTransactionLength = false;
 };
 
 }  // namespace binlog_streamer

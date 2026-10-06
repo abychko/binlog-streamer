@@ -25,11 +25,9 @@
 
 namespace binlog_streamer {
 
-// Decided under the same lock as "is currentFileName's record done"
-// and, when it is, "what follows it".
 enum class SuccessorOutcome {
   NotDone,
-  OffsetPastEnd,  // a caller error
+  OffsetPastEnd,
   NoSuccessor,
   Found,
   NotFound,

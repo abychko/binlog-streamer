@@ -39,17 +39,17 @@ std::vector<std::uint8_t> BuildFixture() {
   LengthEncodedString::Encode("", payload);
   LengthEncodedString::Encode("Variable_name", payload);
   LengthEncodedString::Encode("", payload);
-  payload.push_back(0x0c);  // length-of-fixed-fields marker
-  payload.push_back(0x21);  // character_set = 33 (utf8_general_ci), low byte
+  payload.push_back(0x0c);
+  payload.push_back(0x21);
   payload.push_back(0x00);
-  payload.push_back(0xFF);  // column_length = 255
+  payload.push_back(0xFF);
   payload.push_back(0x00);
   payload.push_back(0x00);
   payload.push_back(0x00);
-  payload.push_back(0xFD);  // type = MYSQL_TYPE_VAR_STRING (253)
-  payload.push_back(0x00);  // flags low byte
-  payload.push_back(0x00);  // flags high byte
-  payload.push_back(0x00);  // decimals
+  payload.push_back(0xFD);
+  payload.push_back(0x00);
+  payload.push_back(0x00);
+  payload.push_back(0x00);
   return payload;
 }
 
@@ -90,18 +90,12 @@ TEST(ColumnDefinition41CodecTest, EncodesExactBytes) {
 
   std::vector<std::uint8_t> expected = {0xEE, 3, 'd', 'e', 'f', 0, 0, 0, 18};
   const std::string name = "@@GLOBAL.SERVER_ID";
-  // Reserved up front: GCC 14 at -O2 misreads the reallocating insert below
-  // as an overflow (-Wstringop-overflow).
+  // Reserved up front: GCC 14 at -O2 misreads the reallocating insert below as
+  // an overflow (-Wstringop-overflow).
   expected.reserve(expected.size() + name.size() + 14);
   expected.insert(expected.end(), name.begin(), name.end());
-  expected.insert(expected.end(), {0,           // org_name
-                                   0x0C,        // length of the fixed block
-                                   0x3F, 0x00,  // character set
-                                   0x04, 0x03, 0x02, 0x01,  // column length
-                                   0x08,                    // type
-                                   0xA0, 0x00,              // flags
-                                   0x1F,                    // decimals
-                                   0x00, 0x00});            // filler
+  expected.insert(expected.end(), {0, 0x0C, 0x3F, 0x00, 0x04, 0x03, 0x02, 0x01,
+                                   0x08, 0xA0, 0x00, 0x1F, 0x00, 0x00});
   EXPECT_EQ(out, expected);
 }
 

@@ -46,9 +46,6 @@ TEST(UuidTextTest, AcceptsUppercaseHexAndNormalizesToLowercase) {
 }
 
 TEST(UuidTextTest, PreservesByteOrder) {
-  // The first and last bytes differ (0x3e vs 0x62): a codec that reversed
-  // or transposed sections would still print the same digits back if
-  // fields were symmetrical, so this fixture is chosen to be asymmetric.
   Uuid value;
   std::string error;
   ASSERT_TRUE(

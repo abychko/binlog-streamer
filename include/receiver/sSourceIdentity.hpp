@@ -29,28 +29,16 @@
 
 namespace binlog_streamer {
 
-// Populated incrementally; fields for steps not reached when a session
-// ends early are left at their defaults.
 struct SourceIdentity {
   std::string versionString;
   unsigned versionMajor = 0;
-  // major*10000 + minor*100 + patch, matching mysql_get_server_version()
-  // - lets version-gated logic use one numeric comparison instead of
-  // re-parsing versionString.
   std::uint32_t versionNumber = 0;
   std::uint32_t serverId = 0;
-  std::string checksumAlgorithm;  // @source_binlog_checksum, or "OFF" if
-                                  // unsupported
+  std::string checksumAlgorithm;
   std::string gtidMode;
   std::string serverUuid;
-  // The source's own clock (ReportClockSkew()), since events carry the
-  // source's clock, not this relay's.
   std::uint64_t unixTimestamp = 0;
-  std::chrono::steady_clock::time_point unixTimestampReadAt{};  // default
-                                                                // means no
-                                                                // timestamp
-                                                                // was
-                                                                // received yet
+  std::chrono::steady_clock::time_point unixTimestampReadAt{};
   bool registered = false;
 };
 

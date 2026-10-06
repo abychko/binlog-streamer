@@ -41,17 +41,13 @@ namespace binlog_streamer {
 class ListenSocket;
 class TcpTransport;
 
-// Serves one request per connection on a thread of its own, the way the
-// replica listener serves a replica: a client that stalls holds its own
-// thread, not the listener. The handler runs on that thread and has to be
-// safe to call from several at once.
 class HttpListener {
  public:
   using Handler = std::function<HttpResponse(const HttpRequest &request)>;
   using LogFunction = std::function<void(const std::string &line)>;
 
-  // settings is not copied and has to outlive the listener. Neither
-  // stopRequested nor wakeupPipe is owned.
+  // settings must outlive the listener; stopRequested and wakeupPipe are not
+  // owned.
   HttpListener(const HttpSettings &settings,
                const std::atomic<bool> *stopRequested,
                const WakeupPipe *wakeupPipe, Handler handler,
@@ -60,9 +56,7 @@ class HttpListener {
   HttpListener(const HttpListener &) = delete;
   HttpListener &operator=(const HttpListener &) = delete;
 
-  // False (error set) only when binding fails.
   bool Start(std::string &error);
-  // The port bound, which listen_port 0 leaves to the system.
   std::uint16_t Port() const;
   void Stop();
 
@@ -83,8 +77,7 @@ class HttpListener {
   Handler m_handler;
   LogFunction m_log;
 
-  // Once the accept thread runs, only it touches the socket; the port is
-  // read beforehand.
+  // Once the accept thread runs, only it touches the socket.
   std::unique_ptr<ListenSocket> m_listenSocket;
   std::uint16_t m_port = 0;
   std::thread m_acceptThread;

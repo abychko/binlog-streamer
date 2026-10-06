@@ -35,12 +35,8 @@ class HandshakeResponse41Codec {
  public:
   static void Encode(const HandshakeResponse41 &value,
                      std::vector<std::uint8_t> &out);
-  // The SSL request: the same 32-byte fixed header alone, sent in the
-  // clear before the TLS handshake; the full response follows over TLS
-  // (sql-common/client.cc, CLIENT_SSL).
   static void EncodeSslRequest(const HandshakeResponse41 &value,
                                std::vector<std::uint8_t> &out);
-  // True for a packet that asks to switch to TLS before authenticating.
   static bool IsSslRequest(std::span<const std::uint8_t> payload);
   static bool Parse(std::span<const std::uint8_t> payload,
                     HandshakeResponse41 &value, std::string &error);

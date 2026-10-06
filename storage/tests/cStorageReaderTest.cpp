@@ -83,8 +83,6 @@ TEST(StorageReaderTest, OpenPinsTheFileAndRefusesRemovalWhileTheCursorIsAlive) {
   EXPECT_TRUE(catalog.Remove(removeError)) << removeError;
 }
 
-// The exact wording matches StorageCatalog::Pin()'s own message; Open()
-// does not wrap or replace it.
 TEST(StorageReaderTest, OpenRefusesAFileNotInTheCatalog) {
   TempDirectoryFixture fixture;
   StorageCatalog catalog;
@@ -97,13 +95,11 @@ TEST(StorageReaderTest, OpenRefusesAFileNotInTheCatalog) {
   EXPECT_EQ(error, "binlog.000001 is not in the storage catalog");
 }
 
-// Distinct from "not in the catalog at all": Pin() succeeds here, and it is
-// Open()'s own open(2) call that must fail and release the pin it just took.
 TEST(StorageReaderTest, OpenRefusesAFileListedInTheCatalogButMissingFromDisk) {
   TempDirectoryFixture fixture;
   StorageCatalog catalog;
   StoredFileRecord record;
-  record.name = "binlog.000001";  // never written under fixture.Directory()
+  record.name = "binlog.000001";
   catalog.Add(record);
   PublishedPositionTracker published;
   StorageReader reader(fixture.Directory(), catalog, published);
@@ -115,38 +111,32 @@ TEST(StorageReaderTest, OpenRefusesAFileListedInTheCatalogButMissingFromDisk) {
             std::string::npos)
       << error;
 
-  // The pin Open() took before open(2) failed must not be left behind.
   std::string removeError;
   EXPECT_TRUE(catalog.Remove(removeError)) << removeError;
 }
 
-// Kills the mutant where Read() is bounded by on-disk size or the request
-// instead of the published position: more bytes are on disk than published.
 TEST(StorageReaderTest,
      ReadIsLimitedByThePublishedPositionNotByHowManyBytesAreOnDiskOrRequested) {
   TempDirectoryFixture fixture;
-  WriteFile(fixture.Path("binlog.000001"),
-            "0123456789");  // 10 bytes actually on disk
+  WriteFile(fixture.Path("binlog.000001"), "0123456789");
   StorageCatalog catalog;
   StoredFileRecord record;
   record.name = "binlog.000001";
   catalog.Add(record);
   PublishedPositionTracker published;
-  published.Advance("binlog.000001",
-                    6);  // only the first 6 bytes are published
+  published.Advance("binlog.000001", 6);
   StorageReader reader(fixture.Directory(), catalog, published);
 
   std::string error;
   auto cursor = reader.Open("binlog.000001", error);
   ASSERT_TRUE(cursor) << error;
 
-  std::vector<std::uint8_t> buffer(
-      20, 0xAA);  // room for far more than either 10 (disk) or 6 (published)
+  std::vector<std::uint8_t> buffer(20, 0xAA);
   const std::size_t bytesRead = reader.Read(*cursor, 0, buffer, error);
   ASSERT_EQ(bytesRead, 6u) << error;
   EXPECT_EQ(std::string(buffer.begin(), buffer.begin() + 6), "012345");
-  EXPECT_EQ(buffer[6], 0xAA);  // untouched - a mutant reading past the boundary
-                               // would overwrite this
+  EXPECT_EQ(buffer[6],
+            0xAA);  // untouched: a read past the boundary would overwrite it
 }
 
 TEST(StorageReaderTest,
@@ -192,23 +182,18 @@ TEST(StorageReaderTest, ReadRefusesAnOffsetPastThePublishedBoundary) {
       "binlog.000001: read offset 7 is past what may be read right now (6)");
 }
 
-// The other Boundary() case: published has moved past a closed file
-// entirely, so its final catalog size is the boundary.
 TEST(
     StorageReaderTest,
     ReadUsesTheCatalogLengthOnceAFileIsClosedAndPublishedHasMovedToADifferentFile) {
   TempDirectoryFixture fixture;
-  WriteFile(
-      fixture.Path("binlog.000001"),
-      "0123456789");  // 10 bytes - this file's own final, immutable length
+  WriteFile(fixture.Path("binlog.000001"), "0123456789");
   StorageCatalog catalog;
   StoredFileRecord record;
   record.name = "binlog.000001";
   record.size = 10;
   catalog.Add(record);
   PublishedPositionTracker published;
-  published.Advance("binlog.000002",
-                    0);  // published has moved on to a later file entirely
+  published.Advance("binlog.000002", 0);
   StorageReader reader(fixture.Directory(), catalog, published);
 
   std::string error;
@@ -220,8 +205,7 @@ TEST(
   ASSERT_EQ(bytesRead, 10u) << error;
   EXPECT_EQ(std::string(buffer.begin(), buffer.begin() + 10), "0123456789");
 
-  EXPECT_EQ(reader.Read(*cursor, 10, buffer, error),
-            0u);  // exactly at the end of file - not an error
+  EXPECT_EQ(reader.Read(*cursor, 10, buffer, error), 0u);
   EXPECT_TRUE(error.empty()) << error;
 }
 
@@ -232,8 +216,7 @@ TEST(StorageReaderTest,
   StorageCatalog catalog;
   StoredFileRecord record;
   record.name = "binlog.000001";
-  record.size =
-      1;  // closed (inUse defaults to false) at its own true, single-byte size
+  record.size = 1;
   catalog.Add(record);
   PublishedPositionTracker published;
   StorageReader reader(fixture.Directory(), catalog, published);
@@ -248,19 +231,15 @@ TEST(StorageReaderTest,
   EXPECT_FALSE(next);
 }
 
-// Kills the mutant where Next() returns Found without checking that
-// current is actually done.
 TEST(StorageReaderTest, NextWithholdsFoundUntilCurrentIsClosedAndFullyRead) {
   TempDirectoryFixture fixture;
-  WriteFile(fixture.Path("binlog.000001"),
-            "0123456789");  // 10 bytes, its own true size once closed
+  WriteFile(fixture.Path("binlog.000001"), "0123456789");
   WriteFile(fixture.Path("binlog.000002"), "y");
   StorageCatalog catalog;
   StoredFileRecord first;
   first.name = "binlog.000001";
-  first.inUse = true;  // still open
-  first.size = 6;      // matches the offset below - still not enough on its own
-                       // while inUse is true
+  first.inUse = true;
+  first.size = 6;  // matches the offset below; not enough while inUse is true
   catalog.Add(first);
   PublishedPositionTracker published;
   StorageReader reader(fixture.Directory(), catalog, published);
@@ -274,15 +253,11 @@ TEST(StorageReaderTest, NextWithholdsFoundUntilCurrentIsClosedAndFullyRead) {
             NextFileOutcome::NotYetAvailable);
   EXPECT_FALSE(next);
 
-  // A genuine close followed by a second file's header landing in the
-  // catalog - the shape a real relay leaves behind.
   ASSERT_TRUE(catalog.Close(/*finalSize=*/10, error)) << error;
   StoredFileRecord second;
   second.name = "binlog.000002";
   catalog.Add(second);
 
-  // Closed now, but the read offset (6) has not caught up to the final size
-  // (10) yet.
   EXPECT_EQ(reader.Next(*cursor, 6, next, error),
             NextFileOutcome::NotYetAvailable);
   EXPECT_FALSE(next);
@@ -299,8 +274,6 @@ TEST(StorageReaderTest, NextWithholdsFoundUntilCurrentIsClosedAndFullyRead) {
   EXPECT_EQ(next->FileName(), "binlog.000002");
 }
 
-// Kills the mutant where Next() does not pin the file it moves to, proven
-// through Remove()'s own refusal.
 TEST(StorageReaderTest, NextMovesToTheFollowingFileOnceItExistsAndPinsIt) {
   TempDirectoryFixture fixture;
   WriteFile(fixture.Path("binlog.000001"), "x");
@@ -308,7 +281,7 @@ TEST(StorageReaderTest, NextMovesToTheFollowingFileOnceItExistsAndPinsIt) {
   StorageCatalog catalog;
   StoredFileRecord first;
   first.name = "binlog.000001";
-  first.size = 1;  // closed at its own true, single-byte size
+  first.size = 1;
   catalog.Add(first);
   StoredFileRecord second;
   second.name = "binlog.000002";
@@ -326,22 +299,19 @@ TEST(StorageReaderTest, NextMovesToTheFollowingFileOnceItExistsAndPinsIt) {
   ASSERT_TRUE(next);
   EXPECT_EQ(next->FileName(), "binlog.000002");
 
-  cursor.reset();  // binlog.000001 is unpinned now
+  cursor.reset();
   EXPECT_TRUE(catalog.Remove(error)) << error;
-  EXPECT_FALSE(catalog.Remove(error));  // binlog.000002 is still pinned by next
+  EXPECT_FALSE(catalog.Remove(error));
   EXPECT_EQ(error, "binlog.000002 is pinned by 1 reader(s)");
 }
 
-// Kills the mutant where an offset past a closed file's final size is
-// folded into NotDone (told to wait) instead of refused outright.
 TEST(StorageReaderTest, NextFailsWhenOffsetIsPastTheClosedFilesFinalSize) {
   TempDirectoryFixture fixture;
-  WriteFile(fixture.Path("binlog.000001"),
-            "0123456789");  // 10 bytes, its own true size once closed
+  WriteFile(fixture.Path("binlog.000001"), "0123456789");
   StorageCatalog catalog;
   StoredFileRecord record;
   record.name = "binlog.000001";
-  record.size = 10;  // closed (inUse defaults to false) at its own true size
+  record.size = 10;
   catalog.Add(record);
   PublishedPositionTracker published;
   StorageReader reader(fixture.Directory(), catalog, published);
@@ -383,8 +353,7 @@ TEST(StorageReaderTest, PublishedReturnsTheTrackersCurrentPosition) {
 TEST(StorageReaderTest, FindStartFileDelegatesToTheCatalog) {
   StorageCatalog catalog;
   StoredFileRecord record;
-  record.name = "binlog.000001";  // previousGtids left default-constructed:
-                                  // empty, a subset of anything
+  record.name = "binlog.000001";
   catalog.Add(record);
   PublishedPositionTracker published;
   StorageReader reader(std::filesystem::path{}, catalog, published);
@@ -393,8 +362,6 @@ TEST(StorageReaderTest, FindStartFileDelegatesToTheCatalog) {
   ASSERT_TRUE(found.has_value());
   EXPECT_EQ(*found, "binlog.000001");
 }
-
-// --- writer-and-reader-in-different-threads scenario ---
 
 class NullSink : public EventSink {
  public:
@@ -489,7 +456,7 @@ std::vector<std::uint8_t> SampleFde() {
   for (std::size_t i = 0; i < version.size(); ++i)
     body[2 + i] = static_cast<std::uint8_t>(version[i]);
   body[56] = 19;
-  body.push_back(0x01);  // BINLOG_CHECKSUM_ALG_CRC32
+  body.push_back(0x01);
   body.insert(body.end(), 4, 0x00);
   return body;
 }
@@ -500,8 +467,6 @@ std::vector<std::uint8_t> SamplePreviousGtids() {
   return body;
 }
 
-// Same formula OpenFreshFile() uses internally (magic + FDE + PGE), not a
-// separately hand-counted literal.
 std::uint32_t FreshFileHeaderLength() {
   return 4 +
          static_cast<std::uint32_t>(EVENT_HEADER_LENGTH + SampleFde().size()) +
@@ -511,8 +476,6 @@ std::uint32_t FreshFileHeaderLength() {
 
 struct FreshFileHeader {
   std::uint32_t afterPge = 0;
-  // Whole wire event bytes, so callers can reconstruct on-disk bytes
-  // without re-deriving them; Create() forces the FDE's own "in use" bit to 1.
   std::vector<std::uint8_t> fdeEventBytes;
   std::vector<std::uint8_t> pgeEventBytes;
 };
@@ -563,8 +526,6 @@ DrivenGroup MakeGroup(std::uint64_t start, std::int64_t gno) {
   return group;
 }
 
-// Positions computed from each event's byte length, not a fixed 69/29/27
-// shape, so this driver also works for large groups.
 bool DriveGroup(EventSink &sink, const DrivenGroup &group,
                 std::uint64_t start) {
   if (!Drive(sink, group.gtid, StreamPosition{"unused", start})) return false;
@@ -575,8 +536,6 @@ bool DriveGroup(EventSink &sink, const DrivenGroup &group,
   return Drive(sink, group.xid, StreamPosition{"unused", afterQuery});
 }
 
-// Same as DriveGroup(), with a pause before each of the last two events;
-// StorageEventSink only publishes at GroupEnd, so published stays unchanged.
 bool DriveGroupWithPauses(EventSink &sink, const DrivenGroup &group,
                           std::uint64_t start) {
   if (!Drive(sink, group.gtid, StreamPosition{"unused", start})) return false;
@@ -589,9 +548,8 @@ bool DriveGroupWithPauses(EventSink &sink, const DrivenGroup &group,
   return Drive(sink, group.xid, StreamPosition{"unused", afterQuery});
 }
 
-// transactionLength must equal the group's own true byte length. Computed in
-// two steps since the GTID event's body length depends on
-// transactionLength's lenenc width; a placeholder past 65536 keeps that width
+// transactionLength must equal the group's own byte length. The GTID body
+// length depends on its lenenc width, so a placeholder above 65536 keeps it
 // stable.
 DrivenGroup MakeGroupWithLargeQuery(std::uint64_t start, std::int64_t gno,
                                     std::size_t largeQueryBodySize) {
@@ -618,9 +576,6 @@ DrivenGroup MakeGroupWithLargeQuery(std::uint64_t start, std::int64_t gno,
   return group;
 }
 
-// A real StorageEventSink writes a synthetic stream while a StorageReader
-// follows it on another thread, checking every Read() against Published()
-// right after it returns; a deadline turns a stalled Next() into a failure.
 TEST(
     StorageReaderTest,
     ReaderFollowsARealWriterAcrossAPausedGroupAndARotationCheckingEveryReadAgainstPublished) {
@@ -645,7 +600,6 @@ TEST(
   const std::uint64_t groupsEnd = afterGroup1 + group2.gtid.bytes.size() +
                                   group2.query.bytes.size() +
                                   group2.xid.bytes.size();
-  // Built here so its byte size can feed expectedTotal without re-deriving it.
   const auto rotate = MakeEvent(static_cast<std::uint8_t>(EventType::Rotate),
                                 RotateBody(4, "binlog.000002"),
                                 static_cast<std::uint32_t>(groupsEnd + 30));
@@ -671,8 +625,6 @@ TEST(
       writerOk = false;
       return;
     }
-    // A short pause so the reader can observe file A closed with no
-    // successor indexed yet before file B's header lands.
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     headerB = OpenFreshFile(sink, "binlog.000002");
     startB = headerB.afterPge;
@@ -684,16 +636,11 @@ TEST(
   bool readerOk = true;
   std::string readerError;
   std::thread reader_thread([&] {
-    auto current = std::move(
-        cursor);  // sole owner from here on - this thread alone touches it
+    auto current = std::move(cursor);
     std::uint64_t offset = 0;
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    // Short enough to wake up and retry Read() before a large, still
-    // unpublished write's own group finishes publishing.
     constexpr auto POLL_TIMEOUT = std::chrono::milliseconds(5);
-    // File A's final size plus file B's size once group3 lands, from the
-    // same helpers that build the stream itself.
     const std::size_t expectedTotal =
         sizeAfterClose + FreshFileHeaderLength() + 125;
     while (collected.size() < expectedTotal) {
@@ -703,8 +650,7 @@ TEST(
             "reader stalled before collecting the expected byte count";
         return;
       }
-      std::vector<std::uint8_t> buffer(
-          131072);  // room for the large group's own Query event in one call
+      std::vector<std::uint8_t> buffer(131072);
       std::string error;
       const std::size_t bytesRead =
           reader.Read(*current, offset, buffer, error);
@@ -734,9 +680,6 @@ TEST(
         continue;
       }
 
-      // At the boundary now: still being written (wait) or already
-      // superseded (move on). A short timeout lets the per-read check
-      // above land inside the window of a large, unpublished write.
       if (reader.Published().fileName == current->FileName()) {
         reader.WaitForNewEvents(PublishedPosition{current->FileName(), offset},
                                 POLL_TIMEOUT, WaitStyle::PollFirst);
@@ -752,9 +695,6 @@ TEST(
         continue;
       }
       if (outcome == NextFileOutcome::NotYetAvailable) {
-        // current not yet closed and fully read; the deterministic
-        // case is exercised directly by
-        // NextWithholdsFoundUntilCurrentIsClosedAndFullyRead above.
         reader.WaitForNewEvents(PublishedPosition{current->FileName(), offset},
                                 POLL_TIMEOUT, WaitStyle::PollFirst);
         continue;
@@ -773,12 +713,10 @@ TEST(
 
   // File A's "in use" bit is ambiguous (MarkClosed() timing vs. the
   // reader's first Read()) so it is masked out; file B's bit is always 1.
-  constexpr std::size_t FLAGS_OFFSET_IN_EVENT =
-      17;  // Common-Header flags field, relative to one event's own start
-  constexpr std::size_t FILE_A_IN_USE_BYTE_INDEX =
-      4 + FLAGS_OFFSET_IN_EVENT;  // magic(4) + flags offset, file A
+  constexpr std::size_t FLAGS_OFFSET_IN_EVENT = 17;
+  constexpr std::size_t FILE_A_IN_USE_BYTE_INDEX = 4 + FLAGS_OFFSET_IN_EVENT;
 
-  std::vector<std::uint8_t> expected{0xfe, 0x62, 0x69, 0x6e};  // BINLOG_MAGIC
+  std::vector<std::uint8_t> expected{0xfe, 0x62, 0x69, 0x6e};
   const auto appendBytes = [&expected](const std::vector<std::uint8_t> &bytes) {
     expected.insert(expected.end(), bytes.begin(), bytes.end());
   };
@@ -791,13 +729,9 @@ TEST(
   appendBytes(group2.query.bytes);
   appendBytes(group2.xid.bytes);
   appendBytes(rotate.bytes);
-  expected.insert(expected.end(),
-                  {0xfe, 0x62, 0x69,
-                   0x6e});  // BINLOG_MAGIC - file B's own header starts here
+  expected.insert(expected.end(), {0xfe, 0x62, 0x69, 0x6e});
   auto fdeBytesB = headerB.fdeEventBytes;
-  fdeBytesB[FLAGS_OFFSET_IN_EVENT] |=
-      0x01;  // Create() always sets this bit; file B is never closed in this
-             // test
+  fdeBytesB[FLAGS_OFFSET_IN_EVENT] |= 0x01;
   appendBytes(fdeBytesB);
   appendBytes(headerB.pgeEventBytes);
   appendBytes(group3.gtid.bytes);
@@ -809,8 +743,6 @@ TEST(
   expected[FILE_A_IN_USE_BYTE_INDEX] = 0;
   EXPECT_EQ(collected, expected);
 
-  // Independently: the reader's bytes match what is on disk, with the
-  // same file A ambiguous byte masked out.
   fixture.Drain();
   auto onDisk = ReadFile(fixture.Path("binlog.000001"));
   fixture.Drain();

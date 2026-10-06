@@ -25,7 +25,6 @@
 
 namespace binlog_streamer {
 
-// Not nested: three unrelated types all name it.
 enum class WaitOutcome {
   Advanced,
   TimedOut,

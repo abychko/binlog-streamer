@@ -31,16 +31,13 @@
 
 namespace binlog_streamer {
 
-// Header byte 0xFF is unambiguous: unlike OK/EOF, it's never reused for
-// anything else in this protocol.
 class ErrPacketCodec {
  public:
   static bool IsErrPacket(std::span<const std::uint8_t> payload);
   static bool Parse(std::span<const std::uint8_t> payload, ErrPacket &value,
                     std::string &error);
-  // An empty sqlState writes no '#' + SQLSTATE, as a server does before
-  // CLIENT_PROTOCOL_41 is negotiated; any other length than 5 is written
-  // as "HY000", the server's own default for an error that has none.
+  // An empty sqlState writes no '#SQLSTATE'; any other length than 5 is written
+  // as "HY000".
   static void Encode(const ErrPacket &value, std::vector<std::uint8_t> &out);
 };
 

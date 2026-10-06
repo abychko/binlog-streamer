@@ -33,28 +33,19 @@ namespace binlog_streamer {
 class StreamProgress;
 
 struct DumpSenderOptions {
-  std::uint32_t serverId =
-      0;  // the relay's own, carried by the events it synthesizes
-  // Whether the replica negotiated CRC32 checksums: decides if a synthesized
-  // event ends with one until the first Format_description is sent, after
-  // which that file's algorithm decides, as on a source; stored events keep
-  // what they have.
+  std::uint32_t serverId = 0;
+  // Whether the replica negotiated CRC32: decides if a synthesized event ends
+  // with a checksum until the first Format_description, after which that file's
+  // algorithm decides, as on a source; stored events keep what they have.
   bool checksum = true;
-  // BINLOG_DUMP_NON_BLOCK, or a replica with server_id 0: end with EOF at
-  // the end of the stored history instead of waiting for more.
+  // BINLOG_DUMP_NON_BLOCK, or a replica with server_id 0: end with EOF at the
+  // end of the stored history instead of waiting.
   bool nonBlocking = false;
-  // What the replica asked for with @source_heartbeat_period; zero means
-  // no heartbeats, as it does on a source.
   std::chrono::nanoseconds heartbeatPeriod{0};
-  bool heartbeatV2 =
-      false;  // BINLOG_DUMP_USE_HEARTBEAT_EVENT_V2: positions past 4 GiB fit
+  bool heartbeatV2 = false;
   const std::atomic<bool> *stopRequested = nullptr;
   std::shared_ptr<std::atomic<bool>> superseded;
-  // Told where the dump stands after every event; not owned, may be
-  // null.
   StreamProgress *progress = nullptr;
-  // Once caught up, what is queued waits up to this long for the events
-  // that follow, so they go in one write; zero sends at once.
   std::chrono::microseconds sendLinger{0};
 };
 

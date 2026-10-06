@@ -42,8 +42,6 @@ void WriteFile(const std::filesystem::path &path,
             static_cast<std::streamsize>(bytes.size()));
 }
 
-// Real CRC32 header captured via mysqlbinlog --hexdump: magic + FDE
-// (offsets 4->127) + Previous_gtids_event (offsets 127->198).
 const std::vector<std::uint8_t> REAL_HEADER{
     0xfe, 0x62, 0x69, 0x6e, 0x1d, 0x64, 0xaa, 0x6a, 0x0f, 0x01, 0x00, 0x00,
     0x00, 0x7b, 0x00, 0x00, 0x00, 0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04,
@@ -78,21 +76,15 @@ TEST(BinlogFileHeaderReaderTest, ReadsARealCrc32Header) {
   EXPECT_EQ(record.number, 222u);
   EXPECT_EQ(record.size, REAL_HEADER.size());
   EXPECT_EQ(record.headerLength, 198u);
-  EXPECT_EQ(record.createdAt,
-            1789551645u);  // decoded from the Common-Header timestamp
+  EXPECT_EQ(record.createdAt, 1789551645u);
   EXPECT_EQ(record.serverId, 1u);
-  // The version the greeting presents to replicas after a restart the
-  // source is not up for.
   EXPECT_EQ(record.serverVersion, "8.4.11");
   EXPECT_EQ(record.checksumAlgorithm, "CRC32");
-  EXPECT_FALSE(
-      record.inUse);  // flags byte 0 => closed (rotated-away-from) file
+  EXPECT_FALSE(record.inUse);
   EXPECT_EQ(record.previousGtids.ToText(),
             "db06ab0a-39aa-11f1-90c3-19597335b2db:1-23883");
 }
 
-// Version < 5.6.1 has no checksum trailer, so the Previous_gtids_event body
-// carries no trailing CRC to cut off.
 std::vector<std::uint8_t> BuildEventHeader(std::uint8_t type,
                                            std::uint32_t serverId,
                                            std::uint32_t eventLength,
@@ -101,8 +93,6 @@ std::vector<std::uint8_t> BuildEventHeader(std::uint8_t type,
   std::vector<std::uint8_t> out(19, 0x00);
   out[4] = type;
   out[5] = static_cast<std::uint8_t>(serverId);
-  // Full 4-byte little-endian fields (sEventHeader.hpp); writing only the
-  // low two bytes would silently cap values at 0xFFFF.
   out[9] = static_cast<std::uint8_t>(eventLength);
   out[10] = static_cast<std::uint8_t>(eventLength >> 8);
   out[11] = static_cast<std::uint8_t>(eventLength >> 16);
@@ -132,14 +122,14 @@ TEST(BinlogFileHeaderReaderTest,
       /*nextPosition=*/4 + fdeEventLength, /*flags=*/1 /*IN_USE*/);
 
   const auto pgeBody = GtidSet().Encode(
-      /*skipTaggedGtids=*/false);  // 8 zero bytes, no checksum trailer
+      /*skipTaggedGtids=*/false);
   const std::uint32_t pgeEventLength =
       static_cast<std::uint32_t>(19 + pgeBody.size());
   auto pgeHeader = BuildEventHeader(/*type=PreviousGtids*/ 35, /*serverId=*/42,
                                     pgeEventLength, /*nextPosition=*/0,
                                     /*flags=*/0);
 
-  std::vector<std::uint8_t> file{0xfe, 0x62, 0x69, 0x6e};  // BINLOG_MAGIC
+  std::vector<std::uint8_t> file{0xfe, 0x62, 0x69, 0x6e};
   file.insert(file.end(), fdeHeader.begin(), fdeHeader.end());
   file.insert(file.end(), fdeBody.begin(), fdeBody.end());
   file.insert(file.end(), pgeHeader.begin(), pgeHeader.end());
@@ -157,9 +147,7 @@ TEST(BinlogFileHeaderReaderTest,
   EXPECT_EQ(record.serverId, 42u);
   EXPECT_TRUE(record.inUse);
   EXPECT_TRUE(record.previousGtids.IsEmpty());
-  EXPECT_EQ(record.headerLength,
-            file.size());  // right after the Previous_gtids_event - nothing
-                           // follows it here
+  EXPECT_EQ(record.headerLength, file.size());
 }
 
 TEST(BinlogFileHeaderReaderTest, RejectsAFileNotStartingWithTheBinlogMagic) {
@@ -181,10 +169,9 @@ TEST(BinlogFileHeaderReaderTest,
   auto fdeHeader = BuildEventHeader(/*type=FormatDescription*/ 15,
                                     /*serverId=*/1, /*eventLength=*/0xFFFFFFFF,
                                     /*nextPosition=*/0, /*flags=*/0);
-  std::vector<std::uint8_t> file{0xfe, 0x62, 0x69, 0x6e};  // BINLOG_MAGIC
+  std::vector<std::uint8_t> file{0xfe, 0x62, 0x69, 0x6e};
   file.insert(file.end(), fdeHeader.begin(), fdeHeader.end());
-  file.insert(file.end(), 10,
-              0x00);  // a short, unrelated tail - nowhere near 0xFFFFFFFF bytes
+  file.insert(file.end(), 10, 0x00);
 
   TempDirectoryFixture fixture;
   WriteFile(fixture.Path("binlog.000001"), file);

@@ -29,8 +29,7 @@
 
 namespace binlog_streamer {
 
-// position is the raw wire value: v1 never carries one (nullopt); v2
-// carries one but it can be 0 - this codec does not apply the
+// position is the raw wire value: nullopt for v1, possibly 0 for v2; no
 // header-log_pos fallback.
 struct HeartbeatEvent {
   std::string fileName;

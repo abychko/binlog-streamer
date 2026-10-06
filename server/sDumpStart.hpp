@@ -34,11 +34,9 @@ namespace binlog_streamer {
 
 struct DumpStart {
   DumpStartKind kind = DumpStartKind::BadRequest;
-  std::unique_ptr<FileCursor> cursor;  // Found: the start file, pinned against
-                                       // removal for as long as this lives
-  GtidSet replicaSet;  // what the replica already has, decoded from the request
-  std::string
-      message;  // every kind but Found: the text for the replica or the log
+  std::unique_ptr<FileCursor> cursor;
+  GtidSet replicaSet;
+  std::string message;
 };
 
 }  // namespace binlog_streamer

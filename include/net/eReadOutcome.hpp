@@ -25,8 +25,6 @@
 
 namespace binlog_streamer {
 
-// Data is the only outcome that delivers bytes (bytesRead > 0); every
-// other value leaves bytesRead at 0.
 enum class ReadOutcome {
   Data,
   TimedOut,

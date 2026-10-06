@@ -28,13 +28,8 @@
 
 namespace binlog_streamer {
 
-// A request head longer than this is refused with 431: a status request
-// has a request line and a few headers, nothing a proxy adds comes close.
 inline constexpr std::size_t MAX_HTTP_REQUEST_HEAD = 8 * 1024;
 
-// A client that connected and sends nothing holds one connection thread
-// this long, then gets 408; a proxy or a monitoring poll sends its
-// request at once.
 inline constexpr std::chrono::milliseconds HTTP_READ_TIMEOUT{5'000};
 inline constexpr std::chrono::milliseconds HTTP_WRITE_TIMEOUT{5'000};
 

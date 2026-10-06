@@ -34,7 +34,6 @@
 
 namespace binlog_streamer {
 
-// One Run() call per dump attempt; does not reconnect itself.
 class EventStreamReader {
  public:
   EventStreamReader(Transport &transport, EventSink &sink,
@@ -53,16 +52,13 @@ class EventStreamReader {
   StreamResult TerminalFromFill(FillOutcome outcome,
                                 const std::string &error) const;
 
-  // False means terminalResult is filled and the caller should stop.
   bool ReadSubPacketHeader(std::size_t &subPacketLength,
                            StreamResult &terminalResult);
 
-  // Returns true to keep looping, false to stop (terminalResult filled).
   bool ConsumeEvent(std::size_t firstSubPacketPayloadLength,
                     bool firstSubPacketWasFull, StreamResult &terminalResult);
 
-  // Always ends the stream: terminalResult is unconditionally set,
-  // unlike the other Consume* methods.
+  // Always ends the stream: terminalResult is set unconditionally.
   void ConsumeErrPacket(std::size_t firstSubPacketPayloadLength,
                         bool firstSubPacketWasFull,
                         StreamResult &terminalResult);

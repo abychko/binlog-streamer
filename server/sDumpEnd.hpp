@@ -33,10 +33,8 @@ namespace binlog_streamer {
 struct DumpEnd {
   DumpEndKind kind = DumpEndKind::Stopped;
   std::string message;
-  std::uint64_t events =
-      0;  // stored events sent, the synthesized ones not counted
-  std::uint64_t skipped = 0;  // stored events left out because the replica
-                              // already has their transaction
+  std::uint64_t events = 0;
+  std::uint64_t skipped = 0;
 };
 
 }  // namespace binlog_streamer

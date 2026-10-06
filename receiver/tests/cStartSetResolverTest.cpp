@@ -30,13 +30,9 @@ namespace binlog_streamer {
 namespace {
 
 const std::string EXECUTED_TEXT = "11111111-1111-1111-1111-111111111111:1-100";
-// Deliberately narrower than EXECUTED_TEXT - Previous_gtids can legitimately
-// claim less than gtid_executed.
 const std::string CURRENT_FILE_PREVIOUS_GTIDS_TEXT =
     "11111111-1111-1111-1111-111111111111:1-90";
 
-// Previous_gtids is deliberately left unset here; some tests rely on that
-// to exercise the "not scripted" path.
 void ScriptCurrentFile(test::FakeBinlogProbe &probe,
                        const std::string &executedText) {
   GtidSet executedSet;
@@ -56,16 +52,13 @@ TEST(StartSetResolverTest, UsesTheCurrentFilesOwnPreviousGtids) {
 
   StartSetResolver resolver(probe);
   StartSetResolution resolution;
-  // gtid_executed only probes which file is current; the file's own
-  // Previous_gtids (queried separately) is what must come back.
   const auto failure = resolver.Resolve(EXECUTED_TEXT, "", resolution);
   ASSERT_FALSE(failure.has_value()) << (failure ? failure->message : "");
 
   EXPECT_FALSE(resolution.usedStoredHistory);
   EXPECT_EQ(resolution.selectedFileName, "binlog.000050");
   EXPECT_EQ(resolution.startSet.ToText(), CURRENT_FILE_PREVIOUS_GTIDS_TEXT);
-  EXPECT_EQ(probe.probeCallCount,
-            1u);  // only the gtid_executed probe - never a second file
+  EXPECT_EQ(probe.probeCallCount, 1u);
   EXPECT_EQ(probe.previousGtidsTextCallCount, 1u);
 }
 
@@ -104,8 +97,6 @@ TEST(StartSetResolverTest, MalformedGtidPurgedIsAPermanentFailure) {
 
 TEST(StartSetResolverTest,
      AnEmptyGtidExecutedProbesTheEmptySetAndStartsFromAnEmptyPreviousGtids) {
-  // No GTID history yet: probed with the empty set, and an empty
-  // Previous_gtids is a legitimate empty start set, not a parse failure.
   test::FakeBinlogProbe probe;
   ProbeResult firstFile;
   firstFile.ok = true;
@@ -123,14 +114,12 @@ TEST(StartSetResolverTest,
 }
 
 TEST(StartSetResolverTest, ReturnsFailureWhenProbingGtidExecutedFails) {
-  test::FakeBinlogProbe probe;  // no scripted response - Probe() returns !ok
+  test::FakeBinlogProbe probe;
   StartSetResolver resolver(probe);
   StartSetResolution resolution;
   const auto failure = resolver.Resolve(EXECUTED_TEXT, "", resolution);
   ASSERT_TRUE(failure.has_value());
   EXPECT_FALSE(failure->message.empty());
-  // An unscripted response defaults to TransientFailure - the case a caller
-  // retries.
   EXPECT_EQ(failure->outcome, SessionOutcome::TransientFailure);
 }
 
@@ -138,21 +127,18 @@ TEST(StartSetResolverTest, MalformedGtidExecutedIsAPermanentFailure) {
   test::FakeBinlogProbe probe;
   StartSetResolver resolver(probe);
   StartSetResolution resolution;
-  // Nothing a retry could change: the answer itself is unusable.
   const auto failure = resolver.Resolve("not a gtid set", "", resolution);
   ASSERT_TRUE(failure.has_value());
   EXPECT_EQ(failure->outcome, SessionOutcome::PermanentFailure);
   EXPECT_NE(failure->message.find("gtid_executed"), std::string::npos)
       << failure->message;
-  EXPECT_EQ(probe.probeCallCount,
-            0u);  // rejected before ever reaching the source
+  EXPECT_EQ(probe.probeCallCount, 0u);
 }
 
 TEST(StartSetResolverTest,
      ReturnsFailureWhenReadingTheCurrentFilesPreviousGtidsFails) {
   test::FakeBinlogProbe probe;
   ScriptCurrentFile(probe, EXECUTED_TEXT);
-  // binlog.000050's own Previous_gtids deliberately left unscripted.
 
   StartSetResolver resolver(probe);
   StartSetResolution resolution;
@@ -163,8 +149,6 @@ TEST(StartSetResolverTest,
 
 TEST(StartSetResolverTest,
      PreviousGtidsTextFailureCarriesThePermanentClassificationTheProbeGaveIt) {
-  // Proven via the same failure shape DumpProbe itself would produce
-  // (unrecoverable no matter how many retries), not a hand-picked value.
   test::FakeBinlogProbe probe;
   ScriptCurrentFile(probe, EXECUTED_TEXT);
   SessionResult permanentFailure;

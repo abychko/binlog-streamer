@@ -43,9 +43,7 @@ TEST(IpAddressTextTest, FormatsAnIpv6AddressInCanonicalForm) {
   ASSERT_TRUE(AddressRangeParser::ParseAddress(
       "2001:0db8:0000:0000:0000:0000:0000:0001", address, error))
       << error;
-  EXPECT_EQ(
-      IpAddressText::Format(address),
-      "2001:db8::1");  // inet_ntop's own canonical (zero-run-compressed) form
+  EXPECT_EQ(IpAddressText::Format(address), "2001:db8::1");
 }
 
 TEST(IpAddressTextTest, RoundTripsThroughParseAddress) {

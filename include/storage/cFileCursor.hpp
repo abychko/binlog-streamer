@@ -31,9 +31,8 @@ namespace binlog_streamer {
 
 class StorageReader;
 
-// A FilePin blocks purge while this cursor is alive; a read-only fd
-// lets StorageReader::Read() pread() it independently of the writer's
-// own descriptor on the same file.
+// Holds a FilePin, blocking purge; a read-only fd lets StorageReader pread()
+// independently of the writer.
 class FileCursor {
  public:
   FileCursor() = default;
@@ -46,12 +45,10 @@ class FileCursor {
   const std::string &FileName() const { return m_pin.FileName(); }
 
  private:
-  // On-disk records open immediately; memory-only records defer
-  // open(2) until Fd() is first needed for a disk read.
   friend class StorageReader;
   FileCursor(FilePin pin, int fd, std::string path, std::uint64_t headerLength);
-  // Belongs to one reader thread; lazy opening here is deliberately
-  // unsynchronized, including through a const reference.
+  // One reader thread only; lazy opening is deliberately unsynchronized, even
+  // through a const reference.
   int Fd(std::string &error) const;
 
   FilePin m_pin;
@@ -59,8 +56,6 @@ class FileCursor {
   std::string m_path;
   std::uint64_t m_headerLength = 0;
   mutable bool m_previousReadFromDisk = false;
-  // Whether this file was the published one when the published file last
-  // had number m_checkedMark; still true or false until that number moves.
   mutable std::uint64_t m_checkedMark = 0;
   mutable bool m_published = false;
 };

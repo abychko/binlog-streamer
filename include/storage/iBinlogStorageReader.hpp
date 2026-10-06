@@ -40,12 +40,10 @@
 
 namespace binlog_streamer {
 
-// Never reads past what PublishedPositionTracker has published.
 class BinlogStorageReader {
  public:
   virtual ~BinlogStorageReader() = default;
 
-  // Mirrors MYSQL_BIN_LOG::find_first_log_not_in_gtid_set.
   virtual std::optional<std::string> FindStartFile(
       const GtidSet &replicaSet) const = 0;
 

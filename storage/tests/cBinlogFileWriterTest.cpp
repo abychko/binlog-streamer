@@ -40,8 +40,6 @@ std::vector<std::uint8_t> ReadFile(const std::filesystem::path &path) {
                                    std::istreambuf_iterator<char>());
 }
 
-// Offset 17 (IN_USE_FLAG_OFFSET minus the magic) has bit 0 clear, other
-// bits set, so tests can tell Create() touched only that bit.
 std::vector<std::uint8_t> SampleFde() {
   std::vector<std::uint8_t> fde(24, 0);
   for (std::size_t i = 0; i < fde.size(); ++i)
@@ -79,8 +77,7 @@ TEST(BinlogFileWriterTest, RoundTripsWholeFileAcrossCreateAppendAndReopen) {
   ASSERT_TRUE(reopened.Flush(error)) << error;
   ASSERT_TRUE(reopened.Sync(error)) << error;
 
-  std::vector<std::uint8_t> expected = {0xfe, 0x62, 0x69,
-                                        0x6e};  // BINLOG_MAGIC
+  std::vector<std::uint8_t> expected = {0xfe, 0x62, 0x69, 0x6e};
   expected.insert(expected.end(), fde.begin(), fde.end());
   expected[4 + 17] = 0xA1;
   expected.insert(expected.end(), previousGtids.begin(), previousGtids.end());
@@ -108,9 +105,6 @@ TEST(BinlogFileWriterTest, ChunkLargerThanBufferBypassesTheBuffer) {
     largeChunk[i] = static_cast<std::uint8_t>(i);
   ASSERT_TRUE(writer.Append(largeChunk, error)) << error;
 
-  // Read back before any Flush()/Sync(): a fully-buffered writer would
-  // leave the trailing 1000 bytes unflushed here, so the file would be
-  // short by that tail if the direct-write path were not actually taken.
   const std::size_t headerLength =
       4 + SampleFde().size() + SamplePreviousGtids().size();
   const auto onDisk = ReadFile(path);
@@ -214,8 +208,6 @@ TEST(BinlogFileWriterTest,
   ASSERT_TRUE(writer.Flush(error)) << error;
 
   const auto onDisk = ReadFile(path);
-  // File must grow by exactly appended.size() past shortLength, not from
-  // the pre-truncation write cursor.
   ASSERT_EQ(onDisk.size(), shortLength + appended.size());
   const std::vector<std::uint8_t> tail(
       onDisk.end() - static_cast<std::ptrdiff_t>(appended.size()),
@@ -260,8 +252,6 @@ TEST(BinlogFileWriterTest, TruncateToZeroEmptiesTheFile) {
   EXPECT_EQ(writer.Size(), 0u);
   EXPECT_TRUE(ReadFile(path).empty());
 
-  // Write cursor must land at the new (empty) end of file so Append() does
-  // not leave a gap.
   const std::vector<std::uint8_t> appended = {0xCC};
   ASSERT_TRUE(writer.Append(appended, error)) << error;
   ASSERT_TRUE(writer.Flush(error)) << error;

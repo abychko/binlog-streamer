@@ -42,19 +42,14 @@ namespace binlog_streamer {
 // per event; everything else is rare and does.
 class RelayStatusTracker {
  public:
-  // storage is not owned and may be null, for a run without one.
   RelayStatusTracker(std::string name, std::string version,
                      unsigned maxConnections, const StorageFacts *storage);
 
   void SetSourceAddress(std::string address);
-  // A connection attempt is under way; the state does not change.
   void SourceAttempt(unsigned attempt);
-  // Registered with the source: Serving from here. clock is the source's
-  // unix time as it reported it just now.
   void SourceConnected(std::uint32_t serverId, std::string serverUuid,
                        std::string version, bool tls, std::string compression,
                        std::uint64_t clock);
-  // The stream ended and is being looked for again: Reconnecting.
   void SourceLost();
   StreamProgress &Source() { return m_source; }
 
@@ -86,8 +81,6 @@ class RelayStatusTracker {
   std::string m_sourceVersion;
   bool m_sourceTls = false;
   std::string m_sourceCompression;
-  // The source's clock, anchored like a replica's: wall-clock jumps here
-  // must not move it, so the anchor is on the steady clock.
   std::uint64_t m_sourceClock = 0;
   std::chrono::steady_clock::time_point m_sourceClockReadAt{};
   std::vector<std::shared_ptr<ReplicaRegistration>> m_replicas;

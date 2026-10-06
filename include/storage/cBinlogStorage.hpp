@@ -46,19 +46,15 @@ class BinlogStorage {
   BinlogStorage(const BinlogStorage &) = delete;
   BinlogStorage &operator=(const BinlogStorage &) = delete;
 
-  // flock()s dataDir itself, not binlog.index. Creates an empty index
-  // only if none existed, so "no index" and "empty index" stay
-  // distinguishable.
+  // Creates an empty index only if none existed, so "no index" and "empty
+  // index" stay distinguishable.
   bool Open(const std::filesystem::path &dataDir, StorageOpenFailure &failure,
             std::string &error);
 
-  // Makes disk state already found by recovery visible through
-  // Published() before this run writes anything of its own; a no-op on
-  // a fresh data_dir.
   void SeedPublished(const StorageStartState &state);
 
-  // failure passes through Open()'s own value on Open() failure; a
-  // Recover() failure always becomes StorageProblem.
+  // A failure passes through Open()'s own value; a Recover() failure always
+  // becomes StorageProblem.
   bool OpenResumed(const std::filesystem::path &dataDir,
                    StorageStartState &state, StorageOpenFailure &failure,
                    std::string &error);

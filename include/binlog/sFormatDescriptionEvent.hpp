@@ -33,7 +33,6 @@ struct FormatDescriptionEvent {
   std::string serverVersion;
   std::uint32_t created = 0;  // legitimately 0 on every rotated file's FDE
   std::uint8_t commonHeaderLength = 0;
-  // A string, not an enum, matching SourceIdentity::checksumAlgorithm.
   std::string checksumAlgorithm;
 };
 

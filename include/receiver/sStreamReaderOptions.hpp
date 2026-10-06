@@ -34,29 +34,17 @@ namespace binlog_streamer {
 class StreamProgress;
 
 struct StreamReaderOptions {
-  // Continues the counter COM_BINLOG_DUMP_GTID left the connection on,
-  // instead of resetting it - matches the server's per-connection
-  // sequence for a running dump.
   std::uint8_t sequenceId = 0;
 
-  // 0, or CHECKSUM_LENGTH for CRC32 - whichever
-  // ReplicaSession::NegotiateChecksum found.
   std::size_t checksumLength = 0;
 
-  // Idle-wait timeout, not a per-event budget - a heartbeat during a
-  // quiet period resets it, matching a real replica.
+  // Idle-wait timeout, reset by a heartbeat; not a per-event budget.
   std::chrono::milliseconds readTimeout = REPLICA_NET_TIMEOUT;
 
-  // False over a compressed connection: the ids of packets arriving
-  // inside a frame are neither checked nor monotonic there
-  // (sql-common/net_serv.cc rewrites them on flush), so the frame
-  // counter under the transport is what stays verified.
   bool verifySequence = true;
 
   std::size_t bufferSize = STREAM_READ_BUFFER_SIZE;
 
-  // Told where the stream stands after every event; not owned, may be
-  // null.
   StreamProgress *progress = nullptr;
 };
 

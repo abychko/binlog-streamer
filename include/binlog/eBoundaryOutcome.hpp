@@ -27,10 +27,10 @@ namespace binlog_streamer {
 
 enum class BoundaryOutcome {
   GroupStart,
-  InGroup,   // strictly before the open group's end
-  GroupEnd,  // exactly at the open group's end
+  InGroup,
+  GroupEnd,
   Standalone,
-  Malformed,  // an event breaks a group boundary invariant - see error
+  Malformed,
 };
 
 }  // namespace binlog_streamer

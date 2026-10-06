@@ -30,9 +30,8 @@ namespace binlog_streamer {
 
 struct PreviousGtidsResult {
   bool ok = false;
-  std::string text;  // meaningful when ok - may legitimately be empty (a file
-                     // with nothing to add to a GTID set)
-  SessionResult failure;  // meaningful when !ok
+  std::string text;
+  SessionResult failure;
 };
 
 }  // namespace binlog_streamer

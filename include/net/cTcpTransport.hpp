@@ -29,14 +29,10 @@
 
 namespace binlog_streamer {
 
-// No TLS or compression. One socket at a time: Connect() closes any
-// socket already open before opening a new one.
 class TcpTransport : public Transport {
  public:
-  // wakeupPipe closes a race stopRequested alone cannot: setting the
-  // flag while not blocked in any syscall wakes nothing, so the caller
-  // must also call Wake(). Neither pointer is owned here; either may be
-  // null.
+  // Setting the flag while not blocked in a syscall wakes nothing: the caller
+  // must also call Wake(). Pointers are not owned and may be null.
   explicit TcpTransport(const std::atomic<bool> *stopRequested = nullptr,
                         const WakeupPipe *wakeupPipe = nullptr);
   ~TcpTransport() override { Close(); }
@@ -45,8 +41,6 @@ class TcpTransport : public Transport {
 
   bool Connect(const std::string &host, std::uint16_t port,
                std::chrono::milliseconds timeout, std::string &error) override;
-  // Adopts a socket the caller has already accept()ed; same
-  // one-socket-at-a-time rule. On failure, acceptedSocket is also closed.
   bool Accept(int acceptedSocket, std::string &error);
   ReadOutcome Read(std::span<std::uint8_t> buffer, std::size_t &bytesRead,
                    std::chrono::milliseconds timeout,

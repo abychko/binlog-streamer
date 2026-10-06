@@ -44,9 +44,8 @@ TEST(BinlogFileNameTest, FormatsWithSixDigitZeroPadding) {
 }
 
 TEST(BinlogFileNameTest, FormatGrowsPastSixDigitsWithoutWrapping) {
-  // Anything that searches across file numbers depends on this growth, not
-  // just formatting: a naive fixed-width-6 formatter would wrap binlog.999999 +
-  // 1 back to binlog.000000 instead of growing to a 7th digit.
+  // A fixed-width-6 formatter would wrap binlog.999999 + 1 back to
+  // binlog.000000.
   EXPECT_EQ(BinlogFileName::Format("binlog", 999999), "binlog.999999");
   EXPECT_EQ(BinlogFileName::Format("binlog", 1000000), "binlog.1000000");
 }

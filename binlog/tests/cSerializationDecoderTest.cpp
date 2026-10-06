@@ -31,9 +31,8 @@
 namespace binlog_streamer {
 namespace {
 
-// The worked examples of libs/mysql/serialization/readme.md ("Variable-
-// length integers"), which show bytes big-endian: 65535 is "00000111
-// 11111111 11111011", so on the wire (little-endian) FB FF 07.
+// Examples from libs/mysql/serialization/readme.md, which shows bytes
+// big-endian: 65535 is FB FF 07 on the wire.
 TEST(SerializationDecoderTest, DecodesTheReadmesUnsignedExample) {
   const std::vector<std::uint8_t> bytes{0xFB, 0xFF, 0x07};
   SerializationDecoder decoder(bytes);
@@ -49,9 +48,9 @@ TEST(SerializationDecoderTest, DecodesTheReadmesSignedExamples) {
     std::int64_t expected;
   };
   const Case cases[] = {
-      {{0xF3, 0xFF, 0x0F}, 65535},   // "00001111 11111111 11110011"
-      {{0xEB, 0xFF, 0x0F}, -65535},  // "00001111 11111111 11101011"
-      {{0xFB, 0xFF, 0x0F}, -65536},  // "00001111 11111111 11111011"
+      {{0xF3, 0xFF, 0x0F}, 65535},
+      {{0xEB, 0xFF, 0x0F}, -65535},
+      {{0xFB, 0xFF, 0x0F}, -65536},
   };
   for (const auto &c : cases) {
     SerializationDecoder decoder(c.bytes);
@@ -62,9 +61,8 @@ TEST(SerializationDecoderTest, DecodesTheReadmesSignedExamples) {
   }
 }
 
-// One byte holds seven value bits; 128 is the first value needing two.
-// write_varlen_bytes (variable_length_integers.h:92-105): first byte =
-// (2^(n-1) - 1) | (value << n), the rest = value >> (8 - n), little-endian.
+// write_varlen_bytes: first byte = (2^(n-1) - 1) | (value << n), the rest =
+// value >> (8 - n), little-endian.
 TEST(SerializationDecoderTest, DecodesOneAndTwoByteUnsignedForms) {
   struct Case {
     std::vector<std::uint8_t> bytes;
@@ -72,8 +70,7 @@ TEST(SerializationDecoderTest, DecodesOneAndTwoByteUnsignedForms) {
   };
   const Case cases[] = {
       {{0x00}, 0},         {{0x02}, 1},         {{0xFE}, 127},
-      {{0x01, 0x02}, 128}, {{0xFD, 0x03}, 255},  // 0b01 | (255 << 2) = 0xFD,
-                                                 // 255 >> 6 = 3
+      {{0x01, 0x02}, 128}, {{0xFD, 0x03}, 255},
   };
   for (const auto &c : cases) {
     SerializationDecoder decoder(c.bytes);
@@ -83,9 +80,6 @@ TEST(SerializationDecoderTest, DecodesOneAndTwoByteUnsignedForms) {
   }
 }
 
-// A first byte of all ones announces nine bytes, and the value is then the
-// following eight bytes verbatim (read_varlen_bytes_unsigned: the shift
-// becomes zero for num_bytes == 9).
 TEST(SerializationDecoderTest, DecodesTheNineByteForm) {
   const std::vector<std::uint8_t> bytes{0xFF, 0x01, 0x00, 0x00, 0x00,
                                         0x00, 0x00, 0x00, 0x80};
@@ -137,8 +131,7 @@ TEST(SerializationDecoderTest, RefusesAStringLongerThanItsBoundOrItsBytes) {
   EXPECT_TRUE(value.empty());
 }
 
-// Each array element is its own varint, so a byte of 0x80 or more spans
-// two wire bytes: the array {0x7F, 0x80} is FE 01 02.
+// Each array element is its own varint: {0x7F, 0x80} is FE 01 02.
 TEST(SerializationDecoderTest, ReadsAByteArrayOfPerElementVarints) {
   const std::vector<std::uint8_t> bytes{0xFE, 0x01, 0x02};
   SerializationDecoder decoder(bytes);
@@ -192,7 +185,7 @@ TEST(SerializationDecoderTest, PeeksAFieldIdWithoutConsumingIt) {
   ASSERT_TRUE(decoder.PeekFieldId(id));
   EXPECT_EQ(id, 1u);
   ASSERT_TRUE(decoder.SkipFieldId());
-  EXPECT_FALSE(decoder.PeekFieldId(id));  // nothing left
+  EXPECT_FALSE(decoder.PeekFieldId(id));
 }
 
 }  // namespace

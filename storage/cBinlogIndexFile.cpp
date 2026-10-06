@@ -91,8 +91,7 @@ bool BinlogIndexFile::Load(const std::string &path,
   names.clear();
   const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
   if (fd < 0) {
-    if (errno == ENOENT)
-      return true;  // no index yet - an empty one, not an error
+    if (errno == ENOENT) return true;
     error = std::strerror(errno);
     return false;
   }
@@ -163,7 +162,7 @@ bool BinlogIndexFile::Replace(const std::string &path,
 
   const std::string tmpPath = TmpPath(path);
   // O_TRUNC, not O_EXCL: a leftover ".tmp" from an interrupted Replace()
-  // is expected and overwritten, not an error.
+  // is expected.
   const int fd =
       open(tmpPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
   if (fd < 0) {

@@ -91,8 +91,6 @@ class StorageSinkFixture {
     m_cache.reset();
   }
 
-  // Every disk observation or modification after sink calls must follow
-  // Drain(), including a "before" size. The writer runs on its own thread.
   void Drain() {
     if (m_writer && !m_writer->DrainAndSync())
       throw std::runtime_error("drain: " + m_writer->LastError());

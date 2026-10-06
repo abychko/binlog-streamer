@@ -29,8 +29,7 @@ namespace binlog_streamer {
 namespace {
 
 TEST(EofPacketCodecTest, ParsesFixture) {
-  const std::vector<std::uint8_t> payload{0xFE, 0x02, 0x00, 0x22,
-                                          0x00};  // warnings=2, status=0x0022
+  const std::vector<std::uint8_t> payload{0xFE, 0x02, 0x00, 0x22, 0x00};
   EXPECT_TRUE(EofPacketCodec::IsEofPacket(payload));
   EofPacket value;
   std::string error;
@@ -40,9 +39,8 @@ TEST(EofPacketCodecTest, ParsesFixture) {
 }
 
 TEST(EofPacketCodecTest, RejectsPacketOfNineBytesOrMore) {
-  // A packet this long with an 0xFE first byte is a row whose first
-  // column's length-encoded integer happens to use the 0xFE prefix, not
-  // an EOF packet.
+  // A long packet starting with 0xFE is a row whose first length-encoded
+  // integer uses the 0xFE prefix, not EOF.
   const std::vector<std::uint8_t> payload(9, 0xFE);
   EXPECT_FALSE(EofPacketCodec::IsEofPacket(payload));
 }

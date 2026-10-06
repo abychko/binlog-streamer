@@ -26,7 +26,6 @@
 #include <string>
 namespace binlog_streamer {
 struct StoragePurgerHooks {
-  // Runs immediately before unlink for each removed name.
   std::function<void(const std::string &name)> beforeUnlink;
 };
 }  // namespace binlog_streamer

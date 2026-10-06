@@ -106,7 +106,7 @@ bool BinlogFileHeaderReader::Read(const std::filesystem::path &path,
     return false;
   }
   EventHeader fdeHeader;
-  std::string headerParseError;  // fixed-size header: Parse() cannot fail
+  std::string headerParseError;
   EventHeaderCodec::Parse(fdeHeaderBytes, fdeHeader, headerParseError);
   if (fdeHeader.type !=
       static_cast<std::uint8_t>(EventType::FormatDescription)) {
@@ -114,9 +114,8 @@ bool BinlogFileHeaderReader::Read(const std::filesystem::path &path,
     close(fd);
     return false;
   }
-  // eventLength is a 32-bit wire field; widen before adding to avoid a
-  // 32-bit wraparound (usual arithmetic conversions add it to the literal
-  // 4 as unsigned int, not as parsed.size's uint64_t).
+  // eventLength is a 32-bit wire field: widen before adding 4, or the sum
+  // wraps.
   if (fdeHeader.eventLength < EVENT_HEADER_LENGTH ||
       4 + static_cast<std::uint64_t>(fdeHeader.eventLength) > parsed.size) {
     error = "Format_description_event length runs past the end of the file";
@@ -135,14 +134,12 @@ bool BinlogFileHeaderReader::Read(const std::filesystem::path &path,
     close(fd);
     return false;
   }
-  parsed.createdAt =
-      fdeHeader.timestamp;  // Common-Header timestamp, not fde.created
+  parsed.createdAt = fdeHeader.timestamp;
   parsed.serverId = fdeHeader.serverId;
   parsed.checksumAlgorithm = fde.checksumAlgorithm;
   parsed.serverVersion = fde.serverVersion;
   parsed.inUse = (fdeHeader.flags & EVENT_FLAG_BINLOG_IN_USE) != 0;
 
-  // Same widen-before-adding reasoning as above.
   const std::uint64_t pgeOffset =
       4 + static_cast<std::uint64_t>(fdeHeader.eventLength);
   std::array<std::uint8_t, EVENT_HEADER_LENGTH> pgeHeaderBytes{};
@@ -166,8 +163,8 @@ bool BinlogFileHeaderReader::Read(const std::filesystem::path &path,
     return false;
   }
 
-  // checksumLength comes from this file's own FDE, not a negotiated value:
-  // no session exists yet at Load() time, before any source has connected.
+  // checksumLength comes from this file's own FDE: no session exists yet
+  // at Load().
   const std::size_t checksumLength =
       parsed.checksumAlgorithm == "CRC32" ? CHECKSUM_LENGTH : 0;
   const std::size_t pgeBodyLength = pgeHeader.eventLength - EVENT_HEADER_LENGTH;

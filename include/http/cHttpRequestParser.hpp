@@ -31,9 +31,6 @@ namespace binlog_streamer {
 
 class HttpRequestParser {
  public:
-  // head is everything up to the blank line that ends the headers, that
-  // line included or not. False (error set) for anything but a request
-  // line of the form "METHOD /path HTTP/1.x".
   static bool Parse(std::string_view head, HttpRequest &request,
                     std::string &error);
 };

@@ -37,14 +37,10 @@
 
 namespace binlog_streamer {
 
-// Every attempt is a fresh ReplicaSession: a transient failure partway
-// through a previous attempt leaves its channel/transport unsafe to
-// resume.
+// Every attempt is a fresh ReplicaSession: a transient failure leaves the old
+// channel unsafe to resume.
 class StartupSequence {
  public:
-  // When storedStartSet/storedFileName are set, a successful
-  // registration builds StartSetResolution from them instead of
-  // running StartSetResolver's probes.
   StartupSequence(Transport &transport, const SourceSettings &source,
                   const ServerSettings &server, std::string replicaUuid,
                   std::string relayName, std::string relayVersion,
@@ -54,14 +50,12 @@ class StartupSequence {
                   std::optional<GtidSet> storedStartSet = std::nullopt,
                   std::string storedFileName = {});
 
-  // Registered is the only outcome with both session and resolution
-  // meaningful. TransientFailure never escapes this method - it
-  // surfaces as PermanentFailure once attempts are exhausted.
+  // TransientFailure never escapes: it surfaces as PermanentFailure once
+  // attempts are exhausted.
   StartupOutcome Run();
 
  private:
   Transport &m_transport;
-  // Own the settings so their lifetime does not depend on the caller.
   const SourceSettings m_source;
   const ServerSettings m_server;
   std::string m_replicaUuid;

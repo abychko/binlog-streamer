@@ -58,9 +58,6 @@ bool StorageCatalog::Load(const std::filesystem::path &dataDir,
   m_records.clear();
 
   const std::string indexPath = IndexPath(dataDir);
-  // Checked here rather than via BinlogIndexFile::Load() (which reads a
-  // missing index the same as an existing-but-empty one): the remnant
-  // rules below need to tell "never created" apart from "present but empty".
   std::error_code indexExistsError;
   indexExisted = std::filesystem::exists(indexPath, indexExistsError);
   if (indexExistsError) {
@@ -71,9 +68,6 @@ bool StorageCatalog::Load(const std::filesystem::path &dataDir,
   std::vector<std::string> indexNames;
   if (!BinlogIndexFile::Load(indexPath, indexNames, error)) return false;
 
-  // A leftover from an interrupted Replace() call - pure debris, since the
-  // index just loaded above is already correct as-is. Removed
-  // unconditionally: it has no bearing on the remnant decisions below.
   std::error_code removeTmpError;
   std::filesystem::remove(TmpIndexPath(dataDir), removeTmpError);
 
@@ -101,10 +95,8 @@ bool StorageCatalog::Load(const std::filesystem::path &dataDir,
   const std::set<std::string> indexed(indexNames.begin(), indexNames.end());
   std::vector<std::string> toDelete;
   std::vector<std::string> refusals;
-  // Candidates for "a create whose own index append never happened" - at
-  // most one can legitimately exist. Collected rather than deleted on
-  // sight: two or more means no safe story, and guessing could discard the
-  // wrong file.
+  // At most one "create whose index append never happened" can be
+  // legitimate; two or more are refused rather than guessed at.
   std::vector<std::string> newerThanLast;
 
   std::error_code listError;
@@ -132,17 +124,12 @@ bool StorageCatalog::Load(const std::filesystem::path &dataDir,
     }
     if (parsedIndexNames.empty()) {
       if (!indexExisted) {
-        // binlog.index does not exist at all - the only state this
-        // project is ever in before it has created a single file.
-        // A file here is never this project's own doing.
         refusals.push_back(
             name +
             ": binlog.index is missing entirely, not merely empty - refusing "
             "rather "
             "than guessing whether this file is this project's own");
       } else {
-        // The index exists but has no entries yet - the window
-        // between Open() writing it empty and the first append.
         newerThanLast.push_back(name);
       }
       continue;
@@ -151,7 +138,7 @@ bool StorageCatalog::Load(const std::filesystem::path &dataDir,
       newerThanLast.push_back(name);
     } else if (entryBasename == firstEntry->basename &&
                number < firstEntry->number) {
-      toDelete.push_back(name);  // a purge that never finished removing it
+      toDelete.push_back(name);
     } else if (entryBasename != lastEntry->basename &&
                entryBasename != firstEntry->basename) {
       refusals.push_back(name +
@@ -191,9 +178,7 @@ bool StorageCatalog::Load(const std::filesystem::path &dataDir,
     return false;
   }
 
-  // Every indexed file's header is read, and the "file in use" bit
-  // checked, before anything at all is deleted below: a remnant deletion
-  // must not act on top of a directory state that failed either check.
+  // Read every header and check the in-use bit before deleting anything.
   std::vector<StoredFileRecord> records;
   records.reserve(indexNames.size());
   for (std::size_t i = 0; i < indexNames.size(); ++i) {
@@ -293,8 +278,6 @@ std::optional<FilePin> StorageCatalog::Pin(const std::string &fileName,
 void StorageCatalog::Unpin(const std::string &fileName) {
   std::unique_lock lock(m_mutex);
   const auto it = m_pinCounts.find(fileName);
-  // Reaching here for a name with no entry would mean a FilePin outlived
-  // its own count, which this class's public interface never allows.
   if (it == m_pinCounts.end()) return;
   if (--it->second == 0) m_pinCounts.erase(it);
 }
@@ -312,7 +295,6 @@ bool StorageCatalog::UpdateSize(std::uint64_t size, std::string &error) {
 std::optional<std::string> StorageCatalog::FindStartFile(
     const GtidSet &replicaSet) const {
   std::shared_lock lock(m_mutex);
-  // Newest to oldest, as the server does.
   for (auto it = m_records.rbegin(); it != m_records.rend(); ++it) {
     if (it->previousGtids.IsSubsetOf(replicaSet)) return it->name;
   }
@@ -386,15 +368,12 @@ SuccessorOutcome StorageCatalog::FindSuccessor(
   std::shared_lock lock(m_mutex);
   for (std::size_t i = 0; i < m_records.size(); ++i) {
     if (m_records[i].name != currentFileName) continue;
-    if (m_records[i].inUse)
-      return SuccessorOutcome::NotDone;  // still open - offset cannot be
-                                         // compared yet
+    if (m_records[i].inUse) return SuccessorOutcome::NotDone;
     if (offset > m_records[i].size) {
       closedSize = m_records[i].size;
       return SuccessorOutcome::OffsetPastEnd;
     }
-    if (offset < m_records[i].size)
-      return SuccessorOutcome::NotDone;  // closed, but more of it to read first
+    if (offset < m_records[i].size) return SuccessorOutcome::NotDone;
     if (i + 1 >= m_records.size()) return SuccessorOutcome::NoSuccessor;
     successorName = m_records[i + 1].name;
     return SuccessorOutcome::Found;

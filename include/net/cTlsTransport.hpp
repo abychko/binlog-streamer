@@ -32,21 +32,13 @@
 #include "net/eReadOutcome.hpp"
 #include "net/iTransport.hpp"
 
-// Keeps <openssl/ssl.h> out of this header.
 struct ssl_st;
 struct bio_st;
 
 namespace binlog_streamer {
 
-// Wraps a transport in TLS. Passes bytes through untouched until
-// Connect()/Accept() ran the handshake, because the wire turns encrypted
-// only after the SSL request that follows the greeting - the greeting
-// itself, and the request, go in the clear.
-//
-// OpenSSL never touches the socket: it reads and writes a pair of memory
-// BIOs, and this class moves bytes between them and the inner transport,
-// so the inner transport's timeouts, stop flag and ReadOutcome apply to
-// an encrypted connection exactly as they do to a plain one.
+// Passes bytes through until the handshake: the greeting and the SSL request go
+// in the clear.
 class TlsTransport final : public Transport {
  public:
   explicit TlsTransport(Transport &inner) : m_inner(inner) {}
@@ -55,22 +47,14 @@ class TlsTransport final : public Transport {
   TlsTransport(const TlsTransport &) = delete;
   TlsTransport &operator=(const TlsTransport &) = delete;
 
-  // Client side: the peer has sent its greeting and read the SSL request.
-  // host is sent as SNI and, under VerifyIdentity, checked against the
-  // certificate.
   bool Handshake(const TlsContext &context, const std::string &host,
                  std::chrono::milliseconds timeout, std::string &error);
-  // Server side: the SSL request has been read.
-  // alreadyRead: bytes the caller took off the socket after the client's
-  // SSL request, which are the start of the client's hello.
   bool Accept(const TlsContext &context, std::chrono::milliseconds timeout,
               std::string &error,
               std::span<const std::uint8_t> alreadyRead = {});
 
   bool Enabled() const { return m_ssl != nullptr; }
-  // Empty until the handshake finished, e.g. "TLS_AES_256_GCM_SHA384".
   std::string Cipher() const;
-  // Same, e.g. "TLSv1.3".
   std::string Version() const;
 
   bool Connect(const std::string &host, std::uint16_t port,
@@ -88,16 +72,14 @@ class TlsTransport final : public Transport {
  private:
   bool Begin(const TlsContext &context, std::string &error);
   bool RunHandshake(std::chrono::milliseconds timeout, std::string &error);
-  // Sends whatever OpenSSL queued in the write BIO.
   bool Flush(std::chrono::milliseconds timeout, std::string &error);
-  // One inner read into the read BIO.
   ReadOutcome Feed(std::chrono::milliseconds timeout, std::string &error);
   void Drop();
 
   Transport &m_inner;
   ssl_st *m_ssl = nullptr;
-  bio_st *m_readBio = nullptr;   // owned by m_ssl once set
-  bio_st *m_writeBio = nullptr;  // same
+  bio_st *m_readBio = nullptr;  // owned by m_ssl once set
+  bio_st *m_writeBio = nullptr;
 };
 
 }  // namespace binlog_streamer

@@ -42,9 +42,7 @@ StreamPosition StartPosition() { return StreamPosition{"binlog.000001", 100}; }
 
 TEST(EventStreamReaderTest, DeliversByteExactEventWithATinyBufferAndSlowReads) {
   test::ScriptedStreamBuilder builder;
-  const std::string body(200, 'x');  // bigger than the 64-byte buffer below
-  // nextPosition must agree with the running position, or the sync check
-  // rejects the event before this test's actual subject ever runs.
+  const std::string body(200, 'x');
   const std::uint32_t eventLength =
       static_cast<std::uint32_t>(EVENT_HEADER_LENGTH + body.size() + 4);
   builder.PushEvent(
@@ -54,8 +52,6 @@ TEST(EventStreamReaderTest, DeliversByteExactEventWithATinyBufferAndSlowReads) {
 
   test::FakeTransport transport;
   transport.incoming = builder.Bytes();
-  // Small and non-power-of-two, to stress reads that never align with a
-  // header/event boundary.
   transport.maxBytesPerRead = 5;
 
   test::RecordingEventSink sink;
@@ -72,8 +68,6 @@ TEST(EventStreamReaderTest, DeliversByteExactEventWithATinyBufferAndSlowReads) {
   EXPECT_EQ(sink.events[0].header.eventLength,
             EVENT_HEADER_LENGTH + body.size() + 4);
   ASSERT_EQ(sink.events[0].bytes.size(), sink.events[0].header.eventLength);
-  // Byte-exact against what the builder put on the wire (marker dropped,
-  // header+body+checksum kept).
   const auto &wire = transport.incoming;
   EXPECT_TRUE(std::equal(sink.events[0].bytes.begin(),
                          sink.events[0].bytes.end(),
@@ -82,7 +76,6 @@ TEST(EventStreamReaderTest, DeliversByteExactEventWithATinyBufferAndSlowReads) {
 
 TEST(EventStreamReaderTest, ReassemblesAnEventSpanningTwoSubPackets) {
   test::ScriptedStreamBuilder builder;
-  // MAX_PAYLOAD_PER_PACKET + 1000 forces a split into two sub-packets.
   const std::size_t bodySize =
       MAX_PAYLOAD_PER_PACKET + 1000 - 1 - EVENT_HEADER_LENGTH;
   std::vector<std::uint8_t> body(bodySize);
@@ -113,8 +106,6 @@ TEST(
     EventStreamReaderTest,
     ConsumesTheMandatoryEmptyTerminatorAtExactlyMaxPayloadAndReadsTheNextEvent) {
   test::ScriptedStreamBuilder builder;
-  // Packet payload exactly MAX_PAYLOAD_PER_PACKET: still needs an empty
-  // terminator sub-packet after it.
   const std::size_t bodySize = MAX_PAYLOAD_PER_PACKET - 1 - EVENT_HEADER_LENGTH;
   const std::vector<std::uint8_t> firstBody(bodySize, 0x11);
   const std::uint32_t firstEventLength =
@@ -245,12 +236,11 @@ TEST(EventStreamReaderTest, HeartbeatV1AdvancesPositionWithinTheSameFile) {
 }
 
 TEST(EventStreamReaderTest, HeartbeatExactlyAtTheCurrentPositionSucceeds) {
-  // The boundary itself: heartbeat_queue_event's check is "position <
-  // current" fails, so equal must succeed.
+  // heartbeat_queue_event rejects only position < current, so equal must
+  // succeed.
   test::ScriptedStreamBuilder builder;
-  builder.PushHeartbeatV1(
-      "binlog.000001", 0,
-      /*nextPosition=*/100);  // StartPosition() is already at 100
+  builder.PushHeartbeatV1("binlog.000001", 0,
+                          /*nextPosition=*/100);
   builder.PushEof();
 
   test::FakeTransport transport;
@@ -292,9 +282,8 @@ TEST(EventStreamReaderTest, HeartbeatNamingADifferentFileIsAFailure) {
 
 TEST(EventStreamReaderTest, HeartbeatBehindTheCurrentPositionIsAFailure) {
   test::ScriptedStreamBuilder builder;
-  builder.PushHeartbeatV1(
-      "binlog.000001", 0,
-      /*nextPosition=*/50);  // StartPosition() is already at 100
+  builder.PushHeartbeatV1("binlog.000001", 0,
+                          /*nextPosition=*/50);
 
   test::FakeTransport transport;
   transport.incoming = builder.Bytes();
@@ -341,7 +330,6 @@ TEST(EventStreamReaderTest, InterruptedMapsToStoppedReason) {
 TEST(EventStreamReaderTest,
      SinkStoppingMidEventEndsWithStoppedBySinkAndNoMoreReads) {
   test::ScriptedStreamBuilder builder;
-  // Large enough for several OnEventBytes() calls.
   const std::vector<std::uint8_t> body(500, 0x22);
   const std::uint32_t eventLength =
       static_cast<std::uint32_t>(EVENT_HEADER_LENGTH + body.size());
@@ -352,29 +340,24 @@ TEST(EventStreamReaderTest,
 
   test::FakeTransport transport;
   transport.incoming = builder.Bytes();
-  transport.maxBytesPerRead = 50;  // several reads within this one event's body
+  transport.maxBytesPerRead = 50;
 
   test::RecordingEventSink sink;
-  sink.stopAtEventBytesCall =
-      2;  // stop partway through the body, not on the header chunk (call 1)
+  sink.stopAtEventBytesCall = 2;
   EventStreamReader reader(transport, sink, StartPosition(), {});
   const StreamResult result = reader.Run();
 
   EXPECT_EQ(result.reason, StreamEndReason::StoppedBySink);
   ASSERT_EQ(sink.events.size(), 1u);
-  EXPECT_FALSE(sink.events[0].ended);  // OnEventEnd() must not be called once a
-                                       // call already returned false
+  EXPECT_FALSE(sink.events[0].ended);
   const unsigned readsAtStop = transport.readCallCount;
-  // Sanity: stopped well before the whole script was consumed.
   EXPECT_LT(readsAtStop, transport.incoming.size());
 }
 
 TEST(EventStreamReaderTest, EventLengthShorterThanTheHeaderIsMalformed) {
-  // Hand-built rather than through the builder: PushEvent()'s bookkeeping
-  // cannot produce an event_length below EVENT_HEADER_LENGTH.
   std::vector<std::uint8_t> payload{0x00};
   payload.insert(payload.end(), 19, 0);
-  payload[1 + 9] = 10;  // event_length = 10, less than EVENT_HEADER_LENGTH (19)
+  payload[1 + 9] = 10;
 
   std::uint8_t sequenceId = 0;
   test::FakeTransport transport;
@@ -384,12 +367,11 @@ TEST(EventStreamReaderTest, EventLengthShorterThanTheHeaderIsMalformed) {
   const StreamResult result = reader.Run();
 
   EXPECT_EQ(result.reason, StreamEndReason::MalformedStream);
-  // next_position is zero too, which the position check would also refuse -
-  // this message pins down which check fired.
+  // next_position is also zero, so the exact message shows which check fired.
   EXPECT_NE(result.message.find("shorter than the Common-Header"),
             std::string::npos)
       << result.message;
-  EXPECT_TRUE(sink.events.empty());  // rejected before OnEventBegin()
+  EXPECT_TRUE(sink.events.empty());
 }
 
 TEST(EventStreamReaderTest, SequenceMismatchIsMalformed) {
@@ -398,16 +380,14 @@ TEST(EventStreamReaderTest, SequenceMismatchIsMalformed) {
 
   test::FakeTransport transport;
   transport.incoming = builder.Bytes();
-  transport.incoming[3] =
-      7;  // corrupt the first sub-packet's sequence id (expected 0)
+  transport.incoming[3] = 7;
 
   test::RecordingEventSink sink;
   EventStreamReader reader(transport, sink, StartPosition(), {});
   const StreamResult result = reader.Run();
 
   EXPECT_EQ(result.reason, StreamEndReason::MalformedStream);
-  // This event's next_position is zero, which the position check would also
-  // refuse - this message pins down which check fired.
+  // next_position is also zero, so the exact message shows which check fired.
   EXPECT_NE(result.message.find("sequence id"), std::string::npos)
       << result.message;
 }
@@ -415,9 +395,6 @@ TEST(EventStreamReaderTest, SequenceMismatchIsMalformed) {
 TEST(EventStreamReaderTest, SequenceIdsAreNotCheckedOverACompressedStream) {
   test::ScriptedStreamBuilder builder;
   const std::vector<std::uint8_t> body{1, 2, 3};
-  // A next_position the reader agrees with, unlike
-  // SequenceMismatchIsMalformed's: with the sequence check off, the
-  // position check is what would fire next.
   builder.PushEvent(
       33, body, 0,
       static_cast<std::uint32_t>(StartPosition().position +
@@ -426,8 +403,7 @@ TEST(EventStreamReaderTest, SequenceIdsAreNotCheckedOverACompressedStream) {
 
   test::FakeTransport transport;
   transport.incoming = builder.Bytes();
-  // The same corruption SequenceMismatchIsMalformed relies on: under
-  // compression the source rewrites these ids on flush, so the reader
+  // Under compression the source rewrites these ids on flush, so the reader
   // must accept whatever they say.
   transport.incoming[3] = 7;
 
@@ -443,13 +419,13 @@ TEST(EventStreamReaderTest, SequenceIdsAreNotCheckedOverACompressedStream) {
 
 TEST(EventStreamReaderTest,
      EventClaimingMoreThanMaxEventLengthIsRejectedBeforeReadingAnyBody) {
-  // Only marker + Common-Header are on the wire - if the reader tried to
-  // read a body, it would report ConnectionClosed instead of MalformedStream.
+  // Only the marker and header are on the wire: a reader that tried to read a
+  // body would report ConnectionClosed instead of MalformedStream.
   std::vector<std::uint8_t> payload{0x00};
   payload.insert(payload.end(), 4, 0);
-  payload.push_back(2);  // an arbitrary type code
+  payload.push_back(2);
   payload.insert(payload.end(), 4, 0);
-  const std::uint32_t hugeLength = 1500000000;  // > MAX_EVENT_LENGTH (1 GiB)
+  const std::uint32_t hugeLength = 1500000000;
   for (int i = 0; i < 4; ++i)
     payload.push_back(static_cast<std::uint8_t>(hugeLength >> (8 * i)));
   payload.insert(payload.end(), 4, 0);
@@ -463,8 +439,7 @@ TEST(EventStreamReaderTest,
   const StreamResult result = reader.Run();
 
   EXPECT_EQ(result.reason, StreamEndReason::MalformedStream);
-  // next_position is zero too, which the position check would also refuse -
-  // this message pins down which check fired.
+  // next_position is also zero, so the exact message shows which check fired.
   EXPECT_NE(result.message.find("larger than MAX_EVENT_LENGTH"),
             std::string::npos)
       << result.message;
@@ -473,25 +448,21 @@ TEST(EventStreamReaderTest,
 
 TEST(EventStreamReaderTest,
      SubPacketBytesPastTheDeclaredEventLengthAreMalformed) {
-  // marker + a 23-byte event (event_length == EVENT_HEADER_LENGTH) + 5
-  // extra bytes shaped like a well-formed EOF sub-packet (len=1, seq=1,
-  // 0xFE) - must not be silently consumed as the next logical unit.
+  // Five extra bytes shaped like an EOF sub-packet must not be consumed as the
+  // next logical unit.
   std::vector<std::uint8_t> payload{0x00};
   payload.insert(payload.end(), 4, 0);
-  payload.push_back(2);  // an arbitrary type code
+  payload.push_back(2);
   payload.insert(payload.end(), 4, 0);
   const std::uint32_t eventLength = EVENT_HEADER_LENGTH;
   for (int i = 0; i < 4; ++i)
     payload.push_back(static_cast<std::uint8_t>(eventLength >> (8 * i)));
-  // Must agree with the running position, or the sync check fires first
-  // instead of the check this test exercises.
   const std::uint32_t nextPosition =
       static_cast<std::uint32_t>(StartPosition().position + eventLength);
   for (int i = 0; i < 4; ++i)
     payload.push_back(static_cast<std::uint8_t>(nextPosition >> (8 * i)));
   payload.insert(payload.end(), 2, 0);
-  for (std::uint8_t b : {0x01, 0x00, 0x00, 0x01, 0xFE})
-    payload.push_back(b);  // not part of the event
+  for (std::uint8_t b : {0x01, 0x00, 0x00, 0x01, 0xFE}) payload.push_back(b);
 
   std::uint8_t sequenceId = 0;
   test::FakeTransport transport;
@@ -504,28 +475,21 @@ TEST(EventStreamReaderTest,
   EXPECT_NE(result.message.find("past the declared event length"),
             std::string::npos)
       << result.message;
-  EXPECT_EQ(sink.eventEndCalls,
-            0u);  // must not be accepted as a complete event
+  EXPECT_EQ(sink.eventEndCalls, 0u);
 }
 
 TEST(EventStreamReaderTest,
      PositionAccumulatesAcrossThe4GiBBoundaryUsingEventLength) {
-  // Keeps its own 64-bit position rather than trusting the header's
-  // truncated 32-bit field, which cannot represent this case.
   const std::uint64_t fourGiB = std::uint64_t{1} << 32;
   const StreamPosition start{"binlog.000001", fourGiB - 100};
 
   test::ScriptedStreamBuilder builder;
-  const std::vector<std::uint8_t> bodyA(300 - EVENT_HEADER_LENGTH,
-                                        'a');  // whole event 300 bytes
-  builder.PushEvent(
-      33, bodyA, 0,
-      /*nextPosition=*/200);  // low 32 bits of (fourGiB - 100 + 300)
-  const std::vector<std::uint8_t> bodyB(50 - EVENT_HEADER_LENGTH,
-                                        'b');  // whole event 50 bytes
-  builder.PushEvent(
-      33, bodyB, 0,
-      /*nextPosition=*/250);  // low 32 bits of (fourGiB + 200 + 50)
+  const std::vector<std::uint8_t> bodyA(300 - EVENT_HEADER_LENGTH, 'a');
+  builder.PushEvent(33, bodyA, 0,
+                    /*nextPosition=*/200);
+  const std::vector<std::uint8_t> bodyB(50 - EVENT_HEADER_LENGTH, 'b');
+  builder.PushEvent(33, bodyB, 0,
+                    /*nextPosition=*/250);
   builder.PushEof();
 
   test::FakeTransport transport;
@@ -545,9 +509,8 @@ TEST(EventStreamReaderTest,
      EventWhoseNextPositionDisagreesWithTheAccumulatedPositionIsMalformed) {
   test::ScriptedStreamBuilder builder;
   const std::vector<std::uint8_t> body(50, 'x');
-  builder.PushEvent(
-      33, body, 0,
-      /*nextPosition=*/999999);  // does not match StartPosition() + eventLength
+  builder.PushEvent(33, body, 0,
+                    /*nextPosition=*/999999);
   builder.PushEof();
 
   test::FakeTransport transport;
@@ -557,8 +520,7 @@ TEST(EventStreamReaderTest,
   const StreamResult result = reader.Run();
 
   EXPECT_EQ(result.reason, StreamEndReason::MalformedStream);
-  EXPECT_EQ(sink.eventBeginCalls,
-            0u);  // rejected before the sink ever hears about this event
+  EXPECT_EQ(sink.eventBeginCalls, 0u);
   EXPECT_TRUE(sink.events.empty());
   const std::uint32_t eventLength =
       static_cast<std::uint32_t>(EVENT_HEADER_LENGTH + body.size());
@@ -573,12 +535,10 @@ TEST(EventStreamReaderTest, HeartbeatV2AdvancesAndFailsAcrossThe4GiBBoundary) {
   const StreamPosition start{"binlog.000001", fourGiB - 100};
 
   test::ScriptedStreamBuilder builder;
-  // v2's 64-bit body position wins here since the header's 32 bits can't
-  // represent it.
   builder.PushHeartbeatV2("binlog.000001", fourGiB + 1000, 0,
                           /*nextPosition=*/1000);
   builder.PushHeartbeatV2("binlog.000001", fourGiB + 500, 0,
-                          /*nextPosition=*/500);  // behind the first
+                          /*nextPosition=*/500);
 
   test::FakeTransport transport;
   transport.incoming = builder.Bytes();
@@ -587,23 +547,19 @@ TEST(EventStreamReaderTest, HeartbeatV2AdvancesAndFailsAcrossThe4GiBBoundary) {
   const StreamResult result = reader.Run();
 
   EXPECT_EQ(result.reason, StreamEndReason::HeartbeatFailure);
-  // Distinguishes "the first heartbeat succeeded then the second failed"
-  // from "the first failed already" - both would report the same reason.
   EXPECT_EQ(result.heartbeats, 1u);
   EXPECT_EQ(result.lastPosition.position, fourGiB + 1000);
 }
 
 TEST(EventStreamReaderTest,
      EventEndingExactlyOnA4GiBBoundaryCarriesZeroAndStillAdvances) {
-  // A writer truncates log_pos to 32 bits - an ordinary event landing
-  // exactly on this boundary legitimately carries 0, and must still advance.
+  // A writer truncates log_pos to 32 bits, so an event landing exactly on that
+  // boundary legitimately carries 0 and must still advance.
   const std::uint64_t fourGiB = std::uint64_t{1} << 32;
   const StreamPosition start{"binlog.000001", fourGiB - 300};
 
   test::ScriptedStreamBuilder builder;
-  const std::vector<std::uint8_t> bodyA(
-      300 - EVENT_HEADER_LENGTH,
-      'a');  // whole event 300 bytes: fourGiB-300+300 == fourGiB
+  const std::vector<std::uint8_t> bodyA(300 - EVENT_HEADER_LENGTH, 'a');
   builder.PushEvent(33, bodyA, 0, /*nextPosition=*/0);
   const std::vector<std::uint8_t> bodyB(50 - EVENT_HEADER_LENGTH, 'b');
   builder.PushEvent(33, bodyB, 0, /*nextPosition=*/50);
@@ -623,8 +579,6 @@ TEST(EventStreamReaderTest,
 
 TEST(EventStreamReaderTest,
      FormatDescriptionEventWithZeroNextPositionDoesNotAdvanceTheCounter) {
-  // Only an FDE gets the zero-log_pos exemption - any other event still
-  // advances (previous test).
   test::ScriptedStreamBuilder builder;
   const std::vector<std::uint8_t> body(10, 'x');
   builder.PushEvent(15 /* FORMAT_DESCRIPTION_EVENT */, body, 0,
@@ -638,8 +592,7 @@ TEST(EventStreamReaderTest,
   const StreamResult result = reader.Run();
 
   EXPECT_EQ(result.reason, StreamEndReason::EndOfStream);
-  ASSERT_EQ(sink.events.size(),
-            1u);  // the FDE was actually delivered, not an empty stream
+  ASSERT_EQ(sink.events.size(), 1u);
   EXPECT_EQ(result.lastPosition.position, StartPosition().position);
 }
 

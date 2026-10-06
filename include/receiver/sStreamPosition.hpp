@@ -28,8 +28,8 @@
 
 namespace binlog_streamer {
 
-// EventHeader::nextPosition carries only the low 32 bits, so above 4
-// GiB it's a cross-check, not the source of truth.
+// EventHeader::nextPosition holds only the low 32 bits, so above 4 GiB it is
+// only a cross-check.
 struct StreamPosition {
   std::string fileName;
   std::uint64_t position = 0;

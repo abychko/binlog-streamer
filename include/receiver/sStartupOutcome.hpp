@@ -30,8 +30,6 @@
 
 namespace binlog_streamer {
 
-// session and resolution are meaningful only when result.outcome ==
-// SessionOutcome::Registered.
 struct StartupOutcome {
   SessionResult result;
   std::unique_ptr<ReplicaSession> session;

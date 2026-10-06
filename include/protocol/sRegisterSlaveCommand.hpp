@@ -28,8 +28,6 @@
 
 namespace binlog_streamer {
 
-// Matches the fields a real replica reports (register_slave_on_master());
-// any of the string fields may be empty.
 struct RegisterSlaveCommand {
   std::uint32_t serverId = 0;
   std::string reportHost;

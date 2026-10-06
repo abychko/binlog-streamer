@@ -37,7 +37,6 @@
 
 namespace binlog_streamer {
 
-// Internal adapter: application-facing headers never expose YAML types.
 class YamlMapReader {
  public:
   YamlMapReader(std::string file, YAML::Node map, std::string prefix,
@@ -49,21 +48,17 @@ class YamlMapReader {
   YAML::Node Required(std::string_view key);
   YAML::Node Optional(std::string_view key);
   std::optional<std::string> String(std::string_view key, bool required = true);
-  // Like String(key, false), except a present-but-empty scalar is treated
-  // as absent (nullopt, no error) - for template keys where an unfilled
-  // value still means "use the default" (source_public_key_path, listen_port).
+  // Like String(key, false), but a present-but-empty scalar counts as absent.
   std::optional<std::string> OptionalNonEmptyString(std::string_view key);
   std::optional<std::uint64_t> UnsignedInteger(std::string_view key,
                                                std::uint64_t minimum,
                                                std::uint64_t maximum,
                                                bool required = true);
-  // UnsignedInteger's counterpart to OptionalNonEmptyString above.
   std::optional<std::uint64_t> OptionalNonEmptyUnsignedInteger(
       std::string_view key, std::uint64_t minimum, std::uint64_t maximum);
   std::optional<bool> Bool(std::string_view key, bool required = true);
   std::optional<std::uint64_t> ByteSize(std::string_view key);
   std::optional<std::chrono::seconds> Duration(std::string_view key);
-  // Optional; absent is nullopt without an error.
   std::optional<std::chrono::microseconds> Delay(
       std::string_view key, std::chrono::microseconds maximum);
   template <class Table>
@@ -71,7 +66,6 @@ class YamlMapReader {
       -> std::optional<typename Table::value_type::second_type> {
     return Lookup(key, String(key), names);
   }
-  // Enumeration's counterpart to OptionalNonEmptyString above.
   template <class Table>
   auto OptionalNonEmptyEnumeration(std::string_view key, const Table &names)
       -> std::optional<typename Table::value_type::second_type> {
@@ -99,9 +93,6 @@ class YamlMapReader {
     return std::nullopt;
   }
 
-  // Shared by UnsignedInteger() and OptionalNonEmptyUnsignedInteger(): the
-  // two differ only in how they obtain the source text (String(key,
-  // required) vs. OptionalNonEmptyString(key)), not in how it is parsed.
   std::optional<std::uint64_t> ParseUnsignedInteger(
       std::string_view key, const std::optional<std::string> &text,
       std::uint64_t minimum, std::uint64_t maximum);

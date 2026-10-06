@@ -353,8 +353,6 @@ void StorageWriter::Run() {
         if (!Execute(task)) break;
       } else if (m_drain) {
         lock.unlock();
-        // The request may have arrived after the earlier empty lookup.
-        // Its producer has now stopped: repeat the lookup before acking.
         WriteSnapshot finalSnapshot;
         if (!WritePending(finalSnapshot) ||
             !Sync(finalSnapshot.completedEvents))
@@ -365,8 +363,6 @@ void StorageWriter::Run() {
       } else if (m_wake) {
         m_wake = false;
       } else if (wrote || m_moreWork || m_dataPending) {
-        // More bytes are likely to follow the ones just written: let them
-        // gather, and sleep until woken only after a pass found nothing.
         m_dataPending = false;
         m_sleeping = m_gathering = true;
         m_workCv.wait_for(lock, WRITE_COALESCE, [this] {

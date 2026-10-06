@@ -38,10 +38,8 @@ namespace binlog_streamer {
 // SetFile() returned.
 class StreamProgress {
  public:
-  // position is where the file's events begin.
   void SetFile(const std::string &file, std::uint64_t position);
   void Advance(std::uint64_t position, std::uint32_t timestamp);
-  // Nothing more to pass for now; position never moves backwards.
   void Idle(std::uint64_t position);
   StreamPoint Read() const;
 

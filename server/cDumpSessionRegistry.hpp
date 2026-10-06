@@ -31,20 +31,15 @@
 
 namespace binlog_streamer {
 
-// One dump per replica, so a replica reconnecting while the relay still
-// holds a half-open previous connection is not served twice. Keyed by the
-// replica's UUID, or its server_id when it sent none; shared by all
-// connections.
+// One dump per replica, keyed by its UUID (or server_id when it sent none), so
+// a reconnecting replica is not served twice by a half-open previous
+// connection.
 class DumpSessionRegistry {
  public:
   using SupersededFlag = std::shared_ptr<std::atomic<bool>>;
 
-  // Registers a new dump under key and tells the previous holder of the
-  // same key, if any, to stop. The returned flag turns true when a later
-  // dump takes this one's place.
   SupersededFlag Claim(const std::string &key);
 
-  // Forgets the dump, unless a later one already took its place.
   void Release(const std::string &key, const SupersededFlag &flag);
 
  private:

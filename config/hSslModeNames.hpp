@@ -30,8 +30,6 @@
 
 namespace binlog_streamer {
 
-// Every value the `ssl_mode` key accepts, named as the client library's
-// --ssl-mode names them (SslModeName).
 inline constexpr std::array<std::pair<std::string_view, SslMode>, 5>
     SSL_MODE_NAMES{
         {{SslModeName(SslMode::Disabled), SslMode::Disabled},

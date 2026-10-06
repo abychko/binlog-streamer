@@ -33,12 +33,8 @@
 
 namespace binlog_streamer {
 
-// Behaves like mysqlbinlog: unregistered, one TCP connection per Probe()
-// call.
 class DumpProbe : public BinlogProbe {
  public:
-  // Handed to every probe's own TcpTransport so a stop request is
-  // noticed even mid-probe, not just between probes.
   DumpProbe(const SourceSettings &source, const ServerSettings &server,
             std::string replicaUuid, std::string relayName,
             std::string relayVersion,
@@ -49,7 +45,6 @@ class DumpProbe : public BinlogProbe {
   PreviousGtidsResult PreviousGtidsText(std::string_view fileName) override;
 
  private:
-  // Own the settings so their lifetime does not depend on the caller.
   const SourceSettings m_source;
   const ServerSettings m_server;
   std::string m_replicaUuid;

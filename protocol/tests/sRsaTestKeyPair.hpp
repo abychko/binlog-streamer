@@ -23,10 +23,6 @@
 
 #pragma once
 
-// Test-only key material for caching_sha2_password full authentication: a
-// private/public RSA key pair generated fresh by
-// CachingSha2FullAuthPasswordTestSupport, so tests avoid a fixture key file.
-
 #include <openssl/evp.h>
 #include <cstdint>
 #include <memory>

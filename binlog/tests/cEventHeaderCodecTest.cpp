@@ -53,9 +53,6 @@ TEST(EventHeaderCodecTest, ParsesFixedLittleEndianFields) {
 }
 
 TEST(EventHeaderCodecTest, ParsesAllZeroArtificialHeaderShape) {
-  // An artificial Rotate at dump start: timestamp 0, next_position 0,
-  // flags carries ARTIFICIAL - the shape the source's own artificial-event
-  // branch produces (sql/rpl_binlog_sender.cc).
   std::array<std::uint8_t, EVENT_HEADER_LENGTH> data{};
   data[4] = 4;  // ROTATE_EVENT
   data[9] = 25;

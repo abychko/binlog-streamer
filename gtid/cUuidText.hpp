@@ -29,7 +29,7 @@
 
 namespace binlog_streamer {
 
-// Only the dashed form is accepted: the source never sends others.
+// Only the dashed form is accepted.
 class UuidText {
  public:
   static bool Parse(std::string_view text, Uuid &value, std::string &error);

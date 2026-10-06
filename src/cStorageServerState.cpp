@@ -65,8 +65,6 @@ std::string StorageServerState::SourceVersion() const {
 }
 
 std::string StorageServerState::BinlogChecksum() const {
-  // An empty storage has received nothing yet; a server's own default
-  // applies until the first file says otherwise.
   const std::optional<StoredFileRecord> first = m_catalog.First();
   if (!first) return "CRC32";
   const std::string algorithm = first->checksumAlgorithm;
@@ -79,8 +77,6 @@ std::optional<PreviousGtidsEvent> StorageServerState::PreviousGtids(
   const std::optional<StoredFileRecord> record = m_catalog.Find(fileName);
   if (!record) return std::nullopt;
 
-  // The event is the last one of the file's header, and as long as the
-  // server writes it: a common header, the encoded set, a checksum.
   const std::size_t checksumLength =
       record->checksumAlgorithm == "CRC32" ? CHECKSUM_LENGTH : 0;
   const std::uint64_t length = EVENT_HEADER_LENGTH +

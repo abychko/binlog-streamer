@@ -54,8 +54,6 @@ LoadResult<SourceSettings> SourceConfigLoader::Load(const std::string &path) {
   result = Parse(content, path);
   if (result.value && !result.value->sourcePublicKeyPath.empty())
     ValidatePublicKeyFile(result, path);
-  // Not read under DISABLED: files a mode does not use are not checked,
-  // as the client library leaves them alone.
   if (result.value && result.value->sslMode != SslMode::Disabled)
     ReadTlsFiles(result, path);
   return result;
@@ -78,8 +76,6 @@ LoadResult<SourceSettings> SourceConfigLoader::Parse(
                  "source_public_key_path", "compression",
                  "zstd_compression_level", "ssl_mode", "ssl_ca", "ssl_cert",
                  "ssl_key"});
-  // Same rule as storage.data_dir: a relative path would resolve against
-  // the process's cwd, not source.yml's own directory.
   const auto absolutePath = [&](std::string_view key, std::string &path) {
     const auto value = reader.OptionalNonEmptyString(key);
     if (!value) return;
@@ -103,9 +99,6 @@ LoadResult<SourceSettings> SourceConfigLoader::Parse(
     settings.zstdCompressionLevel = static_cast<int>(*value);
   if (const auto value = reader.Bool("get_source_public_key", false))
     settings.getSourcePublicKey = *value;
-  // OptionalNonEmptyString, not String(..., false): an empty value here
-  // means "not set" rather than the error every other optional scalar leaf
-  // in this file raises on present-but-empty (config/cYamlMapReader.cpp).
   absolutePath("source_public_key_path", settings.sourcePublicKeyPath);
   if (const auto value =
           reader.OptionalNonEmptyEnumeration("ssl_mode", SSL_MODE_NAMES))
@@ -139,14 +132,11 @@ void SourceConfigLoader::ValidatePublicKeyFile(
     const std::span<const std::uint8_t> pem(
         reinterpret_cast<const std::uint8_t *>(content.data()), content.size());
     if (RsaPublicKey::Parse(pem, key, parseError)) {
-      // Same bytes just proven to parse; kept so ReplicaSession never reopens
-      // this file.
       result.value->sourcePublicKeyPem = std::move(content);
       return;
     }
     message = parseError;
   }
-  // status == Failed already set message to the permission/I-O violation.
   const auto found = result.positions.find("source_public_key_path");
   const KeyPosition position =
       found != result.positions.end() ? found->second : KeyPosition{};

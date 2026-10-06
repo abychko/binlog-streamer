@@ -79,9 +79,9 @@ TEST_F(ReloadSignalThreadTest, StopEndsTheThreadWithoutRunningTheHandler) {
   EXPECT_EQ(reloads.load(), 0);
 }
 
-// A parent that ignores SIGHUP (nohup, some launchers) passes SIG_IGN on;
-// macOS then discards the SIGHUP Stop() sends, and join() never returns.
-// Run in a child with an alarm, so a hang fails the test instead of it.
+// A parent ignoring SIGHUP passes SIG_IGN on; macOS then discards Stop()'s
+// SIGHUP and join() hangs. Run in a child with an alarm so a hang fails the
+// test.
 TEST(ReloadSignalThreadDeathTest, StopReturnsWhenSighupWasIgnoredByTheParent) {
   GTEST_FLAG_SET(death_test_style, "threadsafe");
   EXPECT_EXIT(
@@ -98,8 +98,6 @@ TEST(ReloadSignalThreadDeathTest, StopReturnsWhenSighupWasIgnoredByTheParent) {
       ::testing::ExitedWithCode(0), "");
 }
 
-// A stop request is SIGTERM or SIGINT; one blocked by the parent would
-// never reach the process.
 TEST(ReloadSignalThreadDeathTest, StopSignalsBlockedByTheParentAreUnblocked) {
   GTEST_FLAG_SET(death_test_style, "threadsafe");
   EXPECT_EXIT(

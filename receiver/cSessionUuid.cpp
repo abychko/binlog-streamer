@@ -42,8 +42,7 @@ std::string SessionUuid::Generate() {
   for (auto &byteValue : bytes)
     byteValue = static_cast<std::uint8_t>(byteDistribution(randomDevice));
 
-  // RFC 4122 v4/variant 1: fix the reserved bits so this is a
-  // well-formed random UUID, not 16 arbitrary bytes.
+  // RFC 4122 version 4, variant 1: fix the reserved bits.
   bytes[6] = static_cast<std::uint8_t>((bytes[6] & 0x0F) | 0x40);
   bytes[8] = static_cast<std::uint8_t>((bytes[8] & 0x3F) | 0x80);
 

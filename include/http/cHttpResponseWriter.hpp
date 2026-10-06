@@ -31,9 +31,6 @@ namespace binlog_streamer {
 
 class HttpResponseWriter {
  public:
-  // One response per connection, which is closed after it: no keep-alive,
-  // no chunking. headOnly leaves the body out and keeps its Content-Length,
-  // as a HEAD response does.
   static std::string Serialize(const HttpResponse &response, bool headOnly);
   static std::string_view ReasonPhrase(int status);
 };

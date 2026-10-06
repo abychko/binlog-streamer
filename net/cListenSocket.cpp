@@ -44,9 +44,6 @@ bool SetNonBlocking(int fd, std::string &error) {
   return true;
 }
 
-// Fallback re-check interval when no wakeup pipe is available, so a stop
-// request is eventually noticed instead of never. A plain int, not clamped,
-// since poll() here never takes a caller-supplied timeout.
 constexpr int NO_WAKEUP_PIPE_POLL_INTERVAL_MS = 1000;
 
 }  // namespace
@@ -71,9 +68,7 @@ bool ListenSocket::Open(const IpAddress &address, std::uint16_t port,
     return false;
   }
   if (family == AF_INET6) {
-    // Explicit rather than relying on the platform default (Linux
-    // defaults to 0, macOS/BSD to 1) - listens on exactly the named
-    // address family, not IPv4 too via a v4-mapped address.
+    // Set explicitly: the platform default differs (Linux 0, macOS/BSD 1).
     const int v6Only = 1;
     if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6Only, sizeof(v6Only)) !=
         0) {
@@ -111,8 +106,6 @@ bool ListenSocket::Open(const IpAddress &address, std::uint16_t port,
     }
   }
 
-  // SOMAXCONN: no settings.yml knob for the backlog - same default an
-  // admin gets from any unconfigured server.
   if (listen(fd, SOMAXCONN) != 0) {
     error = std::strerror(errno);
     close(fd);
@@ -142,9 +135,6 @@ AcceptOutcome ListenSocket::Accept(int &acceptedSocket, IpAddress &peerAddress,
     return AcceptOutcome::Failed;
   }
   for (;;) {
-    // Checked before poll(), same reasoning as TcpTransport::Read(): a
-    // signal handled while not blocked in a syscall sets the flag but
-    // interrupts nothing.
     if (m_stopRequested != nullptr && m_stopRequested->load())
       return AcceptOutcome::Interrupted;
 
@@ -156,8 +146,6 @@ AcceptOutcome ListenSocket::Accept(int &acceptedSocket, IpAddress &peerAddress,
       pfds[1] = pollfd{m_wakeupPipe->ReadFd(), POLLIN, 0};
       pollCount = 2;
     }
-    // No wakeup pipe (should not happen outside such a test) falls back
-    // to periodic polling so a stop request is still noticed.
     const int pollTimeout = wakeupPolled ? -1 : NO_WAKEUP_PIPE_POLL_INTERVAL_MS;
     const int pollResult = poll(pfds, pollCount, pollTimeout);
     if (pollResult < 0) {
@@ -165,17 +153,13 @@ AcceptOutcome ListenSocket::Accept(int &acceptedSocket, IpAddress &peerAddress,
       error = std::strerror(errno);
       return AcceptOutcome::Failed;
     }
-    if (pollResult == 0)
-      continue;  // no wakeup pipe: just a periodic re-check, loop back to the
-                 // flag check above
+    if (pollResult == 0) continue;
     if (wakeupPolled && (pfds[1].revents & POLLIN) != 0) {
-      // Deliberately not drained - see net/cTcpTransport.cpp's
-      // Read(): shared with every connection thread, and a stop
-      // request is final for the process.
+      // Not drained: the pipe is shared by every connection thread and a stop
+      // request is final.
       return AcceptOutcome::Interrupted;
     }
-    if (pfds[0].revents == 0)
-      continue;  // this readiness was the wakeup pipe alone
+    if (pfds[0].revents == 0) continue;
 
     struct sockaddr_storage peer{};
     socklen_t peerLength = sizeof(peer);

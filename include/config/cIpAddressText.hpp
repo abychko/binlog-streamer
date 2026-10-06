@@ -28,8 +28,6 @@
 
 namespace binlog_streamer {
 
-// Separate class for the same reason as AddressRangeMatcher: server/
-// calls this to name a connecting replica's address.
 class IpAddressText {
  public:
   static std::string Format(const IpAddress &address);

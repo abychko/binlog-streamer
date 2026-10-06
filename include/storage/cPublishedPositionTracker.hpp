@@ -36,20 +36,16 @@
 
 namespace binlog_streamer {
 
-// Which file is published, as a number that changes each time the file
-// does, and how far into it. Comparing numbers needs no file name, so a
-// reader that already knows which number its own file has can check it
-// without taking the tracker's mutex.
+// The file is published as a number that changes with the file, so a reader can
+// compare marks without the mutex.
 struct PublishedMark {
   std::uint64_t file = 0;
   std::uint64_t position = 0;
 };
 
-// Shared between the sink (Advance(), sole writer) and every reader
-// (Wait()/Current()/Mark()). fileName and position are always written
-// together under one mutex, to avoid a reader observing a torn pair; the
-// mark is also published through a sequence counter, so Mark() reads a
-// matching pair without the mutex.
+// Advance() is the sole writer. fileName and position are written together
+// under one mutex; the mark is also published through a sequence counter, so
+// Mark() reads a matching pair without it.
 class PublishedPositionTracker {
  public:
   // The caller is trusted to only move forward - within one file, or to
@@ -58,10 +54,8 @@ class PublishedPositionTracker {
 
   PublishedPosition Current() const;
 
-  // Never blocks on the writer's mutex.
   PublishedMark Mark() const;
 
-  // The current mark, and whether fileName is the file it is in.
   PublishedMark Locate(const std::string &fileName, bool &published) const;
 
   // target's file name must be one this tracker has already published
@@ -75,8 +69,6 @@ class PublishedPositionTracker {
   // hold m_mutex.
   bool HasAdvancedPast(const PublishedPosition &target) const;
 
-  // How long a PollFirst reader polls before blocking. A stream
-  // publishing faster than one window never makes Advance() wake anyone.
   static constexpr std::chrono::microseconds POLL_WINDOW{200};
   static constexpr std::chrono::microseconds POLL_INTERVAL{50};
 
@@ -88,7 +80,6 @@ class PublishedPositionTracker {
   std::atomic<std::uint64_t> m_sequence{0};
   std::atomic<std::uint64_t> m_file{0};
   std::atomic<std::uint64_t> m_position{0};
-  // Readers blocked on m_cv right now; changed and read only under m_mutex.
   mutable unsigned m_blockedWaiters = 0;
 };
 

@@ -34,17 +34,13 @@ namespace binlog_streamer {
 
 struct ReplicaStatus {
   ReplicaFacts facts;
-  // report_host the replica registered with; empty when it set none.
   std::string reportHost;
   std::uint64_t since = 0;  // unix seconds of the login
   ReplicaState state = ReplicaState::Connected;
-  StreamPoint sent;  // the last event sent; empty before the dump
-  // Stored bytes between what was sent and the published position; unknown
-  // before the dump and when either file is not in storage any more.
+  StreamPoint sent;
   std::optional<std::uint64_t> behindBytes;
-  // 0 while streaming; otherwise the source's clock minus the timestamp of
-  // the last event sent. Unknown before the dump, and while the source's
-  // clock is (not connected).
+  // 0 while streaming; otherwise the source's clock minus the timestamp of the
+  // last event sent.
   std::optional<std::uint64_t> behindSeconds;
 };
 

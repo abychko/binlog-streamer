@@ -30,15 +30,14 @@
 
 namespace binlog_streamer {
 
-// Unlike the other codecs here, derives checksumLength itself from
-// serverVersion (mirrors Log_event_footer::get_checksum_alg).
+// Derives checksumLength from serverVersion, unlike the other codecs.
 class FormatDescriptionEventCodec {
  public:
   static bool Parse(std::span<const std::uint8_t> body,
                     FormatDescriptionEvent &value, std::string &error);
 
-  // Skips the "file in use" flag, `created`, and the checksum: all
-  // legitimately differ across a resume.
+  // Ignores the in-use flag, `created` and the checksum: they differ across a
+  // resume.
   static bool EqualForResume(std::span<const std::uint8_t> storedEvent,
                              std::span<const std::uint8_t> incomingEvent,
                              std::size_t checksumLength, std::string &error);

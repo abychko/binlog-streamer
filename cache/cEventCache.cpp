@@ -67,8 +67,8 @@ void ReleaseSlot(EventCacheState &state, std::size_t index) {
   --state.counters.occupied;
 }
 
-// Retiring the whole prefix preserves one contiguous cached interval;
-// readers already copying it keep ownership until their last pin.
+// Retiring the whole prefix keeps one contiguous interval; readers already
+// copying it keep ownership until their last pin.
 void EvictThrough(EventCacheState &state, std::size_t victim) {
   auto &chosen = state.slots[victim];
   auto &file = state.files.at(chosen.file - state.frontId);
@@ -122,8 +122,8 @@ bool WindowDue(const EventCacheState &state,
 void ReturnExpired(EventCacheState &state, std::unique_lock<std::mutex> &lock,
                    std::chrono::steady_clock::time_point now,
                    std::chrono::steady_clock::duration window) {
-  // Bounded stack batches avoid allocation and keep retired slots unavailable
-  // until every page-return call for the batch has completed outside the lock.
+  // Retired slots stay unavailable until every page-return call of the batch
+  // has completed outside the lock.
   std::array<std::size_t, 64> pending{};
   while (WindowDue(state, now, window)) {
     std::size_t count = 0;
@@ -134,9 +134,9 @@ void ReturnExpired(EventCacheState &state, std::unique_lock<std::mutex> &lock,
       const auto bytes = slot.appended.load(std::memory_order_acquire);
       const auto end = slot.offset + bytes;
       if (slot.pins != 0 || end > file.written) break;
-      // During an unlocked Append, the old tail still ends at the published
-      // boundary even if a new empty slot has been registered - protect that
-      // destination too, not just the eventual open tail.
+      // During an unlocked Append the old tail still ends at the published
+      // boundary: protect that destination too, not just the eventual open
+      // tail.
       if (!file.closed && end >= file.appended) break;
       file.firstCached = end;
       file.slots.pop_front();
@@ -274,8 +274,8 @@ AppendOutcome EventCache::AppendImpl(std::span<const std::uint8_t> bytes,
   std::unique_lock lock(state.mutex);
   if (state.aborted || state.stop->load(std::memory_order_acquire))
     return AppendOutcome::Stopped;
-  // Enforced in every build, not just an assert: an oversized chunk must
-  // leave state unchanged.
+  // Enforced in every build, not just an assert: an oversized chunk must leave
+  // state unchanged.
   if (bytes.size() > CACHE_SEGMENT_SIZE) return AppendOutcome::NoSpace;
   if (!state.current)
     throw std::logic_error("cache Append requires an open file");
@@ -295,8 +295,7 @@ AppendOutcome EventCache::AppendImpl(std::span<const std::uint8_t> bytes,
       remaining = CACHE_SEGMENT_SIZE - used;
     }
   }
-  // A bounded chunk needs at most one new slot besides its existing tail;
-  // find a victim without mutating anything, so a failed admission is
+  // Find a victim without mutating anything, so a failed admission is
   // retryable.
   const bool needsSlot = bytes.size() > remaining;
   std::optional<std::size_t> victim;
@@ -332,7 +331,6 @@ AppendOutcome EventCache::AppendImpl(std::span<const std::uint8_t> bytes,
         state.handlersFinished.notify_all();
         if (state.aborted || state.stop->load(std::memory_order_acquire))
           return AppendOutcome::Stopped;
-        // The writer may have freed space before we reacquired the lock.
         continue;
       }
     }
@@ -348,7 +346,6 @@ AppendOutcome EventCache::AppendImpl(std::span<const std::uint8_t> bytes,
     if (state.aborted || state.stop->load(std::memory_order_acquire))
       return AppendOutcome::Stopped;
   }
-  // The stop decision is made before any mutation, including retirement.
   if (state.aborted || state.stop->load(std::memory_order_acquire))
     return AppendOutcome::Stopped;
   if (victim) EvictThrough(state, *victim);
@@ -375,8 +372,8 @@ AppendOutcome EventCache::AppendImpl(std::span<const std::uint8_t> bytes,
     ++state.counters.occupied;
     copies[copyCount++] = {index, 0, bytes.size() - consumed};
   }
-  // The producer owns these destinations. Readers can only pin the previously
-  // published prefix; no other producer may admit or retire slots meanwhile.
+  // Readers can only pin the previously published prefix; no other producer
+  // admits or retires slots meanwhile.
   lock.unlock();
   if (state.hooks.beforeAppendCopy) state.hooks.beforeAppendCopy();
   std::size_t inputOffset = 0;
@@ -402,8 +399,6 @@ AppendOutcome EventCache::AppendImpl(std::span<const std::uint8_t> bytes,
       std::max(state.counters.maxUnwritten,
                state.counters.appended - state.counters.written);
   state.lastAppendAt = now;
-  // Reuse the timestamp already taken above for a consistent WindowDue
-  // decision.
   if (needsSlot && WindowDue(state, now, state.window))
     ReturnExpired(state, lock, now, state.window);
   return AppendOutcome::Appended;

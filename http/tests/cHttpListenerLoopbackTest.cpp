@@ -41,8 +41,6 @@
 namespace binlog_streamer {
 namespace {
 
-// A client of the listener under test: connects to the loopback port,
-// sends what it is given and reads until the relay closes.
 class LoopbackClient {
  public:
   explicit LoopbackClient(std::uint16_t port) {
@@ -60,8 +58,6 @@ class LoopbackClient {
     ASSERT_EQ(send(m_socket, bytes.data(), bytes.size(), 0),
               static_cast<ssize_t>(bytes.size()));
   }
-  // Everything until the peer closes; empty when it does not within the
-  // budget, which no test expects.
   std::string ReadAll(
       std::chrono::milliseconds budget = std::chrono::milliseconds(10'000)) {
     std::string out;
@@ -177,7 +173,6 @@ TEST_F(HttpListenerLoopbackTest, RefusesGarbageAndOversizedHeads) {
   ASSERT_TRUE(listener.Start(error)) << error;
 
   LoopbackClient garbage(listener.Port());
-  // A MySQL client's greeting, not HTTP: what lands here by a wrong port.
   garbage.Send(std::string("\x05\x00\x01\x00 nonsense\r\n\r\n", 18));
   EXPECT_TRUE(garbage.ReadAll().starts_with("HTTP/1.1 400 Bad Request\r\n"));
 
@@ -193,7 +188,6 @@ TEST_F(HttpListenerLoopbackTest, StopUnblocksAcceptAndAnIdleConnection) {
   ASSERT_TRUE(listener.Start(error)) << error;
   LoopbackClient idle(listener.Port());
   ASSERT_TRUE(idle.Connected());
-  // A connected client that sends nothing holds a thread until Stop.
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
   const auto before = std::chrono::steady_clock::now();
   listener.Stop();

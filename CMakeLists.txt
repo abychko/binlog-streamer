@@ -15,6 +15,7 @@ INCLUDE("${PROJECT_SOURCE_DIR}/cmake/developer_mode.cmake")
 INCLUDE("${PROJECT_SOURCE_DIR}/cmake/sanitizers.cmake")
 
 ADD_SUBDIRECTORY(third_party)
+INCLUDE("${PROJECT_SOURCE_DIR}/cmake/x86_64_level.cmake")
 
 SET(BINLOG_STREAMER_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/include")
 # The repository root must not be an include directory: on a case-insensitive
@@ -26,8 +27,8 @@ INCLUDE_DIRECTORIES(
 
 ADD_LIBRARY(bs-warnings INTERFACE)
 TARGET_COMPILE_OPTIONS(bs-warnings INTERFACE -Wall -Wextra -Wpedantic -Werror -Wmissing-declarations -pedantic-errors)
-# GCC reports these two from inside libstdc++'s std::vector growth paths on
-# code that is correct; kept visible but not fatal. Clang is unaffected.
+# GCC reports these two from inside libstdc++'s std::vector growth paths on code
+# that is correct; kept visible but not fatal. Clang is unaffected.
 TARGET_COMPILE_OPTIONS(bs-warnings INTERFACE
     "$<$<CXX_COMPILER_ID:GNU>:-Wno-error=free-nonheap-object>"
     "$<$<CXX_COMPILER_ID:GNU>:-Wno-error=stringop-overflow>")

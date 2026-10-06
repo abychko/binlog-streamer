@@ -34,9 +34,8 @@ namespace binlog_streamer {
 class ComQueryCommand {
  public:
   static std::vector<std::uint8_t> Encode(std::string_view sql);
-  // Includes the command byte; sql views into payload, which must
-  // outlive it. Valid only without CLIENT_QUERY_ATTRIBUTES - with it,
-  // parameter counts precede the text.
+  // sql views into payload. Valid only without CLIENT_QUERY_ATTRIBUTES, which
+  // puts parameter counts before the text.
   static bool Parse(std::span<const std::uint8_t> payload,
                     std::string_view &sql, std::string &error);
 };

@@ -29,9 +29,8 @@
 
 namespace binlog_streamer {
 
-// A growable byte buffer whose resize() leaves added bytes unwritten, for
-// buffers that are read or decoded into right after they grow. Names
-// follow std::vector so the buffer passes as a std::span.
+// resize() leaves added bytes unwritten, for buffers decoded into right after
+// they grow.
 class ByteBuffer {
  public:
   ByteBuffer() = default;
@@ -54,7 +53,6 @@ class ByteBuffer {
   std::size_t capacity() const noexcept { return m_capacity; }
   bool empty() const noexcept { return m_size == 0; }
 
-  // Keeps the first min(size, newSize) bytes; the rest is unwritten.
   void resize(std::size_t newSize);
   void clear() noexcept { m_size = 0; }
   void shrink_to_fit();

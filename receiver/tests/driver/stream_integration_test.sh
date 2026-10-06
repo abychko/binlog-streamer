@@ -18,8 +18,7 @@ if [ ! -e "$SOURCE_YML" ]; then
     exit 1
 fi
 
-# A full client command line, expanded unquoted deliberately - it may
-# itself carry flags.
+# Deliberately unquoted: it may carry flags.
 # shellcheck disable=SC2206
 ADMIN=( $BINLOG_STREAMER_TEST_ADMIN_MYSQL )
 
@@ -56,7 +55,7 @@ trap cleanup EXIT
     --sink-file="$SINK" --max-seconds=60 >"$OUT" 2>&1 &
 DRIVER_PID=$!
 
-sleep 2 # let the driver register and start the dump before issuing writes
+sleep 2
 
 INSERT_SQL="INSERT INTO stream_integration_test (v) VALUES ('row2');
 INSERT INTO stream_integration_test (v) VALUES ('row3');
@@ -79,7 +78,6 @@ if [ "$DRIVER_EXIT" -ne 0 ]; then
     exit 1
 fi
 
-# Parses the driver's single-line report (see main.cpp for the field list).
 get_field() { echo "$DRIVER_REPORT" | grep -oE "(^| )$1=[^ ]*" | tail -1 | cut -d= -f2; }
 FILE="$(get_field file)"
 FIRST_OFFSET="$(get_field first_offset)"
@@ -101,8 +99,6 @@ FAIL=0
     { echo "FATAL: first/last event came from different files ($FILE vs $LAST_FILE) - not one contiguous range"; FAIL=1; }
 [ "$FAIL" -eq 0 ] || exit 1
 
-# Finalizes the file before comparing: insurance against a difference
-# between an actively-written file and its settled bytes.
 if ! "${ADMIN[@]}" -e "FLUSH BINARY LOGS;"; then
     echo "FATAL: FLUSH BINARY LOGS failed"
     exit 1

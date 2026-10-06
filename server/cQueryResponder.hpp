@@ -34,30 +34,25 @@
 
 namespace binlog_streamer {
 
-// Recognises statements by shape, not by parsing SQL. Shared by all
-// connections; per-connection state is passed in.
+// Recognises statements by shape, not by parsing SQL.
 class QueryResponder {
  public:
-  // state is not owned and may be null, in which case the history
-  // variables read as empty and the checksum as CRC32. @@version is
-  // answered from identity, the same string the greeting shows.
+  // state may be null: the history variables then read as empty and the
+  // checksum as CRC32.
   QueryResponder(ServerIdentity identity, const ServerState *state);
 
   QueryResponse Respond(std::string_view sql, SessionVariables &session) const;
 
  private:
-  // statement is the whole query, trimmed: what an error names back.
   QueryResponse Select(std::string_view expressions, std::string_view statement,
                        const SessionVariables &session) const;
   QueryResponse Set(std::string_view assignments, std::string_view statement,
                     SessionVariables &session) const;
   QueryResponse ShowPreviousGtids(std::string_view arguments,
                                   std::string_view statement) const;
-  // The value of a system variable by its bare name, the scope already
-  // taken off; nullopt for one the relay does not have.
   std::optional<std::string> SystemVariable(std::string_view name) const;
-  // The same string the greeting showed this connection, built the same
-  // way: a replica compares the two.
+  // The same string the greeting showed, built the same way: a replica compares
+  // the two.
   std::string ServerVersion() const;
 
   ServerIdentity m_identity;

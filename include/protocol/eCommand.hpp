@@ -27,9 +27,6 @@
 
 namespace binlog_streamer {
 
-// Limited to what this relay sends (as client) or recognizes (as
-// server) - every other command byte is answered with ERR 1047, not
-// decoded through this enum.
 enum class Command : std::uint8_t {
   Quit = 1,
   Query = 3,

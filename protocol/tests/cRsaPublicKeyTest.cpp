@@ -39,9 +39,6 @@
 namespace binlog_streamer {
 namespace {
 
-// Writes key's public half as PEM bytes, the form RsaPublicKey::Parse
-// expects (the same call the source itself uses to hand out its key -
-// PEM_write_bio_PUBKEY is PEM_read_bio_PUBKEY's write-side counterpart).
 std::vector<std::uint8_t> PublicKeyPem(EVP_PKEY *key) {
   const std::unique_ptr<BIO, decltype(&BIO_free)> bio(BIO_new(BIO_s_mem()),
                                                       &BIO_free);
@@ -66,7 +63,7 @@ TEST(RsaPublicKeyTest, ParsesValidPem) {
   std::string error;
   ASSERT_TRUE(RsaPublicKey::Parse(PublicKeyPem(rsaKey.get()), key, error))
       << error;
-  EXPECT_EQ(key.SizeInBytes(), 256u);  // 2048-bit modulus -> 256-byte key
+  EXPECT_EQ(key.SizeInBytes(), 256u);
 }
 
 TEST(RsaPublicKeyTest, RejectsMalformedPem) {
@@ -76,16 +73,10 @@ TEST(RsaPublicKeyTest, RejectsMalformedPem) {
   std::string error;
   EXPECT_FALSE(RsaPublicKey::Parse(garbage, key, error));
   EXPECT_FALSE(error.empty());
-  // Parse() must not leave OpenSSL's own record of this failure sitting on
-  // the thread-local error queue for an unrelated later OpenSSL call to
-  // stumble over (ERR_clear_error() in the PEM_read_bio_PUBKEY branch).
   EXPECT_EQ(ERR_peek_error(), 0UL);
 }
 
 TEST(RsaPublicKeyTest, RejectsEmptyInput) {
-  // BIO_new_mem_buf already rejects a null buf cleanly; this is about
-  // what Parse()'s caller would see if that reached it anyway: the wrong
-  // error reason plus a stale OpenSSL error-queue entry.
   RsaPublicKey key;
   std::string error;
   EXPECT_FALSE(RsaPublicKey::Parse({}, key, error));
@@ -93,9 +84,9 @@ TEST(RsaPublicKeyTest, RejectsEmptyInput) {
 }
 
 TEST(RsaPublicKeyTest, RejectsInputLongerThanIntMax) {
-  // Just past INT_MAX, Parse()'s narrowing cast goes negative. A span over
-  // a too-small array would itself be UB, so this maps real address space
-  // instead - PROT_READ|MAP_ANON costs no physical memory until touched.
+  // Just past INT_MAX the narrowing cast goes negative; a span over a too-small
+  // array would be UB, so this maps real address space (PROT_READ|MAP_ANON
+  // costs no physical memory until touched).
   const std::size_t size =
       static_cast<std::size_t>(std::numeric_limits<int>::max()) + 1;
   void *mem = mmap(nullptr, size, PROT_READ, MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -112,9 +103,6 @@ TEST(RsaPublicKeyTest, RejectsInputLongerThanIntMax) {
 }
 
 TEST(RsaPublicKeyTest, RejectsNonRsaKey) {
-  // Ed25519 is valid PEM and parses fine as a generic EVP_PKEY, but is not
-  // the RSA key RSA-OAEP encryption (CachingSha2FullAuthPassword)
-  // requires - exercises the type check, not just the PEM decode.
   const std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> keygenCtx(
       EVP_PKEY_CTX_new_from_name(nullptr, "ED25519", nullptr),
       &EVP_PKEY_CTX_free);

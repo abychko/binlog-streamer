@@ -51,8 +51,7 @@ TEST(LengthEncodedStringTest, RoundTripsThroughEncodeAndDecode) {
 
 TEST(LengthEncodedStringTest,
      DecodeReturnsZeroWhenDataShorterThanDeclaredLength) {
-  const std::vector<std::uint8_t> data{
-      5, 'a', 'b'};  // declares 5 bytes, only 2 present
+  const std::vector<std::uint8_t> data{5, 'a', 'b'};
   std::string decoded;
   EXPECT_EQ(LengthEncodedString::Decode(data, decoded), 0u);
 }

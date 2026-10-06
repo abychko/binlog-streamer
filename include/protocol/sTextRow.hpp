@@ -29,7 +29,6 @@
 
 namespace binlog_streamer {
 
-// Empty optional means SQL NULL.
 struct TextRow {
   std::vector<std::optional<std::string>> columns;
 };

@@ -41,7 +41,6 @@ storage:
   retention:
     policy: age
     period: 1s
-  # Keep the test independent of the host file-system free space.
   disk:
     max_size: 2T
     purge_high_watermark: 1900G

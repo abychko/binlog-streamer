@@ -40,9 +40,6 @@
 namespace binlog_streamer {
 namespace {
 
-// Caps the local copy of ROTATE/heartbeat events against an
-// implausibly large length claimed by the source; reuses
-// MAX_COMMAND_RESPONSE_SIZE instead of adding a second constant.
 constexpr std::uint64_t MAX_INTERNALLY_INSPECTED_EVENT_LENGTH =
     MAX_COMMAND_RESPONSE_SIZE;
 
@@ -79,9 +76,6 @@ void EventStreamReader::Compact() {
 EventStreamReader::FillOutcome EventStreamReader::FillMore(std::string &error) {
   if (m_dataEnd == m_buffer.size()) Compact();
   if (m_dataEnd == m_buffer.size()) {
-    // Every EnsureBytes() caller here only asks for a few bytes - a
-    // full buffer with nothing consumable is a logic error, not a
-    // wire condition, and should never actually happen.
     error =
         "event stream read buffer full without a header/body boundary to "
         "consume";
@@ -145,8 +139,7 @@ StreamResult EventStreamReader::TerminalFromFill(
       return MakeResult(StreamEndReason::ConnectionClosed,
                         "connection closed by source");
     case FillOutcome::Failed:
-    case FillOutcome::Ready:  // never passed here by a caller (Ready is not a
-                              // terminal outcome)
+    case FillOutcome::Ready:
       return MakeResult(StreamEndReason::ConnectionClosed, error);
   }
   return MakeResult(StreamEndReason::ConnectionClosed, error);
@@ -176,14 +169,11 @@ bool EventStreamReader::ReadSubPacketHeader(std::size_t &subPacketLength,
   return true;
 }
 
-// Always ends the stream (an ERR packet has no "keep going" outcome) -
-// terminalResult is unconditionally the caller's answer once this returns.
 void EventStreamReader::ConsumeErrPacket(
     std::size_t firstSubPacketPayloadLength, bool firstSubPacketWasFull,
     StreamResult &terminalResult) {
-  // A source error packet is always small, so it is reassembled whole here
-  // (matches PacketChannel::ReadPacket). The 0xFF marker is re-added because
-  // Run() already consumed it and ErrPacketCodec::Parse() expects it present.
+  // Run() already consumed the 0xFF marker and ErrPacketCodec::Parse() expects
+  // it, so it is re-added.
   std::vector<std::uint8_t> payload{0xFF};
   std::size_t remainingInSubPacket = firstSubPacketPayloadLength;
   bool subPacketWasFull = firstSubPacketWasFull;
@@ -232,9 +222,8 @@ bool EventStreamReader::ConsumeEvent(std::size_t firstSubPacketPayloadLength,
   std::size_t remainingInSubPacket = firstSubPacketPayloadLength;
   bool subPacketWasFull = firstSubPacketWasFull;
 
-  // The Common-Header always fits in the first sub-packet for a well-behaved
-  // source; EnsureBytes() ignores sub-packet boundaries, so a violation is
-  // still caught below as malformed, just not at the exact byte it started.
+  // EnsureBytes() ignores sub-packet boundaries, so a header split across
+  // sub-packets is still caught below as malformed.
   std::string error;
   FillOutcome outcome = EnsureBytes(EVENT_HEADER_LENGTH, error);
   if (outcome != FillOutcome::Ready) {
@@ -253,8 +242,7 @@ bool EventStreamReader::ConsumeEvent(std::size_t firstSubPacketPayloadLength,
     return false;
   }
   if (header.eventLength > MAX_EVENT_LENGTH) {
-    // Rejected before any body byte is read, matching the bound
-    // sql/rpl_binlog_sender.cc checks before reading an event off disk.
+    // Rejected before any body byte is read, as sql/rpl_binlog_sender.cc does.
     terminalResult = MakeResult(StreamEndReason::MalformedStream,
                                 "event length larger than MAX_EVENT_LENGTH");
     return false;
@@ -267,9 +255,8 @@ bool EventStreamReader::ConsumeEvent(std::size_t firstSubPacketPayloadLength,
     return false;
   }
 
-  // ROTATE/heartbeats carry their own position, skipping the running counter;
-  // an FDE with log_pos == 0 (resent ahead of a mid-file dump start) is the
-  // only other exemption (sql/rpl_replica.cc's queue_event()).
+  // ROTATE/heartbeats carry their own position; an FDE with log_pos == 0 is the
+  // only other exemption (sql/rpl_replica.cc, queue_event()).
   const bool isRotate =
       header.type == static_cast<std::uint8_t>(EventType::Rotate);
   const bool isHeartbeat =
@@ -279,9 +266,8 @@ bool EventStreamReader::ConsumeEvent(std::size_t firstSubPacketPayloadLength,
       header.type == static_cast<std::uint8_t>(EventType::FormatDescription) &&
       header.nextPosition == 0;
 
-  // Unlike a real replica (only appends), this relay refuses a source whose
-  // log_pos disagrees with its own accumulated position before the sink
-  // sees a byte; compared as 32 bits, the wire width of nextPosition.
+  // Unlike a real replica, refuse a source whose log_pos disagrees with the
+  // accumulated position (compared as 32 bits) before the sink sees a byte.
   if (!isRotate && !isHeartbeat && !isFdeWithZeroPos) {
     const std::uint64_t expectedPosition =
         m_position.position + header.eventLength;
@@ -296,7 +282,6 @@ bool EventStreamReader::ConsumeEvent(std::size_t firstSubPacketPayloadLength,
     }
   }
 
-  // Only the first event's position is kept, so only it is copied.
   std::optional<StreamPosition> firstPosition;
   if (!m_hasFirstPosition) firstPosition = m_position;
   if (!m_sink.OnEventBegin(header, m_position)) {
@@ -309,9 +294,7 @@ bool EventStreamReader::ConsumeEvent(std::size_t firstSubPacketPayloadLength,
   std::vector<std::uint8_t> localCopy;
   if (inspectLocally) localCopy.reserve(header.eventLength);
 
-  std::uint64_t totalRemaining =
-      header.eventLength;  // includes the header bytes about to be forwarded
-                           // below
+  std::uint64_t totalRemaining = header.eventLength;
   std::size_t subPacketsUsed = 1;
   bool stoppedBySink = false;
   while (totalRemaining > 0) {
@@ -359,18 +342,16 @@ bool EventStreamReader::ConsumeEvent(std::size_t firstSubPacketPayloadLength,
     return false;
   }
   if (remainingInSubPacket != 0) {
-    // totalRemaining hit 0 while this sub-packet still has declared bytes
-    // left - the source claimed a longer sub-packet than this event's
-    // eventLength accounts for, which would otherwise desync the stream.
+    // The source declared a longer sub-packet than eventLength accounts for;
+    // accepting it would desync the stream.
     terminalResult =
         MakeResult(StreamEndReason::MalformedStream,
                    "sub-packet carries bytes past the declared event length");
     return false;
   }
 
-  // A sub-packet exactly MAX_PAYLOAD_PER_PACKET long always demands a
-  // continuation (even empty), mirroring PacketFramer::Encode()'s own
-  // terminator - including when the event ended exactly at that boundary.
+  // A sub-packet of exactly MAX_PAYLOAD_PER_PACKET bytes is always followed by
+  // a continuation, even an empty one.
   if (remainingInSubPacket == 0 && subPacketWasFull) {
     std::size_t terminatorLength = 0;
     if (!ReadSubPacketHeader(terminatorLength, terminalResult)) return false;
@@ -389,12 +370,10 @@ bool EventStreamReader::ConsumeEvent(std::size_t firstSubPacketPayloadLength,
     return false;
   }
 
-  // Tracks its own running 64-bit position (mirrors queue_event()) rather
-  // than the header's truncated 32-bit field; heartbeats are excluded since
-  // their own check below needs m_position as it stood before this event.
+  // Tracks a 64-bit running position instead of the header's truncated 32-bit
+  // field; heartbeats are excluded because their check needs the position
+  // before this event.
 
-  // localCopy holds the whole event including its header, so eventBody
-  // skips the first EVENT_HEADER_LENGTH bytes.
   const std::span<const std::uint8_t> eventBody =
       inspectLocally ? std::span<const std::uint8_t>(localCopy).subspan(
                            EVENT_HEADER_LENGTH)
@@ -438,8 +417,8 @@ bool EventStreamReader::ConsumeEvent(std::size_t firstSubPacketPayloadLength,
                      "malformed heartbeat event: " + heartbeatError);
       return false;
     }
-    // v2's own position, or the header's if the body left it at 0/absent
-    // (matching sql/rpl_replica.cc's heartbeat_queue_event()).
+    // v2's own position, or the header's if the body left it 0 or absent
+    // (sql/rpl_replica.cc, heartbeat_queue_event()).
     const std::uint64_t heartbeatPosition =
         (heartbeat.position.has_value() && *heartbeat.position != 0)
             ? *heartbeat.position
@@ -482,8 +461,6 @@ StreamResult EventStreamReader::Run() {
     if (!ReadSubPacketHeader(subPacketLength, terminalResult))
       return terminalResult;
     if (subPacketLength == 0) {
-      // The first sub-packet of a logical unit always carries the
-      // 1-byte marker (mysql_binlog_fetch's own dispatch on it).
       return MakeResult(StreamEndReason::MalformedStream,
                         "empty first sub-packet: no marker byte");
     }
@@ -498,8 +475,7 @@ StreamResult EventStreamReader::Run() {
       return MakeResult(StreamEndReason::EndOfStream,
                         "source ended the dump stream");
     }
-    m_dataStart +=
-        1;  // the marker byte, common to the ERR/event branches below
+    m_dataStart += 1;
     const bool subPacketWasFull = (subPacketLength == MAX_PAYLOAD_PER_PACKET);
     const std::size_t remainingAfterMarker = subPacketLength - 1;
 

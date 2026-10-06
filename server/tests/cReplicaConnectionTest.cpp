@@ -51,8 +51,6 @@ namespace {
 constexpr char SOURCE_VERSION[] = "8.4.11";
 constexpr char RELAY_NAME[] = "binlog-streamer";
 constexpr char RELAY_VERSION[] = "0.17.2";
-// What the listener hands a connection, built here so the greeting
-// assertions below still read as one string.
 const std::string RELAY_SERVER_VERSION =
     ServerVersionString(SOURCE_VERSION, RELAY_NAME, RELAY_VERSION);
 
@@ -79,8 +77,6 @@ ReplicaClient MakeClient(std::string user, std::string password,
   return client;
 }
 
-// A fixed 21-byte nonce every call, deterministic enough to precompute the
-// matching CachingSha2Scramble::Compute() result.
 ReplicaConnection::NonceGenerator FixedNonce() {
   return [] {
     std::array<std::uint8_t, SCRAMBLE_LENGTH + 1> nonce{};
@@ -126,10 +122,9 @@ void AppendClientPacket(test::FakeTransport &transport,
   PacketFramer::Encode(payload, sequenceId, transport.incoming);
 }
 
-// Deliberately not a PacketChannel over a mirror transport: the connection
-// shares one sequence-id counter between reads and writes, so server-written
-// packets skip ids the client's own packets consumed - this reader trusts each
-// packet's own header instead.
+// Not a PacketChannel over a mirror transport: the connection shares one
+// sequence-id counter between reads and writes, so this reader trusts each
+// packet's own header.
 class ResponseReader {
  public:
   explicit ResponseReader(const test::FakeTransport &serverSide) {
@@ -159,8 +154,6 @@ class ResponseReader {
     return true;
   }
 
-  // What Next() has not consumed - where a test reads on past the
-  // uncompressed login packets into the compressed frames.
   std::span<const std::uint8_t> Remaining() const {
     return std::span<const std::uint8_t>(m_buffer.data() + m_offset,
                                          m_buffer.size() - m_offset);
@@ -171,9 +164,6 @@ class ResponseReader {
   std::size_t m_offset = 0;
 };
 
-// One compressed frame: the 7-byte header, then the body. Every payload a
-// test here sends or expects is below MIN_COMPRESS_LENGTH, so the body is
-// the plain bytes and the length before compression is 0.
 void AppendUncompressedFrame(test::FakeTransport &transport,
                              std::span<const std::uint8_t> body,
                              std::uint8_t frameSequenceId) {
@@ -219,10 +209,9 @@ ConnectionServices CompressionOffered(
   return services;
 }
 
-// A loaded server context, generated once: keygen is the slow part.
 const TlsContext &ServerTls() {
   static const TlsContext &context = [] {
-    auto *loaded = new TlsContext;  // lives for the process, as a static
+    auto *loaded = new TlsContext;
     GeneratedCertificates certificates;
     std::string error;
     if (!TlsCertificateGenerator::Generate("test", certificates, error) ||
@@ -266,7 +255,6 @@ TEST(ReplicaConnectionTest,
   ErrPacket err;
   ASSERT_TRUE(ErrPacketCodec::Parse(payload, err, error)) << error;
   EXPECT_EQ(err.errorCode, 1040);
-  // Nothing negotiated yet: no '#' + SQLSTATE, as mysqld sends it.
   EXPECT_NE(payload[3], '#');
   EXPECT_EQ(err.sqlState, "");
   EXPECT_EQ(err.message, "Too many connections");
@@ -311,7 +299,6 @@ TEST(ReplicaConnectionTest,
   const auto scramble = CachingSha2Scramble::Compute(
       "s3cret",
       std::span<const std::uint8_t, SCRAMBLE_LENGTH>(NonceHead(nonce)));
-  // 0 is the greeting, written by the connection under test.
   std::uint8_t clientSequenceId = 1;
   AppendClientPacket(
       transport,
@@ -343,9 +330,6 @@ TEST(ReplicaConnectionTest,
       payload.empty() ? std::uint8_t{0} : payload[0], false));
   EXPECT_FALSE(responses.Next(payload, error));
 
-  // logLines[0], not .back(): with no post-login command scripted,
-  // CommandLoop() immediately hits the end and logs its own "closed" line
-  // right after "accepted".
   ASSERT_FALSE(logLines.empty());
   EXPECT_NE(logLines.front().find("accepted"), std::string::npos);
   EXPECT_NE(logLines.front().find("user=repl"), std::string::npos);
@@ -356,7 +340,6 @@ TEST(ReplicaConnectionTest,
   const IpAddress peer = MakeIpv4(203, 0, 113, 9);
   test::FakeTransport transport;
   const std::vector<ReplicaClient> clients{MakeClient("repl", "s3cret", peer)};
-  // The switch reuses the same fixed generator; fine for this test.
   const auto nonce = FixedNonce()();
   const auto scramble = CachingSha2Scramble::Compute(
       "s3cret",
@@ -365,11 +348,8 @@ TEST(ReplicaConnectionTest,
   AppendClientPacket(
       transport, EncodeHandshakeResponse("repl", {}, "mysql_native_password"),
       clientSequenceId);
-  // The connection's own AuthSwitchRequest takes the next turn (seq 2) first.
   ++clientSequenceId;
-  AppendClientPacket(
-      transport, scramble,
-      clientSequenceId);  // raw scramble reply, no packet-type wrapper
+  AppendClientPacket(transport, scramble, clientSequenceId);
 
   std::vector<std::string> logLines;
   ReplicaConnection connection(
@@ -392,15 +372,10 @@ TEST(ReplicaConnectionTest,
   EXPECT_TRUE(OkPacketCodec::IsOkPacket(
       payload.empty() ? std::uint8_t{0} : payload[0], false));
 
-  // logLines[0], not .back(): same reasoning as above - no post-login
-  // command scripted here either.
   ASSERT_FALSE(logLines.empty());
   EXPECT_NE(logLines.front().find("accepted"), std::string::npos);
 }
 
-// A server replica names itself and its version in its connection
-// attributes (sql/rpl_replica.cc, sql-common/client.cc); the status page
-// shows them instead of the login.
 TEST(ReplicaConnectionTest, RegistersTheProgramAndVersionTheReplicaSent) {
   const IpAddress peer = MakeIpv4(203, 0, 113, 9);
   test::FakeTransport transport;
@@ -426,7 +401,6 @@ TEST(ReplicaConnectionTest, RegistersTheProgramAndVersionTheReplicaSent) {
   ReplicaConnection connection(
       transport, peer, Shared(clients), RELAY_SERVER_VERSION,
       [&](const std::string &line) {
-        // "closed" is logged while the replica is still registered.
         if (line.find("closed") != std::string::npos)
           registered = tracker.Snapshot().replicas;
       },
@@ -547,7 +521,6 @@ TEST(ReplicaConnectionTest, MalformedHandshakeResponseGetsErr1043BadHandshake) {
   test::FakeTransport transport;
   const std::vector<ReplicaClient> clients{MakeClient("repl", "s3cret", peer)};
   std::uint8_t clientSequenceId = 1;
-  // Far short of HandshakeResponse41's 32-byte fixed header.
   const std::vector<std::uint8_t> tooShort{0x00, 0x00};
   AppendClientPacket(transport, tooShort, clientSequenceId);
 
@@ -570,9 +543,6 @@ TEST(ReplicaConnectionTest, MalformedHandshakeResponseGetsErr1043BadHandshake) {
 
 namespace {
 
-// Runs a full successful login, then appends one or more already-framed
-// post-login command packets (sequence ids restarting at 0, as a real
-// client does) before Run() executes.
 class LoggedInConnectionFixture {
  public:
   LoggedInConnectionFixture() {
@@ -588,10 +558,10 @@ class LoggedInConnectionFixture {
         m_transport,
         EncodeHandshakeResponse("repl", scramble, "caching_sha2_password"),
         clientSequenceId);
-    // This fixture queues login and post-login bytes into one buffer before
-    // Run() starts, so an unbounded Read() would hand Login()'s short-lived
-    // PacketChannel the command bytes too, losing them when it's destroyed -
-    // capping bytes per Read() to 1 avoids that.
+    // Login and post-login bytes are queued into one buffer, so an unbounded
+    // Read() would hand Login()'s short-lived channel the command bytes too and
+    // lose them when it is destroyed; capping bytes per Read() to 1 avoids
+    // that.
     m_transport.maxBytesPerRead = 1;
   }
 
@@ -623,7 +593,6 @@ TEST(ReplicaConnectionTest,
   LoggedInConnectionFixture fixture;
   fixture.AppendCommand(
       std::vector<std::uint8_t>{static_cast<std::uint8_t>(Command::Ping)});
-  // A second one - proves the loop continues, not just answers once.
   fixture.AppendCommand(
       std::vector<std::uint8_t>{static_cast<std::uint8_t>(Command::Ping)});
   fixture.Run();
@@ -645,7 +614,6 @@ TEST(ReplicaConnectionTest,
 TEST(ReplicaConnectionTest,
      UnknownCommandGetsErr1047AndTheConnectionStaysOpen) {
   LoggedInConnectionFixture fixture;
-  // COM_QUERY: no queryResponder wired here.
   fixture.AppendCommand(std::vector<std::uint8_t>{0x03, 'x'});
   fixture.AppendCommand(
       std::vector<std::uint8_t>{static_cast<std::uint8_t>(Command::Ping)});
@@ -671,7 +639,6 @@ TEST(ReplicaConnectionTest,
 TEST(ReplicaConnectionTest,
      DumpByFileAndPositionGetsErr1236NamingGtidAutoPositioning) {
   LoggedInConnectionFixture fixture;
-  // COM_BINLOG_DUMP: position 4, flags 0, server_id 7, "binlog.000001".
   const auto command = static_cast<std::uint8_t>(Command::BinlogDump);
   std::vector<std::uint8_t> dump{command, 4, 0, 0, 0, 0, 0, 7, 0, 0, 0};
   for (const char c : std::string("binlog.000001"))
@@ -693,7 +660,6 @@ TEST(ReplicaConnectionTest,
   EXPECT_EQ(err.errorCode, 1236);
   EXPECT_EQ(err.sqlState, "HY000");
   EXPECT_NE(err.message.find("GTID auto-positioning only"), std::string::npos);
-  // The connection stays open, as after any refused dump.
   ASSERT_TRUE(responses.Next(payload, error)) << error;
   EXPECT_TRUE(OkPacketCodec::IsOkPacket(
       payload.empty() ? std::uint8_t{0} : payload[0], false));
@@ -767,11 +733,7 @@ TEST(ReplicaConnectionTest, ZstdReplicaGetsAnUncompressedOkAndThenFrames) {
                               CLIENT_ZSTD_COMPRESSION_ALGORITHM,
                               DEFAULT_ZSTD_COMPRESSION_LEVEL),
       clientSequenceId);
-  // One byte per read: the login channel is replaced for the command
-  // phase, so whatever it buffers past the handshake response is lost.
   transport.maxBytesPerRead = 1;
-  // From here the wire is frames. Each command restarts the frame counter
-  // with the packet sequence id, so both commands go in frame 0.
   const std::vector<std::uint8_t> ping{
       1, 0, 0, 0, static_cast<std::uint8_t>(Command::Ping)};
   AppendUncompressedFrame(transport, ping, 0);
@@ -787,16 +749,14 @@ TEST(ReplicaConnectionTest, ZstdReplicaGetsAnUncompressedOkAndThenFrames) {
   ResponseReader responses(transport);
   std::vector<std::uint8_t> payload;
   std::string error;
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // greeting
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // fast auth success
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // login OK
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
   EXPECT_TRUE(OkPacketCodec::IsOkPacket(
       payload.empty() ? std::uint8_t{0} : payload[0], false));
 
   std::span<const std::uint8_t> rest = responses.Remaining();
   std::vector<std::uint8_t> body;
-  // Frame 1, not 0: one counter serves both directions, and the replica's
-  // own frame took 0.
   ASSERT_TRUE(NextFrame(rest, 1, body));
   EXPECT_TRUE(OkPacketCodec::IsOkPacket(body.size() > PACKET_HEADER_SIZE
                                             ? body[PACKET_HEADER_SIZE]
@@ -836,7 +796,7 @@ TEST(ReplicaConnectionTest, ZstdLevelOutsideTheAllowedRangeGetsErr3923) {
     ResponseReader responses(transport);
     std::vector<std::uint8_t> payload;
     std::string error;
-    ASSERT_TRUE(responses.Next(payload, error)) << error;  // greeting
+    ASSERT_TRUE(responses.Next(payload, error)) << error;
     ASSERT_TRUE(responses.Next(payload, error)) << error;
     ErrPacket err;
     ASSERT_TRUE(ErrPacketCodec::Parse(payload, err, error)) << error;
@@ -858,7 +818,6 @@ TEST(ReplicaConnectionTest, ZstdAskedForButNotOfferedLeavesTheWirePlain) {
       "s3cret",
       std::span<const std::uint8_t, SCRAMBLE_LENGTH>(NonceHead(nonce)));
   std::uint8_t clientSequenceId = 1;
-  // A level the relay would refuse if it had agreed to compress at all.
   AppendClientPacket(
       transport,
       EncodeHandshakeResponse("repl", scramble, "caching_sha2_password",
@@ -881,10 +840,10 @@ TEST(ReplicaConnectionTest, ZstdAskedForButNotOfferedLeavesTheWirePlain) {
   ResponseReader responses(transport);
   std::vector<std::uint8_t> payload;
   std::string error;
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // greeting
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // fast auth success
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // login OK
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // PING OK
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
   EXPECT_TRUE(OkPacketCodec::IsOkPacket(
       payload.empty() ? std::uint8_t{0} : payload[0], false));
 }
@@ -920,8 +879,6 @@ TEST(ReplicaConnectionTest, ZlibReplicaGetsAnUncompressedOkAndThenFrames) {
       "s3cret",
       std::span<const std::uint8_t, SCRAMBLE_LENGTH>(NonceHead(nonce)));
   std::uint8_t clientSequenceId = 1;
-  // No level byte follows CLIENT_COMPRESS: the protocol has none for zlib,
-  // and the codec writes one only for the zstd capability.
   AppendClientPacket(
       transport,
       EncodeHandshakeResponse("repl", scramble, "caching_sha2_password",
@@ -944,9 +901,9 @@ TEST(ReplicaConnectionTest, ZlibReplicaGetsAnUncompressedOkAndThenFrames) {
   ResponseReader responses(transport);
   std::vector<std::uint8_t> payload;
   std::string error;
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // greeting
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // fast auth success
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // login OK
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
   EXPECT_TRUE(OkPacketCodec::IsOkPacket(
       payload.empty() ? std::uint8_t{0} : payload[0], false));
 
@@ -976,8 +933,6 @@ TEST(ReplicaConnectionTest, ZlibReplicaIsNeverRefusedOverACompressionLevel) {
       "s3cret",
       std::span<const std::uint8_t, SCRAMBLE_LENGTH>(NonceHead(nonce)));
   std::uint8_t clientSequenceId = 1;
-  // A zstd level the relay would call out of range, on a link where no
-  // level was asked for: err 3923 belongs to zstd alone.
   AppendClientPacket(
       transport,
       EncodeHandshakeResponse("repl", scramble, "caching_sha2_password",
@@ -994,9 +949,9 @@ TEST(ReplicaConnectionTest, ZlibReplicaIsNeverRefusedOverACompressionLevel) {
   ResponseReader responses(transport);
   std::vector<std::uint8_t> payload;
   std::string error;
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // greeting
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // fast auth success
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // login OK
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
   EXPECT_TRUE(OkPacketCodec::IsOkPacket(
       payload.empty() ? std::uint8_t{0} : payload[0], false));
 }
@@ -1031,10 +986,10 @@ TEST(ReplicaConnectionTest,
   ResponseReader responses(transport);
   std::vector<std::uint8_t> payload;
   std::string error;
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // greeting
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // fast auth success
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // login OK
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // PING OK
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
   EXPECT_TRUE(OkPacketCodec::IsOkPacket(
       payload.empty() ? std::uint8_t{0} : payload[0], false));
 }
@@ -1083,7 +1038,7 @@ TEST(ReplicaConnectionTest, SslRequestWithoutACertificateGetsErr1043) {
   ResponseReader responses(transport);
   std::vector<std::uint8_t> payload;
   std::string error;
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // greeting
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
   ASSERT_TRUE(responses.Next(payload, error)) << error;
   ErrPacket err;
   ASSERT_TRUE(ErrPacketCodec::Parse(payload, err, error)) << error;
@@ -1120,7 +1075,7 @@ TEST(ReplicaConnectionTest, PlainLoginUnderRequireSecureTransportGetsErr3159) {
   ResponseReader responses(transport);
   std::vector<std::uint8_t> payload;
   std::string error;
-  ASSERT_TRUE(responses.Next(payload, error)) << error;  // greeting
+  ASSERT_TRUE(responses.Next(payload, error)) << error;
   ASSERT_TRUE(responses.Next(payload, error)) << error;
   ErrPacket err;
   ASSERT_TRUE(ErrPacketCodec::Parse(payload, err, error)) << error;

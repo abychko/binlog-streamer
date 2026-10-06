@@ -28,9 +28,6 @@ namespace binlog_streamer {
 bool AddressRangeMatcher::Contains(const AddressRange &range,
                                    const IpAddress &address) {
   if (range.address.family != address.family) return false;
-  // Bit-by-bit, matching how AddressRangeParser::ParseRange() walks the same
-  // prefix for non-zero host bits - same indexing, just comparing two
-  // addresses instead of one address against zero.
   for (unsigned int bit = 0; bit < range.prefixLength; ++bit) {
     const std::uint8_t mask = static_cast<std::uint8_t>(1U << (7 - bit % 8));
     if ((range.address.bytes[bit / 8] & mask) !=

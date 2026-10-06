@@ -56,9 +56,6 @@ class StorageWriter {
   StorageWriter &operator=(const StorageWriter &) = delete;
   void Start();
   void Stop();
-  // Create writes headers once; overlapping cached ranges only advance
-  // written, without re-writing. OpenExisting starts at the recovered
-  // file length.
   void PostCreate(std::string name, std::span<const std::uint8_t> fde,
                   std::span<const std::uint8_t> pge);
   void PostOpenExisting(std::string name);
@@ -66,18 +63,15 @@ class StorageWriter {
   void PostClose(std::string name);
   void PostPurge();
   void Wake();
-  // New bytes are in the cache. An idle writer starts on them at once; a
-  // busy one takes them after WRITE_COALESCE, together with what follows.
   void WakeForData();
   void NoteEventCompleted() {
     m_events.fetch_add(1, std::memory_order_relaxed);
   }
-  // The producer must stop appending/posting until this returns. Does
-  // not close the current file.
+  // The producer must stop posting until this returns. Does not close the
+  // current file.
   bool DrainAndSync();
   bool Failed() const { return m_failed.load(std::memory_order_acquire); }
   std::string LastError() const;
-  // Body durability syncs only: header creation/abandoned-file repair excluded.
   std::uint64_t SyncsPerformed() const {
     return m_syncs.load(std::memory_order_relaxed);
   }
@@ -97,7 +91,6 @@ class StorageWriter {
   void Run();
   bool WritePending(WriteSnapshot &snapshot);
   bool Execute(const WriterTask &task);
-  // Queue order keeps expiry after the corresponding disk closure.
   bool Purge();
   bool Sync(std::uint64_t completed);
   void Fail(std::string error);
@@ -117,15 +110,12 @@ class StorageWriter {
   std::thread m_thread;
   bool m_started = false, m_stopped = false, m_sleeping = false, m_wake = false;
   bool m_drain = false;
-  // Under m_mutex: bytes were published since the writer last looked,
-  // and whether its current sleep is the short one that gathers them.
   bool m_dataPending = false, m_gathering = false;
   bool m_registered = false;
   std::string m_error;
   std::atomic<bool> m_stop{false}, m_failed{false};
   std::atomic<std::uint64_t> m_events{0}, m_syncs{0}, m_bytes{0}, m_writes{0},
       m_maxAge{0};
-  // Only the worker accesses the current file and its durability state.
   std::unique_ptr<BinlogFileWriter> m_file;
   std::string m_name;
   WriteRange m_range;

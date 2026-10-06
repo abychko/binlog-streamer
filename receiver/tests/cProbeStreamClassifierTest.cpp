@@ -110,8 +110,6 @@ TEST(ProbeStreamClassifierTest, EndOfStreamIsPermanent) {
 
 TEST(ProbeStreamClassifierTest,
      StoppedBySinkWithoutHavingSeenTheFormatDescriptionIsPermanent) {
-  // The only StoppedBySink case DumpProbe passes here: the sink stopped before
-  // FORMAT_DESCRIPTION_EVENT.
   StreamResult result;
   result.reason = StreamEndReason::StoppedBySink;
   result.message = "EventSink::OnEventBegin returned false";

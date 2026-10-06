@@ -28,13 +28,11 @@
 
 namespace binlog_streamer {
 
-// Never a path, so entries stay valid if data_dir moves. Per-file
-// metadata lives in RAM, not here.
+// Entries are never paths, so they stay valid if data_dir moves.
 class BinlogIndexFile {
  public:
-  // Missing file reads as an empty index, not an error (matches MySQL).
-  // A leftover path+".tmp" is left for the startup scan to remove, not
-  // Load(). names is empty on any error.
+  // A missing file is an empty index. A leftover .tmp is left for the startup
+  // scan.
   static bool Load(const std::string &path, std::vector<std::string> &names,
                    std::string &error);
 
@@ -45,8 +43,7 @@ class BinlogIndexFile {
                       const std::vector<std::string> &names,
                       std::string &error);
 
-  // Full copy-then-replace, like MySQL's own add_log_to_index() - not
-  // an in-place append despite the name.
+  // Full copy-then-replace, not an in-place append.
   static bool Append(const std::string &path, const std::string &name,
                      std::string &error);
 };

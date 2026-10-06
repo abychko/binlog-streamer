@@ -25,8 +25,7 @@
 
 namespace binlog_streamer {
 namespace {
-constexpr std::size_t POSITION_LENGTH =
-    8;  // R_IDENT_OFFSET: where the file name starts
+constexpr std::size_t POSITION_LENGTH = 8;
 }  // namespace
 
 bool RotateEventCodec::Parse(std::span<const std::uint8_t> body,

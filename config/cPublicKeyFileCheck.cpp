@@ -29,7 +29,6 @@ std::vector<std::string> PublicKeyFileCheck::CheckFile(
   std::vector<std::string> errors;
   if (!S_ISREG(status.st_mode)) errors.emplace_back("not a regular file");
   if (status.st_uid != expectedUid) errors.emplace_back("wrong owner");
-  // No group check here (see header) - only writability, not who owns it.
   if ((status.st_mode & 0002) != 0)
     errors.emplace_back("others have write access");
   if ((status.st_mode & 0020) != 0)

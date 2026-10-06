@@ -33,15 +33,14 @@ Settings ValidSettings() {
   settings.server.serverId = 1001;
   settings.storage.retention.policy = RetentionPolicy::Age;
   settings.storage.retention.period = std::chrono::seconds(7 * 86400);
-  settings.storage.disk.maxSize = std::uint64_t{2} << 40;  // 2T
-  settings.storage.disk.purgeHighWatermark = std::uint64_t{1900}
-                                             << 30;                     // 1900G
-  settings.storage.disk.purgeLowWatermark = std::uint64_t{1800} << 30;  // 1800G
-  settings.storage.disk.minFreeSpace = std::uint64_t{50} << 30;         // 50G
-  settings.storage.disk.recoveryReserve = std::uint64_t{10} << 30;      // 10G
+  settings.storage.disk.maxSize = std::uint64_t{2} << 40;
+  settings.storage.disk.purgeHighWatermark = std::uint64_t{1900} << 30;
+  settings.storage.disk.purgeLowWatermark = std::uint64_t{1800} << 30;
+  settings.storage.disk.minFreeSpace = std::uint64_t{50} << 30;
+  settings.storage.disk.recoveryReserve = std::uint64_t{10} << 30;
   settings.cache.policy = CachePolicy::TimeWindow;
   settings.cache.window = std::chrono::hours(12);
-  settings.cache.maxSize = std::uint64_t{1} << 40;  // 1T
+  settings.cache.maxSize = std::uint64_t{1} << 40;
   return settings;
 }
 
@@ -112,8 +111,6 @@ TEST(ConfigValidatorTest, ZeroRecoveryReserveIsError) {
 TEST(ConfigValidatorTest, ZeroPurgeLowWatermarkIsError) {
   auto settings = ValidSettings();
   settings.storage.disk.purgeLowWatermark = 0;
-  // Zero also makes low < high trivially true, so only the "greater than zero"
-  // check on purge_low_watermark is expected to fire here.
   const auto errors = ConfigValidator::Validate(settings, {}, "settings.yml");
   ASSERT_EQ(errors.size(), 1u);
   EXPECT_EQ(errors[0].keyPath, "storage.disk.purge_low_watermark");

@@ -50,8 +50,8 @@ BoundaryOutcome TransactionBoundaryTracker::OnEvent(const EventHeader &header,
                                                     const GtidEvent *gtidEvent,
                                                     std::string &error) {
   if (!inGroup_) {
-    // A tagged GTID (type 42) starts a group like an untagged one -
-    // the caller must have decoded it with ParseTagged.
+    // A tagged GTID (type 42) starts a group like an untagged one; the caller
+    // must have decoded it with ParseTagged.
     const bool isGtid =
         header.type == static_cast<std::uint8_t>(EventType::Gtid) ||
         header.type == static_cast<std::uint8_t>(EventType::GtidTagged);
@@ -66,9 +66,8 @@ BoundaryOutcome TransactionBoundaryTracker::OnEvent(const EventHeader &header,
       error = "GTID event without its decoded fields";
       return BoundaryOutcome::Malformed;
     }
-    // GNO sanity check, mirroring the source (percona-server dfc6d1f,
-    // control_events.cpp:537-545): GTID_LOG_EVENT requires
-    // 1 <= gno < INT64_MAX; ANONYMOUS_GTID_LOG_EVENT requires exactly 0.
+    // GNO sanity check as in the server: GTID_LOG_EVENT requires 1 <= gno <
+    // INT64_MAX, ANONYMOUS_GTID_LOG_EVENT exactly 0.
     if (isGtid &&
         (gtidEvent->gno < 1 ||
          gtidEvent->gno >= std::numeric_limits<std::int64_t>::max())) {
@@ -94,9 +93,8 @@ BoundaryOutcome TransactionBoundaryTracker::OnEvent(const EventHeader &header,
     return BoundaryOutcome::GroupStart;
   }
 
-  // A GTID event always starts a transaction stream (percona-server dfc6d1f,
-  // trx_boundary_parser.cpp:305-337); mid-group here is an error, unlike an
-  // applier's retry exception, because this relay writes the stream as-is.
+  // A GTID event always starts a transaction stream; mid-group is an error,
+  // unlike an applier's retry, because this relay writes the stream as is.
   if (IsGtidEvent(header.type)) {
     error = "a GTID event interrupted an open transaction group";
     return BoundaryOutcome::Malformed;
@@ -116,8 +114,8 @@ BoundaryOutcome TransactionBoundaryTracker::OnEvent(const EventHeader &header,
     error.clear();
     return BoundaryOutcome::GroupEnd;
   }
-  // eventEnd > groupEndOffset_: runs past the boundary its group's GTID
-  // promised. Left in group on purpose - Reset() is the explicit recovery.
+  // eventEnd > groupEndOffset_: the event runs past the boundary its GTID
+  // promised. Left in group on purpose; Reset() is the recovery.
   error = "event crosses the end of its transaction group";
   return BoundaryOutcome::Malformed;
 }

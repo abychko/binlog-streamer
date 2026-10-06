@@ -31,10 +31,8 @@ namespace binlog_streamer {
 
 struct SessionResult {
   SessionOutcome outcome = SessionOutcome::TransientFailure;
-  SourceIdentity
-      identity;  // meaningful fields depend on outcome/how far the session got
-  std::string message;  // human-readable reason, safe to print (never contains
-                        // the password or a scramble)
+  SourceIdentity identity;
+  std::string message;
 };
 
 }  // namespace binlog_streamer

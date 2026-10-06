@@ -27,7 +27,6 @@
 #include <limits>
 namespace binlog_streamer {
 inline constexpr std::size_t CACHE_SEGMENT_SIZE = 1024 * 1024;
-// An unknown file has no cached bytes; its entire readable range is on disk.
 inline constexpr std::uint64_t NOT_CACHED_ANYWHERE =
     std::numeric_limits<std::uint64_t>::max();
 }  // namespace binlog_streamer

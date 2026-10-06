@@ -32,17 +32,13 @@ namespace binlog_streamer {
 
 struct StreamResult {
   StreamEndReason reason = StreamEndReason::MalformedStream;
-  std::string message;  // human-readable; never contains a secret (this tract
-                        // has none of its own after dump starts)
+  std::string message;
 
-  // Meaningful only when reason == SourceError; kept separate from
-  // message so a caller can branch on errorCode without parsing text.
   std::uint16_t errorCode = 0;
   std::string errorText;
 
   StreamPosition firstPosition;
-  StreamPosition lastPosition;  // the last event delivered, or the position the
-                                // reader started from if none was
+  StreamPosition lastPosition;
 
   std::uint64_t events = 0;
   std::uint64_t heartbeats = 0;

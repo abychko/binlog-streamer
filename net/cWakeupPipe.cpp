@@ -68,10 +68,9 @@ bool WakeupPipe::Open(std::string &error) {
 void WakeupPipe::Wake() const {
   if (m_writeFd < 0) return;
   const std::uint8_t byte = 0;
-  // Return value ignored: no signal-safe way to report failure, and both
-  // possible errors still leave the reader woken or about to be. Named
-  // variable, not (void), because _FORTIFY_SOURCE's warn_unused_result rejects
-  // a (void) cast.
+  // Return value ignored: there is no signal-safe way to report failure. A
+  // named variable, not a (void) cast, because _FORTIFY_SOURCE's
+  // warn_unused_result rejects the cast.
   const ssize_t ignoredResult = write(m_writeFd, &byte, sizeof(byte));
   (void)ignoredResult;
 }

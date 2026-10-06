@@ -31,9 +31,8 @@ namespace binlog_streamer {
 
 struct SourceIdentity;
 
-// Wall-clock jumps must not advance source time - hence steady_clock,
-// not system_clock. The anchor is refreshed only on reconnection,
-// matching a MySQL replica.
+// steady_clock, so wall-clock jumps do not advance source time; the anchor is
+// refreshed only on reconnection, as a MySQL replica does.
 class SourceClock {
  public:
   SourceClock() = default;
@@ -41,7 +40,6 @@ class SourceClock {
               std::chrono::steady_clock::time_point readAt);
   static SourceClock FromIdentity(const SourceIdentity &identity);
   bool Known() const;
-  // Unknown (nullopt) until a nonzero timestamp is received.
   std::optional<std::uint64_t> Now(
       std::chrono::steady_clock::time_point now) const;
   std::optional<std::uint64_t> Now() const;

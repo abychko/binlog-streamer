@@ -27,16 +27,11 @@
 
 namespace binlog_streamer {
 
-// What is known about a replica once it logged in and does not change
-// while it stays connected.
 struct ReplicaFacts {
-  std::string address;  // "ip:port" it connected from
+  std::string address;
   std::string user;
   bool tls = false;
-  std::string compression;  // "none", "zlib" or "zstd"
-  // Connection attributes the replica sent: program_name ("mysqld" for a
-  // server) and _client_version (a server's own version, e.g. "8.4.6-6").
-  // Empty when not sent.
+  std::string compression;
   std::string program;
   std::string version;
 };

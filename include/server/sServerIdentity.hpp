@@ -28,14 +28,10 @@
 
 namespace binlog_streamer {
 
-// Presents itself like an intermediate server: its own
-// server_id/server_uuid, not its source's.
 struct ServerIdentity {
   std::uint32_t serverId = 0;
   std::string serverUuid;
   std::string versionComment;
-  // The two halves of what ServerVersionString() (server/hServerVersion.hpp)
-  // puts after the source's own version in the greeting and in @@version.
   std::string relayName;
   std::string relayVersion;
 };

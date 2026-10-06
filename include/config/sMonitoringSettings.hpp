@@ -27,8 +27,6 @@
 
 namespace binlog_streamer {
 
-// Every way the relay's state is offered to monitoring; HTTP is the one
-// there is.
 struct MonitoringSettings {
   HttpSettings http;
   bool operator==(const MonitoringSettings &) const = default;

@@ -43,15 +43,11 @@ namespace {
 
 using test::TempDirectoryFixture;
 
-// FileCursor's constructor is private; every test obtains one the only way
-// a real caller can, through StorageReader::Open().
 void WriteFile(const std::filesystem::path &path, std::string_view content) {
   std::ofstream out(path, std::ios::binary);
   out << content;
 }
 
-// Only ever used for the difference between two calls: opendir()/readdir()
-// themselves add transient entries.
 std::size_t CountOpenFileDescriptors() {
   DIR *dir = opendir("/dev/fd");
   if (dir == nullptr) throw std::runtime_error("opendir(/dev/fd) failed");
@@ -95,12 +91,10 @@ TEST(FileCursorTest,
   *firstCursor = std::move(*secondCursor);
   EXPECT_EQ(firstCursor->FileName(), "binlog.000002");
 
-  // binlog.000001 is unpinned now; Remove() is oldest-first.
   EXPECT_TRUE(catalog.Remove(error)) << error;
   EXPECT_FALSE(catalog.Remove(error));
   EXPECT_EQ(error, "binlog.000002 is pinned by 1 reader(s)");
 
-  // Self-assignment must not close the fd or release the pin.
   const std::size_t fdsBeforeSelfMove = CountOpenFileDescriptors();
   MoveAssign(*firstCursor, *firstCursor);
   EXPECT_EQ(CountOpenFileDescriptors(), fdsBeforeSelfMove);
@@ -131,7 +125,6 @@ TEST(FileCursorTest, DestroyingACursorReleasesItsPin) {
   EXPECT_TRUE(catalog.Remove(error)) << error;
 }
 
-// Checked via the process's open-descriptor count since Fd() is private.
 TEST(FileCursorTest, DestroyingACursorClosesItsFileDescriptor) {
   TempDirectoryFixture fixture;
   WriteFile(fixture.Path("binlog.000001"), "x");

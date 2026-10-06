@@ -33,11 +33,9 @@ namespace binlog_streamer {
 struct StorageStatus {
   std::size_t files = 0;
   std::uint64_t bytes = 0;
-  std::uint64_t maxBytes = 0;  // storage.disk.max_size
-  std::string file;            // the published position: what replicas may read
+  std::uint64_t maxBytes = 0;
+  std::string file;
   std::uint64_t position = 0;
-  // Received from the source but not yet published; unknown when the
-  // received position names a file storage does not hold yet.
   std::optional<std::uint64_t> behindBytes;
 };
 

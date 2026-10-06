@@ -145,7 +145,7 @@ TEST(EventCacheWaitTest, SignalStopIsPolledWithinOneHundredMilliseconds) {
   EXPECT_TRUE(Until([&] { return cache->Counters().spaceWaits > 0; }));
   stop.store(true);
   EXPECT_EQ(pending.wait_for(100ms), std::future_status::ready);
-  cache->Abort();  // Also releases an incorrectly unbounded wait on failure.
+  cache->Abort();
   EXPECT_EQ(pending.get(), AppendOutcome::Stopped);
   EXPECT_EQ(cache->Counters().appended, 2 * S);
 }
@@ -163,8 +163,7 @@ TEST(EventCacheWaitTest, AbortWakesImmediatelyAndRejectsAllFutureAppends) {
   EXPECT_TRUE(Until([&] { return cache->Counters().spaceWaits > 0; }));
   cache->Abort();
   EXPECT_EQ(pending.wait_for(30ms), std::future_status::ready);
-  cache->MarkWritten("data",
-                     S);  // Bounded cleanup even without Abort's notification.
+  cache->MarkWritten("data", S);
   EXPECT_EQ(pending.get(), AppendOutcome::Stopped);
   const auto before = cache->Counters();
   EXPECT_EQ(cache->Append(bytes), AppendOutcome::Stopped);
@@ -185,7 +184,7 @@ TEST(EventCacheWaitTest,
   std::atomic<int> calls{0};
   cache->SetSpaceWaitHandler([&] {
     ++calls;
-    EXPECT_EQ(cache->Counters().occupied, 2u);  // The index mutex is not held.
+    EXPECT_EQ(cache->Counters().occupied, 2u);
     entered.release();
     release.acquire();
   });

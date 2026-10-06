@@ -23,10 +23,6 @@
 
 #pragma once
 
-// Shared by cCachingSha2FullAuthPasswordTest.cpp and cReplicaSessionTest.cpp:
-// generates a fresh RSA key pair and reverses Encrypt's own RSA-OAEP +
-// nonce XOR, independently of its indexing. Header-only, no matching .cpp.
-
 #include "protocol/hProtocolLimits.hpp"
 #include "sRsaTestKeyPair.hpp"
 
@@ -64,8 +60,6 @@ class CachingSha2FullAuthPasswordTestSupport {
     return result;
   }
 
-  // So a bug in either step shows up as a mismatch, not a cancelling bug in
-  // both.
   static std::vector<std::uint8_t> DecryptAndUnXor(
       EVP_PKEY *privateKey, const std::vector<std::uint8_t> &ciphertext,
       std::span<const std::uint8_t, SCRAMBLE_LENGTH> nonce) {

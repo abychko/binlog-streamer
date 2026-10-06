@@ -29,9 +29,8 @@
 namespace binlog_streamer {
 
 struct StartSetResolution {
-  // First start: the source's current file's own Previous_gtids, not
-  // gtid_executed (which can claim more than that file covers).
-  // Resumed run: StorageRecovery's own set.
+  // First start: the current file's own Previous_gtids, not gtid_executed.
+  // Resumed run: StorageRecovery's set.
   GtidSet startSet;
   std::string selectedFileName;
 

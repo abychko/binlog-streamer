@@ -86,8 +86,6 @@ TEST(OkPacketCodecTest,
      SessionTrackDecodesLenencInfoAndHidesTrailingSessionState) {
   std::vector<std::uint8_t> payload{0x00, 0, 0, 0x00, 0x00, 0x00, 0x00};
   LengthEncodedString::Encode("some message", payload);
-  // Trailing bytes representing SessionStateInfo (opaque here - real
-  // content is not this codec's concern): must not leak into info.
   const std::vector<std::uint8_t> sessionState{0x01, 0x02, 0x03};
   payload.insert(payload.end(), sessionState.begin(), sessionState.end());
 
@@ -101,7 +99,7 @@ TEST(OkPacketCodecTest,
 
 TEST(OkPacketCodecTest, EncodesExactBytesWithoutInfo) {
   OkPacket value;
-  value.statusFlags = 0x0002;  // SERVER_STATUS_AUTOCOMMIT
+  value.statusFlags = 0x0002;
   for (const bool clientSessionTrack : {false, true}) {
     std::vector<std::uint8_t> out;
     OkPacketCodec::Encode(value, clientSessionTrack, out);
@@ -113,7 +111,7 @@ TEST(OkPacketCodecTest, EncodesExactBytesWithoutInfo) {
 
 TEST(OkPacketCodecTest, EncodesInfoInTheFormParseReads) {
   OkPacket value;
-  value.affectedRows = 300;  // needs the 0xFC LengthEncodedInteger form
+  value.affectedRows = 300;
   value.lastInsertId = 7;
   value.statusFlags = 0x0002;
   value.warnings = 0x0102;
@@ -123,7 +121,7 @@ TEST(OkPacketCodecTest, EncodesInfoInTheFormParseReads) {
   OkPacketCodec::Encode(value, false, plain);
   std::vector<std::uint8_t> tracked;
   OkPacketCodec::Encode(value, true, tracked);
-  EXPECT_EQ(tracked.size(), plain.size() + 1);  // the info length prefix
+  EXPECT_EQ(tracked.size(), plain.size() + 1);
 
   for (const bool clientSessionTrack : {false, true}) {
     OkPacket parsed;

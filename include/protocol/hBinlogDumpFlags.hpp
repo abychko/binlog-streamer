@@ -27,8 +27,6 @@
 
 namespace binlog_streamer {
 
-// Distinct from the client capability flags and from libmysqlclient's
-// own MYSQL_RPL_* API flags, which never reach the wire.
 inline constexpr std::uint16_t BINLOG_DUMP_NON_BLOCK = 1U << 0;
 inline constexpr std::uint16_t BINLOG_DUMP_USE_HEARTBEAT_EVENT_V2 = 1U << 1;
 inline constexpr std::uint16_t BINLOG_DUMP_SKIP_TAGGED_GTIDS = 1U << 2;

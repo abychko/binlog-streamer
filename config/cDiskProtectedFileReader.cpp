@@ -53,9 +53,6 @@ std::string Join(const std::vector<std::string> &messages) {
   }
   return joined;
 }
-// With a sentinel uid/gid, CheckDirectory/CheckFile also reports a mismatch
-// alongside the more specific "... does not exist" - removed here since it's
-// a direct consequence of the missing name, not a separate violation.
 void RemoveMessage(std::vector<std::string> &messages,
                    const std::string &message) {
   messages.erase(std::remove(messages.begin(), messages.end(), message),
@@ -85,9 +82,6 @@ ProtectedFileStatus DiskProtectedFileReader::Read(
     if (errno == ENOENT) return ProtectedFileStatus::Absent;
     return fail(directory, std::strerror(errno));
   }
-  // A missing expected owner/group is folded into the same combined
-  // violations list as mode/ownership mismatches, not an early failure,
-  // so it never hides an unrelated violation found further down.
   const auto *owner = getpwnam(expectedOwner_.c_str());
   const uid_t uid = owner != nullptr ? owner->pw_uid : static_cast<uid_t>(-1);
   struct stat directoryStatus{};

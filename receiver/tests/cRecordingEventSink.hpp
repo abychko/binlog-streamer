@@ -34,19 +34,14 @@ namespace binlog_streamer::test {
 struct RecordedEvent {
   EventHeader header;
   StreamPosition positionBeforeEvent;
-  std::vector<std::uint8_t>
-      bytes;  // concatenation of every OnEventBytes() call for this event
+  std::vector<std::uint8_t> bytes;
   bool ended = false;
 };
 
-// Returning false from a scripted call simulates
-// StreamEndReason::StoppedBySink.
 class RecordingEventSink : public EventSink {
  public:
   std::vector<RecordedEvent> events;
 
-  // 1-based call index (across the whole run, not per event) at which to
-  // return false; nullopt means never.
   std::optional<unsigned> stopAtEventBeginCall;
   std::optional<unsigned> stopAtEventBytesCall;
   std::optional<unsigned> stopAtEventEndCall;

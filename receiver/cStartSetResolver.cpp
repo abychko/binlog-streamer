@@ -25,9 +25,7 @@
 
 namespace binlog_streamer {
 namespace {
-// A local response this class found unusable (malformed GTID text), not a
-// failed Probe()/PreviousGtidsText() call - always PermanentFailure, never
-// retryable.
+// A malformed GTID text is a permanent failure, never retried.
 SessionResult MakeFailure(std::string message) {
   SessionResult failure;
   failure.outcome = SessionOutcome::PermanentFailure;
@@ -59,8 +57,8 @@ std::optional<SessionResult> StartSetResolver::Resolve(
                          "': " + parseError);
     }
   }
-  // The source refuses a dump whose set misses any of gtid_purged; GTIDs
-  // purged without ever reaching a binlog are not in Previous_gtids.
+  // The source refuses a dump whose set misses any of gtid_purged; GTIDs purged
+  // without ever reaching a binlog are not in Previous_gtids.
   if (!gtidPurgedText.empty()) {
     std::string parseError;
     if (!startSet.AddFromText(gtidPurgedText, parseError)) {

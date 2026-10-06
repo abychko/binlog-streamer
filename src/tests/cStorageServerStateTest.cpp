@@ -42,15 +42,11 @@
 namespace binlog_streamer {
 namespace {
 
-// The UUID the groups below are written under, as text and as the 16 bytes
-// a GTID event carries.
 constexpr const char *SOURCE_UUID = "3e11fa47-71ca-11e1-9e33-c80aa9429562";
 constexpr std::array<std::uint8_t, 16> SOURCE_UUID_BYTES = {
     0x3e, 0x11, 0xfa, 0x47, 0x71, 0xca, 0x11, 0xe1,
     0x9e, 0x33, 0xc8, 0x0a, 0xa9, 0x42, 0x95, 0x62};
 
-// Everything before the first group: this test never reads it back, only
-// the offset it ends at, which is what a record's headerLength means.
 constexpr std::uint64_t HEADER_LENGTH = 120;
 
 class TempDirectory {
@@ -86,7 +82,6 @@ void AppendLittleEndian(std::vector<std::uint8_t> &out, std::uint64_t value,
     out.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
 }
 
-// Local lenenc encoder, kept self-contained rather than shared.
 std::vector<std::uint8_t> Lenenc(std::uint64_t value) {
   std::vector<std::uint8_t> out;
   if (value < 251) {
@@ -130,8 +125,8 @@ std::vector<std::uint8_t> GtidBody(std::int64_t gno,
   return body;
 }
 
-// GTID(69) + Query(29) + Xid(27) = 125, no checksum trailer: the records
-// below are written without one.
+// GTID(69) + Query(29) + Xid(27) = 125, no checksum trailer: the records below
+// are written without one.
 constexpr std::uint64_t GROUP_LENGTH = 125;
 
 void AppendFullGroup(std::vector<std::uint8_t> &file, std::uint64_t start,
@@ -144,8 +139,6 @@ void AppendFullGroup(std::vector<std::uint8_t> &file, std::uint64_t start,
               start + GROUP_LENGTH);
 }
 
-// Writes `groups` complete transactions after a header-sized filler,
-// numbered from firstGno. Returns the file's size.
 std::uint64_t WriteFileWithGroups(const std::filesystem::path &path,
                                   std::int64_t firstGno, int groups) {
   std::vector<std::uint8_t> bytes(HEADER_LENGTH, 0x00);
@@ -180,10 +173,7 @@ TEST(StorageServerStateTest, AnswersAnEmptyStorageWithoutTouchingTheDisk) {
 
   EXPECT_EQ(state.GtidPurged(), "");
   EXPECT_EQ(state.GtidExecuted(), "");
-  // A server's own default until a stored file says otherwise.
   EXPECT_EQ(state.BinlogChecksum(), "CRC32");
-  // No file, no header to read the source's version from - and the
-  // listener refuses connections while that is so.
   EXPECT_EQ(state.SourceVersion(), "");
   EXPECT_FALSE(state.PreviousGtids("binlog.000001").has_value());
 }
@@ -214,7 +204,6 @@ TEST(StorageServerStateTest, BinlogChecksumComesFromTheOldestFile) {
   StorageCatalog off;
   off.Add(MakeRecord("binlog.000001", 1, "", "OFF"));
   const StorageServerState none(off, directory.Directory());
-  // What a replica expects to read back: the source's OFF is NONE here.
   EXPECT_EQ(none.BinlogChecksum(), "NONE");
 
   StorageCatalog unknown;
@@ -223,9 +212,8 @@ TEST(StorageServerStateTest, BinlogChecksumComesFromTheOldestFile) {
   EXPECT_EQ(fallback.BinlogChecksum(), "CRC32");
 }
 
-// The newest file, not the oldest: an upgraded source writes its new
-// version into the file it starts after the upgrade, and that is the
-// version the relay presents from then on.
+// The newest file, not the oldest: an upgraded source writes its new version
+// into the file it starts after the upgrade.
 TEST(StorageServerStateTest, SourceVersionComesFromTheNewestFile) {
   TempDirectory directory;
   StorageCatalog catalog;
@@ -284,14 +272,12 @@ TEST(StorageServerStateTest, GtidExecutedStartsOverWhenTheLastFileChanges) {
   const StorageServerState state(catalog, directory.Directory());
   ASSERT_EQ(state.GtidExecuted(), std::string(SOURCE_UUID) + ":1");
 
-  // The rotation the relay just made: the scan restarts at the new file's
-  // header, its Previous_gtids covering everything before it.
   catalog.Add(MakeRecord("binlog.000002", 2, std::string(SOURCE_UUID) + ":1"));
   EXPECT_EQ(state.GtidExecuted(), std::string(SOURCE_UUID) + ":1-2");
 }
 
 TEST(StorageServerStateTest, GtidExecutedIsThePreviousGtidsOfAnUnreadableFile) {
-  TempDirectory directory;  // nothing written into it
+  TempDirectory directory;
   StorageCatalog catalog;
   catalog.Add(
       MakeRecord("binlog.000001", 1, std::string(SOURCE_UUID) + ":1-5"));
@@ -319,8 +305,8 @@ TEST(StorageServerStateTest, PreviousGtidsDescribesTheEventInAStoredHeader) {
   EXPECT_FALSE(state.PreviousGtids("binlog.000009").has_value());
 }
 
-// A header too short to hold the event it would describe is storage this
-// class cannot speak for, rather than an event with a negative position.
+// A header too short to hold the event it would describe is not an event with a
+// negative position.
 TEST(StorageServerStateTest, PreviousGtidsIsNulloptWhenTheHeaderIsTooShort) {
   TempDirectory directory;
   StorageCatalog catalog;

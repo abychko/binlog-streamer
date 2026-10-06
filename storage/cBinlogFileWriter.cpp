@@ -72,7 +72,6 @@ bool BinlogFileWriter::Create(const std::string &path,
   std::vector<std::uint8_t> header;
   if (!BinlogHeaderBuilder::Build(fdeBytes, previousGtidsBytes, header, error))
     return false;
-  // O_EXCL: resuming is OpenExisting()'s job, not a silent overwrite here.
   const int fd =
       open(path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
   if (fd < 0) {

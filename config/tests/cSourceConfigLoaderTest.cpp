@@ -39,9 +39,6 @@ namespace {
 
 using test::ProtectedFileFixture;
 
-// Files are written with the "protected file" test invariant: mode 0640,
-// owner and group equal to the current user, so DiskProtectedFileReader
-// accepts them through the same path production code uses.
 LoadResult<SourceSettings> LoadSource(const ProtectedFileFixture &fixture,
                                       const std::string &content,
                                       int mode = 0640) {
@@ -52,9 +49,6 @@ LoadResult<SourceSettings> LoadSource(const ProtectedFileFixture &fixture,
       .Load(path.string());
 }
 
-// A fresh 2048-bit RSA key's public half as PEM text, generated once per
-// process since keygen is the slow part of these tests - every test below
-// that needs a valid key accepts the same content.
 const std::string &ValidPublicKeyPem() {
   static const std::string pem = [] {
     const std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> keygenCtx(
@@ -186,9 +180,6 @@ TEST(SourceConfigLoaderTest, AbsentFileIsAnError) {
   EXPECT_NE(result.errors[0].message.find("source.yml"), std::string::npos);
 }
 
-// An existing but empty source.yml has zero YAML documents, normalized to
-// Null (config/cYamlMapReader.cpp), which is not a mapping - distinct from
-// the Absent case above.
 TEST(SourceConfigLoaderTest, EmptyFileIsExpectedAMappingAtOneOne) {
   ProtectedFileFixture fixture;
   const auto result = LoadSource(fixture, "");
@@ -225,9 +216,6 @@ TEST(SourceConfigLoaderTest, GetSourcePublicKeyFalseIsParsed) {
   EXPECT_FALSE(result.value->getSourcePublicKey);
 }
 
-// Empty is an error here, unlike source_public_key_path below: every other
-// optional scalar leaf in this codebase treats present-but-empty as an
-// error, and source_public_key_path is one of the deliberate exceptions.
 TEST(SourceConfigLoaderTest, GetSourcePublicKeyEmptyIsError) {
   ProtectedFileFixture fixture;
   const auto result = LoadSource(fixture, BASE + "get_source_public_key:\n");
@@ -245,8 +233,6 @@ TEST(SourceConfigLoaderTest, GetSourcePublicKeyNonBoolIsErrorWithPosition) {
   ASSERT_EQ(result.errors.size(), 1u);
   EXPECT_EQ(result.errors[0].keyPath, "get_source_public_key");
   EXPECT_EQ(result.errors[0].message, "expected true or false");
-  // Position, not just presence: the line "get_source_public_key: yes" is
-  // the 4th line of content (1-indexed), column matches "get_..."'s start.
   EXPECT_EQ(result.errors[0].line, 4);
   EXPECT_EQ(result.errors[0].column, 1);
 }
@@ -292,8 +278,7 @@ TEST(SourceConfigLoaderTest, SourcePublicKeyPathMalformedPemIsError) {
 
 TEST(SourceConfigLoaderTest, SourcePublicKeyPathWrongPermissionsIsError) {
   ProtectedFileFixture fixture;
-  const auto keyPath = fixture.WriteFile("key.pem", ValidPublicKeyPem(),
-                                         0664);  // group-writable
+  const auto keyPath = fixture.WriteFile("key.pem", ValidPublicKeyPem(), 0664);
   const auto result = LoadSource(
       fixture, BASE + "source_public_key_path: " + keyPath.string() + "\n");
   EXPECT_FALSE(result.value);
@@ -305,9 +290,6 @@ TEST(SourceConfigLoaderTest, SourcePublicKeyPathWrongPermissionsIsError) {
 
 TEST(SourceConfigLoaderTest, SourcePublicKeyPathValidKeyAt0644IsAccepted) {
   ProtectedFileFixture fixture;
-  // 0644 (world-readable) is explicitly allowed - the key is not secret,
-  // unlike source.yml itself, which WrongPermissionsFailsWithoutParsing
-  // above rejects at the very same mode.
   const auto keyPath = fixture.WriteFile("key.pem", ValidPublicKeyPem(), 0644);
   const auto result = LoadSource(
       fixture, BASE + "source_public_key_path: " + keyPath.string() + "\n");
@@ -353,8 +335,6 @@ TEST(SourceConfigLoaderTest, CompressionIsOffUnlessAskedForByName) {
 
 TEST(SourceConfigLoaderTest, UnknownCompressionAlgorithmIsAnError) {
   ProtectedFileFixture fixture;
-  // One name, never a list: MySQL's own option takes several, this key
-  // does not.
   for (const std::string value : {"true", "lz4", "zstd,zlib"}) {
     const auto result =
         LoadSource(fixture, BASE + "compression: " + value + "\n");
@@ -386,9 +366,6 @@ TEST(SourceConfigLoaderTest, SourcePublicKeyPemIsEmptyWhenPathIsNotSet) {
 }
 
 TEST(SourceConfigLoaderTest, BothPublicKeySettingsCanBeSetTogether) {
-  // sha256_password_auth_client()/caching_sha2_password_auth_client()
-  // (percona-server rsa_init()) try the local file first and only ask the
-  // source if that file yields no key - the two settings aren't exclusive.
   ProtectedFileFixture fixture;
   const auto keyPath = fixture.WriteFile("key.pem", ValidPublicKeyPem(), 0644);
   const auto result = LoadSource(
@@ -399,9 +376,8 @@ TEST(SourceConfigLoaderTest, BothPublicKeySettingsCanBeSetTogether) {
   EXPECT_EQ(result.value->sourcePublicKeyPath, keyPath.string());
 }
 
-// Unlike rsa_init() (percona-server), which falls back to asking the
-// source when the local file yields no key, a source_public_key_path that
-// fails to parse is a fail-fast error: the relay never falls back silently.
+// Unlike rsa_init() in the server, a source_public_key_path that fails to parse
+// is an error; the relay never falls back silently.
 TEST(SourceConfigLoaderTest,
      BadKeyFileIsAnErrorEvenWhenGetSourcePublicKeyIsTrue) {
   ProtectedFileFixture fixture;
@@ -414,7 +390,6 @@ TEST(SourceConfigLoaderTest,
   EXPECT_EQ(result.errors[0].keyPath, "source_public_key_path");
 }
 
-// A CA, a certificate and its key as PEM text, generated once per process.
 const GeneratedCertificates &Certificates() {
   static const GeneratedCertificates certificates = [] {
     GeneratedCertificates generated;

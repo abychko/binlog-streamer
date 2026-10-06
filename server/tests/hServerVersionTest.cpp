@@ -39,10 +39,9 @@ TEST(ServerVersionTest, WithNoSourceVersionThereIsNoVersionToPresent) {
   EXPECT_EQ(ServerVersionString("", "binlog-streamer", "0.27.0"), "");
 }
 
-// A relay whose source is a relay stores the original server's events,
-// Format_description_event included, so the version it reads from its
-// storage is the one the chain started at - the suffix is added once, by
-// whichever relay answers.
+// A relay whose source is a relay stores the original server's events, so the
+// version it reads from its storage is the one the chain started at; the suffix
+// is added once, by whichever relay answers.
 TEST(ServerVersionTest, ARelayOfAnyVersionIsToldByTheVersionItPresents) {
   EXPECT_TRUE(IsRelayServerVersion(
       ServerVersionString("8.4.11", "binlog-streamer", "0.23.1"),
@@ -59,8 +58,6 @@ TEST(ServerVersionTest, AServerOrARelayOfAnotherNameIsNotTakenForOne) {
   EXPECT_FALSE(IsRelayServerVersion(
       ServerVersionString("8.4.11", "other-relay", "0.23.1"),
       "binlog-streamer"));
-  // The name is there, but nothing follows it: not a version this relay
-  // would ever have presented.
   EXPECT_FALSE(
       IsRelayServerVersion("8.4.11-binlog-streamer-", "binlog-streamer"));
   EXPECT_FALSE(IsRelayServerVersion("", "binlog-streamer"));

@@ -30,12 +30,10 @@ namespace binlog_streamer {
 
 inline constexpr std::size_t EVENT_HEADER_LENGTH = 19;
 
-// Callers derive this from the negotiated SourceIdentity::checksumAlgorithm
-// - never read off the wire.
 inline constexpr std::size_t CHECKSUM_LENGTH = 4;
 
-// Matches the source's own event_length cap; a larger claimed value means
-// a malformed stream, not a valid large event.
+// Matches the source's event_length cap; a larger claimed value means a
+// malformed stream.
 inline constexpr std::uint64_t MAX_EVENT_LENGTH = 1024ULL * 1024 * 1024;
 
 }  // namespace binlog_streamer

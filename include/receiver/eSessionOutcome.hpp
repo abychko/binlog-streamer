@@ -25,8 +25,7 @@
 
 namespace binlog_streamer {
 
-// StartupSequence retries only TransientFailure; Stopped is
-// caller-requested and must not be retried.
+// Only TransientFailure is retried; Stopped is caller-requested.
 enum class SessionOutcome {
   Registered,
   TransientFailure,

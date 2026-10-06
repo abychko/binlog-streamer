@@ -74,9 +74,6 @@ LoadResult<ReplicaSettings> ReplicaConfigLoader::Parse(
   YamlMapReader reader(fileName, root, "", result.errors, result.positions);
   reader.Finish({"listen_address", "listen_port", "compression", "ssl_ca",
                  "ssl_cert", "ssl_key", "require_secure_transport", "clients"});
-  // OptionalNonEmptyString/OptionalNonEmptyUnsignedInteger, not the plain
-  // optional forms: an unfilled template (listen_address/listen_port left
-  // empty) means "use the default", same as the file being absent.
   if (const auto value = reader.OptionalNonEmptyString("listen_address")) {
     if (!AddressRangeParser::ParseAddress(*value, settings.listenAddress,
                                           addressError))
@@ -88,8 +85,6 @@ LoadResult<ReplicaSettings> ReplicaConfigLoader::Parse(
   if (const auto value =
           reader.OptionalNonEmptyEnumeration("compression", COMPRESSION_NAMES))
     settings.compression = *value;
-  // Same rule as storage.data_dir: a relative path would resolve against
-  // the process's cwd, not replica.yml's own directory.
   const auto absolutePath = [&](std::string_view key, std::string &path) {
     const auto value = reader.OptionalNonEmptyString(key);
     if (!value) return;

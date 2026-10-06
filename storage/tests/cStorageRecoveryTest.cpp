@@ -99,9 +99,6 @@ void AppendFullGroup(std::vector<std::uint8_t> &file, std::uint32_t start,
               start + 69 + 29 + 27);
 }
 
-// A minimal but valid stored file: magic + FDE (server 5.5.62, no checksum
-// trailer) + previousGtids encoded as the Previous_gtids_event, plus
-// whatever tail bytes the caller appends. Returns the header length.
 std::uint64_t WriteFileWithTailAndPreviousGtids(
     const std::filesystem::path &path, bool inUse, const GtidSet &previousGtids,
     const std::vector<std::uint8_t> &tail) {
@@ -114,14 +111,14 @@ std::uint64_t WriteFileWithTailAndPreviousGtids(
 
   const auto pgeBody = previousGtids.Encode(/*skipTaggedGtids=*/false);
 
-  std::vector<std::uint8_t> file{0xfe, 0x62, 0x69, 0x6e};  // BINLOG_MAGIC
+  std::vector<std::uint8_t> file{0xfe, 0x62, 0x69, 0x6e};
 
   const auto fdeEventLength = static_cast<std::uint32_t>(19 + fdeBody.size());
   std::vector<std::uint8_t> fdeHeader(19, 0x00);
   fdeHeader[4] = 15;
   fdeHeader[9] = static_cast<std::uint8_t>(fdeEventLength);
   fdeHeader[13] = static_cast<std::uint8_t>(4 + fdeEventLength);
-  if (inUse) fdeHeader[17] = 0x01;  // LOG_EVENT_BINLOG_IN_USE_F
+  if (inUse) fdeHeader[17] = 0x01;
   file.insert(file.end(), fdeHeader.begin(), fdeHeader.end());
   file.insert(file.end(), fdeBody.begin(), fdeBody.end());
 
@@ -141,7 +138,6 @@ std::uint64_t WriteFileWithTailAndPreviousGtids(
   return headerLength;
 }
 
-// The common case among the tests below: an empty Previous_gtids_event.
 std::uint64_t WriteFileWithTail(const std::filesystem::path &path, bool inUse,
                                 const std::vector<std::uint8_t> &tail) {
   return WriteFileWithTailAndPreviousGtids(path, inUse, GtidSet{}, tail);
@@ -156,7 +152,7 @@ StoredFileRecord MakeRecord(const std::string &name, std::uint64_t number,
   record.number = number;
   record.size = size;
   record.headerLength = headerLength;
-  record.checksumAlgorithm = "UNDEF";  // 5.5.62 has no checksum trailer
+  record.checksumAlgorithm = "UNDEF";
   record.inUse = inUse;
   record.previousGtids = std::move(previousGtids);
   return record;
@@ -194,7 +190,7 @@ TEST(StorageRecoveryTest,
   const std::uint32_t secondGroupStart =
       static_cast<std::uint32_t>(tail.size());
   AppendFullGroup(tail, secondGroupStart, /*gno=*/2);
-  tail.resize(secondGroupStart + 69 + 10);  // cut group 2 short, mid-Query
+  tail.resize(secondGroupStart + 69 + 10);
 
   const auto path = fixture.Path("binlog.000001");
   const std::uint64_t headerLength =
@@ -216,15 +212,13 @@ TEST(StorageRecoveryTest,
 
   const Uuid zeroUuid{};
   const auto intervals = state.startSet.GetIntervals(GtidSource{zeroUuid, ""});
-  ASSERT_EQ(intervals.size(), 1u);  // only the first, fully-received group
+  ASSERT_EQ(intervals.size(), 1u);
   EXPECT_EQ(intervals.front().start, 1);
   EXPECT_EQ(intervals.front().end, 2);
 
-  EXPECT_EQ(std::filesystem::file_size(path),
-            headerLength + 125);  // truncated on disk
+  EXPECT_EQ(std::filesystem::file_size(path), headerLength + 125);
   ASSERT_EQ(catalog.Size(), 1u);
-  EXPECT_EQ(catalog.At(0).size,
-            headerLength + 125);  // and the in-RAM record brought back in sync
+  EXPECT_EQ(catalog.At(0).size, headerLength + 125);
 }
 
 // previousGtids must actually reach state.startSet, not just completedGroups:
@@ -235,11 +229,11 @@ TEST(
     MergesANonEmptyPreviousGtidsWithTheScannedCompletedGroupsForTheSameSource) {
   TempDirectoryFixture fixture;
   GtidSet previousGtids;
-  previousGtids.AddInterval(GtidSource{Uuid{}, ""}, 1, 5);  // GNOs 1-4
+  previousGtids.AddInterval(GtidSource{Uuid{}, ""}, 1, 5);
 
   std::vector<std::uint8_t> tail;
   AppendFullGroup(tail, 0,
-                  /*gno=*/5);  // adjacent to previousGtids' own upper bound
+                  /*gno=*/5);
 
   const auto path = fixture.Path("binlog.000001");
   const std::uint64_t headerLength = WriteFileWithTailAndPreviousGtids(
@@ -257,19 +251,16 @@ TEST(
       << error;
 
   const auto intervals = state.startSet.GetIntervals(GtidSource{Uuid{}, ""});
-  ASSERT_EQ(intervals.size(), 1u);  // merged into one contiguous range
+  ASSERT_EQ(intervals.size(), 1u);
   EXPECT_EQ(intervals.front().start, 1);
   EXPECT_EQ(intervals.front().end, 6);
 }
 
-// A closed last file always ends exactly on a boundary (its last event is
-// the ROTATE that closed it), so a nonzero truncatedBytes there is refused
-// rather than silently trimmed, unlike an "in use" file.
 TEST(StorageRecoveryTest, RefusesAClosedLastFileWithAnUnrecognizedTail) {
   TempDirectoryFixture fixture;
   std::vector<std::uint8_t> tail;
   AppendFullGroup(tail, 0, /*gno=*/1);
-  tail.push_back(0xAB);  // one stray byte past the last complete boundary
+  tail.push_back(0xAB);
 
   const auto path = fixture.Path("binlog.000001");
   const std::uint64_t headerLength =
@@ -285,13 +276,9 @@ TEST(StorageRecoveryTest, RefusesAClosedLastFileWithAnUnrecognizedTail) {
   EXPECT_FALSE(
       StorageRecovery::Recover(fixture.Directory(), catalog, state, error));
   EXPECT_FALSE(error.empty());
-  EXPECT_EQ(std::filesystem::file_size(path),
-            originalSize);  // refused before anything was touched
+  EXPECT_EQ(std::filesystem::file_size(path), originalSize);
 }
 
-// TransactionBoundaryTracker rejecting a fully-present event past a closed
-// file's last boundary is the same "unrecognized tail" shape as the
-// stray-byte test above, so it ends in a refusal here too.
 TEST(StorageRecoveryTest,
      RefusesAClosedLastFileWhereAnEventCrossesItsGroupsEnd) {
   TempDirectoryFixture fixture;
@@ -318,8 +305,7 @@ TEST(StorageRecoveryTest,
   EXPECT_FALSE(
       StorageRecovery::Recover(fixture.Directory(), catalog, state, error));
   EXPECT_FALSE(error.empty());
-  EXPECT_EQ(std::filesystem::file_size(path),
-            originalSize);  // refused before anything was touched
+  EXPECT_EQ(std::filesystem::file_size(path), originalSize);
 }
 
 TEST(StorageRecoveryTest, ScansAClosedLastFileWithoutTruncatingIt) {
@@ -327,7 +313,7 @@ TEST(StorageRecoveryTest, ScansAClosedLastFileWithoutTruncatingIt) {
   std::vector<std::uint8_t> tail;
   AppendFullGroup(tail, 0, /*gno=*/1);
   AppendFullGroup(tail, 125,
-                  /*gno=*/2);  // both groups complete - nothing to truncate
+                  /*gno=*/2);
 
   const auto path = fixture.Path("binlog.000001");
   const std::uint64_t headerLength =
@@ -348,19 +334,14 @@ TEST(StorageRecoveryTest, ScansAClosedLastFileWithoutTruncatingIt) {
 
   const Uuid zeroUuid{};
   const auto intervals = state.startSet.GetIntervals(GtidSource{zeroUuid, ""});
-  ASSERT_EQ(intervals.size(), 1u);  // both groups share the same (zeroed) UUID
-                                    // and merge into one interval
+  ASSERT_EQ(intervals.size(), 1u);
   EXPECT_EQ(intervals.front().start, 1);
   EXPECT_EQ(intervals.front().end, 3);
 
-  EXPECT_EQ(std::filesystem::file_size(path),
-            originalSize);                      // untouched on disk
-  EXPECT_EQ(catalog.At(0).size, originalSize);  // untouched in the catalog
+  EXPECT_EQ(std::filesystem::file_size(path), originalSize);
+  EXPECT_EQ(catalog.At(0).size, originalSize);
 }
 
-// A relay that lost its stream asks the same question Recover() answers at
-// start-up, and gets the same boundary - but the tail stays where it is:
-// the source sends those bytes again and storage compares them.
 TEST(StorageRecoveryTest, ResumePointReportsTheBoundaryAndTruncatesNothing) {
   TempDirectoryFixture fixture;
   std::vector<std::uint8_t> tail;
@@ -368,7 +349,7 @@ TEST(StorageRecoveryTest, ResumePointReportsTheBoundaryAndTruncatesNothing) {
   const std::uint32_t secondGroupStart =
       static_cast<std::uint32_t>(tail.size());
   AppendFullGroup(tail, secondGroupStart, /*gno=*/2);
-  tail.resize(secondGroupStart + 69 + 10);  // cut group 2 short, mid-Query
+  tail.resize(secondGroupStart + 69 + 10);
 
   const auto path = fixture.Path("binlog.000001");
   const std::uint64_t headerLength =
@@ -390,16 +371,15 @@ TEST(StorageRecoveryTest, ResumePointReportsTheBoundaryAndTruncatesNothing) {
 
   const Uuid zeroUuid{};
   const auto intervals = state.startSet.GetIntervals(GtidSource{zeroUuid, ""});
-  ASSERT_EQ(intervals.size(), 1u);  // only the first, fully-received group
+  ASSERT_EQ(intervals.size(), 1u);
   EXPECT_EQ(intervals.front().start, 1);
   EXPECT_EQ(intervals.front().end, 2);
 
-  EXPECT_EQ(std::filesystem::file_size(path), originalSize);  // left alone
+  EXPECT_EQ(std::filesystem::file_size(path), originalSize);
   ASSERT_EQ(catalog.Size(), 1u);
   EXPECT_EQ(catalog.At(0).size, originalSize);
 }
 
-// Nothing stored yet: the next dump starts where a first one would.
 TEST(StorageRecoveryTest, ResumePointReportsAnEmptyCatalogAsEmpty) {
   TempDirectoryFixture fixture;
   const StorageCatalog catalog;

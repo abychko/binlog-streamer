@@ -57,17 +57,17 @@ TEST(ByteSizeParserTest, LargestRepresentableExabytesParse) {
 }
 
 TEST(ByteSizeParserTest, OverflowIsRejected) {
-  ExpectFails("16E");  // 16 * 2^60 == 2^64, one past the representable maximum
+  ExpectFails("16E");
   ExpectFails("17E");
 }
 
 TEST(ByteSizeParserTest, RejectsMalformedInput) {
-  ExpectFails("1024");  // no suffix
-  ExpectFails("1.5G");  // fractional
-  ExpectFails("-1G");   // negative
-  ExpectFails("");      // empty
-  ExpectFails("1 G");   // embedded space
-  ExpectFails("1KB");   // extra letter
+  ExpectFails("1024");
+  ExpectFails("1.5G");
+  ExpectFails("-1G");
+  ExpectFails("");
+  ExpectFails("1 G");
+  ExpectFails("1KB");
 }
 
 }  // namespace

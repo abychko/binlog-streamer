@@ -572,7 +572,6 @@ TEST_F(StorageWriterTest, AnIdleWriterTakesPublishedBytesAtOnce) {
   writer.WakeForData();
   EXPECT_TRUE(Until([&] { return writer.BytesWritten() == 1; }));
 }
-// A writer woken for every publication makes one write(2) per group.
 TEST_F(StorageWriterTest, ABusyWriterGathersPublicationsIntoFewWrites) {
   StorageWriter writer(directory.Directory(), *cache, catalog);
   Create(writer, "binlog.000001");

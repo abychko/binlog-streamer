@@ -31,10 +31,9 @@ bool ErrPacketCodec::IsErrPacket(std::span<const std::uint8_t> payload) {
   return !payload.empty() && payload[0] == 0xFF;
 }
 
-// error_code(2), then '#' + sqlstate(5) when CLIENT_PROTOCOL_41 was
-// negotiated, then the message. A server refusing a connection before its
-// greeting has negotiated nothing and sends no marker; libmysql then keeps
-// the whole rest as the message (sql-common/client.cc, cli_safe_read).
+// error_code(2), then '#' + sqlstate(5) if CLIENT_PROTOCOL_41 was negotiated,
+// then the message. A server refusing the connection before its greeting sends
+// no marker (sql-common/client.cc, cli_safe_read).
 bool ErrPacketCodec::Parse(std::span<const std::uint8_t> payload,
                            ErrPacket &value, std::string &error) {
   if (!IsErrPacket(payload)) {
@@ -42,7 +41,7 @@ bool ErrPacketCodec::Parse(std::span<const std::uint8_t> payload,
     return false;
   }
   constexpr std::size_t SQL_STATE_LENGTH = 5;
-  constexpr std::size_t CODE_END = 1 + 2;  // header + error_code
+  constexpr std::size_t CODE_END = 1 + 2;
   constexpr std::size_t STATE_END = CODE_END + 1 + SQL_STATE_LENGTH;
   if (payload.size() < CODE_END) {
     error = "ERR packet too short";

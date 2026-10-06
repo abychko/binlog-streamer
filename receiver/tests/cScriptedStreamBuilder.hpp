@@ -23,9 +23,6 @@
 
 #pragma once
 
-// None of this wire encoding exists in production code, so tests build it
-// by hand.
-
 #include "binlog/hEventFlags.hpp"
 #include "binlog/hEventLimits.hpp"
 #include "protocol/cPacketFramer.hpp"
@@ -43,8 +40,6 @@ class ScriptedStreamBuilder {
   const std::vector<std::uint8_t> &Bytes() const { return m_bytes; }
   std::uint8_t SequenceId() const { return m_sequenceId; }
 
-  // Trailer is zero-filled: EventStreamReader strips checksumLength bytes
-  // but never verifies them.
   void PushEvent(std::uint8_t type, std::span<const std::uint8_t> body,
                  std::size_t checksumLength, std::uint32_t nextPosition = 0,
                  std::uint16_t flags = 0, std::uint32_t serverId = 1,
@@ -102,7 +97,6 @@ class ScriptedStreamBuilder {
               nextPosition);
   }
 
-  // E.g. code 1236, ER_SOURCE_FATAL_ERROR_READING_BINLOG.
   void PushErr(std::uint16_t code, const std::string &message,
                const std::string &sqlState = "HY000") {
     std::vector<std::uint8_t> payload;
@@ -114,8 +108,8 @@ class ScriptedStreamBuilder {
     PacketFramer::Encode(payload, m_sequenceId, m_bytes);
   }
 
-  // mysql_binlog_fetch()'s EOF: a packet shorter than 9 bytes is enough
-  // to disambiguate 0xFE from a length-encoded integer.
+  // mysql_binlog_fetch()'s EOF: a packet shorter than 9 bytes disambiguates
+  // 0xFE from a length-encoded integer.
   void PushEof() {
     PacketFramer::Encode(std::vector<std::uint8_t>{0xFE}, m_sequenceId,
                          m_bytes);
@@ -137,8 +131,6 @@ class ScriptedStreamBuilder {
     for (int i = 0; i < 8; ++i)
       out.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
   }
-  // A local lenenc encoder, not protocol::LengthEncodedInteger: keeps
-  // this test helper's only real dependency on PacketFramer itself.
   static void AppendLenenc(std::vector<std::uint8_t> &out,
                            std::uint64_t value) {
     if (value < 251) {

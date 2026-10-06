@@ -32,7 +32,6 @@
 namespace binlog_streamer {
 namespace {
 
-// Appends members one after another and puts the commas between them.
 class JsonObject {
  public:
   explicit JsonObject(std::string &out) : m_out(out) { m_out += '{'; }

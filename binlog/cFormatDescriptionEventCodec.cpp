@@ -33,23 +33,20 @@
 namespace binlog_streamer {
 namespace {
 
-// Byte offsets of the fixed prefix (percona-server dfc6d1f, binlog_event.h:
-// 429-445): binlog_version(2)+server_version(50)+created(4)+
-// common_header_len(1). post_header_len[] follows and isn't stored here.
+// Fixed prefix: binlog_version(2) + server_version(50) + created(4) +
+// common_header_len(1); post_header_len[] follows and is not stored here.
 constexpr std::size_t BINLOG_VERSION_OFFSET = 0;
 constexpr std::size_t SERVER_VERSION_OFFSET = 2;
-constexpr std::size_t SERVER_VERSION_LENGTH = 50;  // ST_SERVER_VER_LEN
+constexpr std::size_t SERVER_VERSION_LENGTH = 50;
 constexpr std::size_t CREATED_OFFSET =
     SERVER_VERSION_OFFSET + SERVER_VERSION_LENGTH;
 constexpr std::size_t COMMON_HEADER_LENGTH_OFFSET = CREATED_OFFSET + 4;
 constexpr std::size_t FIXED_PREFIX_LENGTH = COMMON_HEADER_LENGTH_OFFSET + 1;
-constexpr std::size_t CHECKSUM_ALGORITHM_DESCRIPTOR_LENGTH =
-    1;  // BINLOG_CHECKSUM_ALG_DESC_LEN
+constexpr std::size_t CHECKSUM_ALGORITHM_DESCRIPTOR_LENGTH = 1;
 constexpr std::size_t CHECKSUM_TRAILER_LENGTH =
     CHECKSUM_ALGORITHM_DESCRIPTOR_LENGTH + CHECKSUM_LENGTH;
 
-// Checksums were introduced in server version 5.6.1 (percona-server
-// dfc6d1f, binlog_event.cpp:31-34), folded into one base-256 number.
+// Checksums exist since server version 5.6.1, folded into one base-256 number.
 constexpr unsigned long CHECKSUM_VERSION_PRODUCT = (5UL * 256 + 6) * 256 + 1;
 
 std::uint32_t ReadLittleEndian(std::span<const std::uint8_t> data,
@@ -60,16 +57,15 @@ std::uint32_t ReadLittleEndian(std::span<const std::uint8_t> data,
   return value;
 }
 
-// server_version is a fixed 50-byte NUL-terminated buffer (percona-server
-// dfc6d1f, control_events.cpp:216-220), not 50 bytes of text.
+// server_version is a fixed 50-byte NUL-terminated buffer, not 50 bytes of
+// text.
 std::string ReadServerVersion(std::span<const std::uint8_t> data) {
   const auto nulAt = std::find(data.begin(), data.end(), std::uint8_t{0});
   return std::string(data.begin(), nulAt);
 }
 
-// Mirrors do_server_version_split()/version_product() (percona-server
-// dfc6d1f, binlog_event.h:192-244). An unparsable/out-of-range version
-// resolves to 0 - the source's own rule, which also reads as "pre-checksum".
+// As in the server, an unparsable or out-of-range version resolves to 0, which
+// also reads as "pre-checksum".
 unsigned long ComputeVersionProduct(const std::string &version) {
   unsigned char parts[3] = {0, 0, 0};
   const char *p = version.c_str();
@@ -92,9 +88,9 @@ unsigned long ComputeVersionProduct(const std::string &version) {
 std::string DescribeChecksumAlgorithm(std::uint8_t algorithm) {
   switch (algorithm) {
     case 0:
-      return "OFF";  // BINLOG_CHECKSUM_ALG_OFF
+      return "OFF";
     case 1:
-      return "CRC32";  // BINLOG_CHECKSUM_ALG_CRC32
+      return "CRC32";
     default:
       return "UNKNOWN(" + std::to_string(algorithm) + ")";
   }
@@ -124,10 +120,8 @@ bool FormatDescriptionEventCodec::Parse(std::span<const std::uint8_t> body,
     return false;
   }
 
-  // Mirrors the source's write/read gate: since 5.6.1 the checksum room is
-  // always appended regardless of the checksum setting, so this must be
-  // derived from serverVersion (percona-server dfc6d1f,
-  // binlog_event.cpp:130-159).
+  // Since 5.6.1 the checksum room is always appended, whatever the checksum
+  // setting, so this is derived from serverVersion.
   const bool hasChecksum =
       ComputeVersionProduct(parsed.serverVersion) >= CHECKSUM_VERSION_PRODUCT;
   if (hasChecksum) {
@@ -137,8 +131,7 @@ bool FormatDescriptionEventCodec::Parse(std::span<const std::uint8_t> body,
           "trailer that does not fit";
       return false;
     }
-    // Algorithm descriptor is the body's last byte before the checksum
-    // room, wherever post_header_len[] ends - no need to walk that array.
+    // The algorithm descriptor is the last body byte before the checksum room.
     parsed.checksumAlgorithm =
         DescribeChecksumAlgorithm(body[body.size() - CHECKSUM_TRAILER_LENGTH]);
   } else {
@@ -159,9 +152,9 @@ bool FormatDescriptionEventCodec::EqualForResume(
             ", incoming " + std::to_string(incomingEvent.size()) + ")";
     return false;
   }
-  // Common-Header's flags low byte (sEventHeader.hpp: "data[17]") - where
-  // LOG_EVENT_BINLOG_IN_USE_F lives, the one bit this comparison ignores.
-  // Absolute within the whole event, not relative like the offsets above.
+  // Low byte of the common header's flags, where LOG_EVENT_BINLOG_IN_USE_F
+  // lives, the one bit this comparison ignores. Absolute within the whole
+  // event.
   constexpr std::size_t FLAGS_OFFSET = 17;
   constexpr std::size_t CREATED_EVENT_OFFSET =
       EVENT_HEADER_LENGTH + CREATED_OFFSET;
@@ -181,9 +174,9 @@ bool FormatDescriptionEventCodec::EqualForResume(
       continue;
     }
     if (i >= CREATED_EVENT_OFFSET && i < CREATED_EVENT_OFFSET + 4)
-      continue;  // `created` - zeroed on resume, allowed to differ
+      continue;  // `created` is zeroed on resume and may differ
     if (i >= storedEvent.size() - checksumLength)
-      continue;  // trailing checksum - computed over `created`, differs with it
+      continue;  // the trailing checksum covers `created`, so it differs too
     if (storedEvent[i] != incomingEvent[i]) {
       error = "byte " + std::to_string(i) + " differs";
       return false;

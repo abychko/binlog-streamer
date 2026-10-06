@@ -29,9 +29,8 @@ namespace binlog_streamer {
 namespace {
 
 TEST(CachingSha2ScrambleTest, MatchesIndependentlyComputedReferenceValue) {
-  // Cross-checked against an independent Python implementation
-  // (hashlib.sha256, not OpenSSL): d1=sha256(pw); d2=sha256(d1);
-  // s1=sha256(d2+nonce); scramble=xor(d1,s1).
+  // Expected value cross-checked against an independent implementation (Python
+  // hashlib).
   std::array<std::uint8_t, 20> nonce{};
   for (std::size_t i = 0; i < nonce.size(); ++i)
     nonce[i] = static_cast<std::uint8_t>(i + 1);
@@ -46,8 +45,6 @@ TEST(CachingSha2ScrambleTest, MatchesIndependentlyComputedReferenceValue) {
 }
 
 TEST(CachingSha2ScrambleTest, DifferentNoncesProduceDifferentScrambles) {
-  // Guards against an implementation that ignores the nonce entirely
-  // (e.g. only hashing the password).
   std::array<std::uint8_t, 20> nonceA{};
   std::array<std::uint8_t, 20> nonceB{};
   for (std::size_t i = 0; i < nonceA.size(); ++i) {

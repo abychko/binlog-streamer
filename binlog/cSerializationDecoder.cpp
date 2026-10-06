@@ -28,17 +28,15 @@
 namespace binlog_streamer {
 namespace {
 
-constexpr std::uint64_t SERIALIZATION_FORMAT_VERSION =
-    1;  // serialization_format_version.h
+constexpr std::uint64_t SERIALIZATION_FORMAT_VERSION = 1;
 
 }  // namespace
 
 bool SerializationDecoder::ReadUnsigned(std::uint64_t &value) {
   if (m_position >= m_bytes.size()) return false;
   const std::uint8_t first = m_bytes[m_position];
-  // variable_length_integers.h, read_varlen_bytes_unsigned: 0xFF is the
-  // nine-byte form - std::countr_one(0xFF) is 8, so this never shifts a
-  // byte by more than its width.
+  // 0xFF is the nine-byte form; std::countr_one(0xFF) is 8, so a byte is never
+  // shifted by more than its width.
   const std::size_t byteCount =
       static_cast<std::size_t>(std::countr_one(first)) + 1;
   if (m_bytes.size() - m_position < byteCount) return false;
@@ -48,9 +46,8 @@ bool SerializationDecoder::ReadUnsigned(std::uint64_t &value) {
   for (std::size_t i = 1; i < byteCount; ++i)
     rest |= static_cast<std::uint64_t>(m_bytes[m_position + i])
             << (8 * (i - 1));
-  // The bits of the value the first byte did not hold continue in the
-  // rest, which therefore sits shifted by 8 - byteCount - except in the
-  // nine-byte form, where the rest is the whole 64-bit value.
+  // The value bits the first byte did not hold continue in the rest, shifted by
+  // 8 - byteCount; in the nine-byte form the rest is the whole 64-bit value.
   result |= byteCount == 9 ? rest : rest << (8 - byteCount);
   value = result;
   m_position += byteCount;
@@ -61,8 +58,7 @@ bool SerializationDecoder::ReadSigned(std::int64_t &value) {
   std::uint64_t encoded = 0;
   if (!ReadUnsigned(encoded)) return false;
   const std::uint64_t magnitude = encoded >> 1;
-  // (x ^ sign_mask) with sign_mask all ones is -(x + 1):
-  // read_varlen_bytes_signed.
+  // (x ^ sign_mask) with sign_mask all ones is -(x + 1).
   value = (encoded & 1) != 0 ? static_cast<std::int64_t>(~magnitude)
                              : static_cast<std::int64_t>(magnitude);
   return true;

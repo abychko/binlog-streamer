@@ -29,22 +29,16 @@
 
 namespace binlog_streamer {
 namespace {
-// Buffer growth per Read() call; not a hard I/O chunk size (Read() may deliver
-// less).
 constexpr std::size_t READ_GROWTH_SIZE = 8192;
-// Queued packets flush once this much has gathered: the size of a dump's
-// read from a stored file. Four times net_buffer_length's default, which cost
-// a replica catching up from disk a write per 16 KiB.
 constexpr std::size_t WRITE_GATHER_SIZE = 64 * 1024;
-// A buffer that grew past this for one large packet is let go after it.
 constexpr std::size_t WRITE_BUFFER_KEEP = 1024 * 1024;
 }  // namespace
 
 bool PacketChannel::ReadPacket(
     std::vector<std::uint8_t> &payload, std::string &error,
     std::optional<std::chrono::milliseconds> idleTimeout) {
-  // True only if nothing of the next packet is already buffered from a
-  // previous over-read; idleTimeout applies only to a genuinely fresh wait.
+  // idleTimeout applies only when no part of the next packet is already
+  // buffered.
   bool waitingForNewPacket = m_readOffset == m_readBuffer.size();
   for (;;) {
     const std::span<const std::uint8_t> pending(
@@ -52,14 +46,10 @@ bool PacketChannel::ReadPacket(
     const PacketDecodeResult measured =
         PacketFramer::Measure(pending, m_sequenceId, VerifySequence());
     if (measured.status == PacketDecodeStatus::Complete) {
-      // Decode() cannot disagree with the Complete verdict Measure()
-      // just reached, so this call pays for Decode()'s copy only once.
       const PacketDecodeResult decoded = PacketFramer::Decode(
           pending, m_sequenceId, payload, VerifySequence());
       m_readOffset += decoded.bytesConsumed;
       if (m_readOffset == m_readBuffer.size()) {
-        // Compact only once nothing unconsumed remains, to avoid a
-        // memmove per packet for callers reading several back to back.
         m_readBuffer.clear();
         m_readOffset = 0;
       }
@@ -82,8 +72,7 @@ bool PacketChannel::ReadPacket(
             ? *idleTimeout
             : m_options.readTimeout;
     if (!FillBuffer(readTimeout, error)) return false;
-    waitingForNewPacket =
-        false;  // idleTimeout, if any, applies to this call's first Read() only
+    waitingForNewPacket = false;
   }
 }
 
@@ -98,8 +87,6 @@ std::vector<std::uint8_t> PacketChannel::TakeUnread() {
 
 bool PacketChannel::FillBuffer(std::chrono::milliseconds readTimeout,
                                std::string &error) {
-  // Reads directly into the buffer's tail: grow first, read, then shrink
-  // to what was delivered - avoids a separate chunk-then-append copy.
   const std::size_t previousSize = m_readBuffer.size();
   m_readBuffer.resize(previousSize + READ_GROWTH_SIZE);
   std::size_t bytesRead = 0;
@@ -123,10 +110,9 @@ bool PacketChannel::FillBuffer(std::chrono::milliseconds readTimeout,
       error = "connection closed by " + std::string(m_options.peerName);
       return false;
     case ReadOutcome::Failed:
-      return false;  // error already set by Transport::Read
+      return false;
   }
-  return false;  // unreachable - keeps -Wall/-Wextra quiet about falling off a
-                 // switch covering every enumerator
+  return false;  // unreachable - keeps -Wall/-Wextra quiet
 }
 
 bool PacketChannel::WritePacket(std::span<const std::uint8_t> payload,

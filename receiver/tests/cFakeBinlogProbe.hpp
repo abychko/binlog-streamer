@@ -36,13 +36,9 @@ class FakeBinlogProbe : public BinlogProbe {
   std::map<std::string, ProbeResult> responsesByRequestedSetText;
   unsigned probeCallCount = 0;
 
-  // nullopt scripts a failure defaulting to TransientFailure;
-  // previousGtidsFailureByFileName overrides that for a specific outcome.
   std::map<std::string, std::optional<std::string>> previousGtidsTextByFileName;
   unsigned previousGtidsTextCallCount = 0;
 
-  // Checked before previousGtidsTextByFileName's nullopt shorthand, so a
-  // test can script a non-default SessionOutcome.
   std::map<std::string, SessionResult> previousGtidsFailureByFileName;
 
   ProbeResult Probe(const GtidSet &startSet) override {

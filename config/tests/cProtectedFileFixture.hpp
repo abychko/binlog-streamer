@@ -37,9 +37,6 @@
 
 namespace binlog_streamer::test {
 
-// RAII temporary directory for protected-file tests. mkdtemp() always
-// creates it with mode 0700; WriteFile() chmods files to 0640 so
-// DiskProtectedFileReader accepts them under the current user/group.
 class ProtectedFileFixture {
  public:
   ProtectedFileFixture() {
@@ -48,8 +45,8 @@ class ProtectedFileFixture {
             .string();
     std::vector<char> buffer(templatePath.begin(), templatePath.end());
     buffer.push_back('\0');
-    // mkdtemp() returns nullptr on failure; constructing a path from that
-    // would be undefined behavior.
+    // mkdtemp() returns nullptr on failure; building a path from it would be
+    // undefined behavior.
     const char *created = mkdtemp(buffer.data());
     if (created == nullptr)
       throw std::runtime_error(std::string("mkdtemp failed: ") +

@@ -59,9 +59,8 @@ void PacketFramer::Encode(std::span<const std::uint8_t> head,
                              std::max(offset, head.size()) - head.size()),
           body.begin() + static_cast<std::ptrdiff_t>(end - head.size()));
     offset = end;
-    // A chunk exactly MAX_PAYLOAD_PER_PACKET long is ambiguous on the wire
-    // (whole payload, or first sub-packet of a larger one), so another
-    // sub-packet always follows - zero-length if nothing remains.
+    // A chunk of exactly MAX_PAYLOAD_PER_PACKET is ambiguous on the wire, so
+    // another sub-packet always follows, zero-length if nothing remains.
   } while (chunkSize == MAX_PAYLOAD_PER_PACKET);
 }
 

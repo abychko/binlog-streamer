@@ -173,9 +173,8 @@ bool StorageEventSink::BeginRestartedStream(const EventHeader &header) {
 
 bool StorageEventSink::BeginWriting(const EventHeader &header,
                                     const StreamPosition &position) {
-  // Unlike the same event in AwaitingRotate, this one can arrive with a
-  // transaction still open: the stream before it ended inside one, and
-  // the source is about to send that transaction again.
+  // Unlike in AwaitingRotate, a transaction may still be open here: the
+  // previous stream ended inside it and the source resends it.
   if (m_restarted) return BeginRestartedStream(header);
 
   const bool isHeartbeat =
@@ -197,20 +196,16 @@ bool StorageEventSink::BeginWriting(const EventHeader &header,
   m_currentEventStartOffset = position.position;
 
   if (position.position < m_appendedPosition) {
-    // Only a resumed file has bytes on disk to read back: for a file this
-    // run created itself nothing was ever compared, and m_resumeFile is
-    // not open. The stream reader does not hand out such a position, so
-    // this is a refusal rather than a comparison.
+    // Only a resumed file has bytes to read back; for a file this run created
+    // there is nothing to compare, so this is a refusal.
     if (!m_resumeFile)
       return Fail(StorageFailure::Malformed,
                   "event position is behind what storage has written to " +
                       m_currentFileName + ", a file this run created itself");
 
-    // A resumed file's bytes must already be entirely on disk: recovery
-    // truncates it to a transaction boundary first, so straddling it means
-    // storage and the source have already diverged. The exception is the
-    // event a lost stream cut in half: it begins exactly where storage
-    // stops holding whole events, and its remainder is appended.
+    // A resumed file is fully on disk after recovery, so straddling its end
+    // means storage and the source diverged - except for an event cut in half
+    // by a lost stream, which starts where storage stops and is appended.
     const std::uint64_t claimedEnd = position.position + header.eventLength;
     const bool cutInHalf = position.position == m_completedPosition &&
                            m_completedPosition < m_appendedPosition;
@@ -229,8 +224,6 @@ bool StorageEventSink::BeginWriting(const EventHeader &header,
       m_pendingEventBytes.reserve(header.eventLength);
       m_currentAction = Action::CompareFormatDescription;
     } else {
-      // Streamed, not buffered whole: unlike the FDE, this can be up to
-      // MAX_EVENT_LENGTH.
       m_compareOffset = position.position;
       // Frozen here, because appending this event's own remainder moves
       // m_appendedPosition: a later chunk of it would otherwise be read
@@ -245,8 +238,6 @@ bool StorageEventSink::BeginWriting(const EventHeader &header,
 
   if (header.type == static_cast<std::uint8_t>(EventType::Rotate)) {
     if ((header.flags & EVENT_FLAG_ARTIFICIAL) != 0) {
-      // Streamed only to a relay that was already behind when the source
-      // moved on to the next file.
       if (m_boundaryTracker.InGroup())
         return Fail(StorageFailure::Malformed,
                     "artificial ROTATE interrupted an open transaction group");
@@ -312,9 +303,8 @@ bool StorageEventSink::OnEventBytes(std::span<const std::uint8_t> bytes) {
       return AppendBytes(bytes);
     }
     case Action::CompareStreamed: {
-      // No buffering: each chunk is read back from disk and compared
-      // right away, using m_compareOffset as its own separate cursor
-      // - m_appendedPosition never moves for a replay.
+      // Each chunk is read back and compared right away via m_compareOffset;
+      // m_appendedPosition never moves for a replay.
       auto incoming = bytes;
       if (m_compareOffset < m_compareLimit) {
         const auto compared = static_cast<std::size_t>(std::min<std::uint64_t>(
@@ -333,8 +323,6 @@ bool StorageEventSink::OnEventBytes(std::span<const std::uint8_t> bytes) {
         m_compareOffset += compared;
         incoming = incoming.subspan(compared);
       }
-      // Only an event cut in half by a lost stream reaches past what
-      // storage holds; every other one was refused in OnEventBegin().
       if (incoming.empty()) return true;
       return AppendBytes(incoming);
     }
@@ -363,9 +351,6 @@ bool StorageEventSink::OnEventEnd() {
     case Action::CompareFormatDescription:
       return EndCompareFormatDescription();
     case Action::CompareStreamed:
-      // An event cut in half by a lost stream had its second half
-      // appended just now, so it ends like any appended event; for every
-      // other one OnEventBytes() already compared every chunk.
       return m_straddled ? EndAppendDirect() : true;
   }
   return Fail(StorageFailure::Malformed, "unreachable storage action");
@@ -385,9 +370,6 @@ bool StorageEventSink::EndRotateAnnouncement() {
   if (m_restarted) {
     m_restarted = false;
     if (rotate.fileName == m_currentFileName) {
-      // The same file, still open: only the comparison needs a handle of
-      // its own to read it back. The position, the cached file and the
-      // transaction the lost stream ended inside stay as they were.
       const auto path = (m_dataDir / rotate.fileName).string();
       m_resumeFile.emplace();
       std::string openError;
@@ -398,10 +380,6 @@ bool StorageEventSink::EndRotateAnnouncement() {
       }
       return true;
     }
-    // Another file: the source moved on while the relay was away. What
-    // is open is closed below, the way a rotation closes it - which a
-    // file ending mid-transaction cannot be, since the source would then
-    // have had to send the rest of that transaction first.
     if (m_completedPosition < m_appendedPosition || m_boundaryTracker.InGroup())
       return Fail(StorageFailure::Malformed,
                   "the new stream begins at " + rotate.fileName + ", but " +
@@ -411,15 +389,13 @@ bool StorageEventSink::EndRotateAnnouncement() {
                       "storage stopped at");
   }
 
-  // An announcement naming the file already open would mean something
-  // else entirely.
   if (m_state == State::Writing && rotate.fileName == m_currentFileName)
     return Fail(StorageFailure::Malformed,
                 "unexpected artificial ROTATE while a file is still open");
 
-  // While this run holds a file open, the catalog's last record is that
-  // file; otherwise it is history an earlier run left behind, because
-  // StorageRecovery runs first.
+  // While this run holds a file open the catalog's last record is that file;
+  // otherwise it is history left by an earlier run (StorageRecovery runs
+  // first).
   const std::optional<StoredFileRecord> last = m_catalog.Last();
   const bool haveLastRecord = last.has_value();
   const StoredFileRecord lastRecord =
@@ -437,8 +413,6 @@ bool StorageEventSink::EndRotateAnnouncement() {
     }
     m_currentFileName = rotate.fileName;
     m_appendedPosition = lastRecord.size;
-    // Recovery has truncated the file to a transaction boundary, so what
-    // it holds ends on a whole event.
     m_completedPosition = m_appendedPosition;
     m_cache.BeginFile(m_currentFileName, m_appendedPosition);
     m_writer.PostOpenExisting(m_currentFileName);
@@ -513,8 +487,6 @@ bool StorageEventSink::CloseAbandonedFile(const StoredFileRecord &record,
 
 bool StorageEventSink::EndFormatDescription() {
   m_fdeBytes = std::move(m_pendingEventBytes);
-  // m_currentHeader still holds this event's own header here; the next
-  // OnEventBegin() call (for the PGE) is what overwrites it.
   m_fdeHeader = m_currentHeader;
   m_expectedPreviousGtidsOffset = 4 + m_fdeBytes.size();
   m_state = State::AwaitingPreviousGtids;
@@ -661,18 +633,12 @@ void StorageEventSink::RestartStream() {
   m_pendingEventBytes.clear();
   m_fdeBytes.clear();
   m_compareBytes.clear();
-  // Reopened by the announcement of the new stream, against the file
-  // that is open by then.
   m_resumeFile.reset();
   m_currentAction = Action::Ignore;
   m_straddled = false;
   m_restarted = m_state == State::Writing;
   if (m_restarted) return;
 
-  // No file of this sink's is open: either none ever was, a genuine
-  // rotation closed the last one, or the stream ended between a file's
-  // announcement and its header - of which nothing is kept, since the
-  // next stream sends the whole header again.
   m_state = State::AwaitingRotate;
   m_currentFileName.clear();
   m_expectedPreviousGtidsOffset = 0;

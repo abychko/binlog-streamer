@@ -27,14 +27,10 @@
 #include <vector>
 namespace binlog_streamer {
 struct PurgeResult {
-  std::vector<std::string>
-      purged;               // Removed from catalog and index, oldest first.
-  std::string warning;      // One line per unlink failure other than ENOENT.
-  bool spaceShort = false;  // Space limits were given and used > high or free <
-                            // min after selection.
-  std::uint64_t usedBytes =
-      0;  // Catalog total after selection, only when space limits were given.
-  std::uint64_t availableBytes =
-      0;  // Caller free bytes plus selected file sizes, only with space limits.
+  std::vector<std::string> purged;
+  std::string warning;
+  bool spaceShort = false;
+  std::uint64_t usedBytes = 0;
+  std::uint64_t availableBytes = 0;
 };
 }  // namespace binlog_streamer

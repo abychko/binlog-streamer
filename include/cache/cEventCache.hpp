@@ -43,7 +43,6 @@ struct EventCacheState;
 // run concurrently. stop and this object must outlive all operations.
 class EventCache {
  public:
-  // Without a window, automatic expiration is disabled.
   static std::optional<EventCache> Reserve(std::uint64_t maxSize,
                                            const std::atomic<bool> &stop,
                                            std::string &error);
@@ -66,33 +65,23 @@ class EventCache {
   EventCache(const EventCache &) = delete;
   EventCache &operator=(const EventCache &) = delete;
 
-  // Names are unique within an instance.
   void BeginFile(std::string name, std::uint64_t base);
   // NoSpace and Stopped leave all bytes, indices and counters unchanged.
   AppendOutcome Append(std::span<const std::uint8_t> bytes);
-  // stop/Abort cancel admission while waiting; oversized spans still
-  // return NoSpace immediately instead of waiting.
   AppendOutcome AppendOrWait(std::span<const std::uint8_t> bytes);
   void Abort();
-  // Must not call this from the handler or while holding its owner's
-  // lock: removal waits for in-flight calls, and the handler itself runs
-  // outside the index mutex.
+  // Must not be called from the handler or under its owner's lock: removal
+  // waits for in-flight calls.
   void SetSpaceWaitHandler(std::function<void()> handler);
   void EndFile();
   void MarkWritten(const std::string &file, std::uint64_t upTo);
   // One consumer only; returned bytes stay valid until MarkWritten
   // advances past them, so the cache must outlive the write.
   bool NextUnwritten(const std::string &file, WriteRange &range) const;
-  // Samples completed events under the index lock; the producer
-  // increments events only after its corresponding Append.
   WriteSnapshot SnapshotForWrite(
       const std::string &file, const std::atomic<std::uint64_t> &events) const;
-  // NotCached carries NOT_CACHED_ANYWHERE so callers can bound their disk
-  // read by their own catalog position instead.
   CacheReadResult Read(const std::string &file, std::uint64_t offset,
                        std::span<std::uint8_t> out) const;
-  // Evicts only the expired+written+unpinned FIFO prefix; a
-  // non-evictable entry stops the sweep.
   void EvictExpired(std::chrono::steady_clock::time_point now,
                     std::chrono::seconds window);
   CacheCounters Counters() const;

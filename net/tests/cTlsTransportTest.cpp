@@ -44,7 +44,6 @@ namespace {
 
 constexpr std::chrono::milliseconds TIMEOUT{5000};
 
-// Loopback TCP listener on an OS-assigned port (as in cTcpTransportTest).
 class LoopbackListener {
  public:
   LoopbackListener() {
@@ -91,16 +90,12 @@ TlsMaterial ServerMaterial() {
                      Certificates().serverKeyPem};
 }
 
-// What one side of a loopback TLS connection did: echo, or fail the
-// handshake, and what it saw.
 struct ServerResult {
   bool accepted = false;
   std::string error;
   std::vector<std::uint8_t> received;
 };
 
-// Accepts one connection, runs the TLS handshake with serverContext, reads
-// expectedBytes and writes them back, then closes.
 std::future<ServerResult> RunEchoServer(const LoopbackListener &listener,
                                         const TlsContext &serverContext,
                                         std::size_t expectedBytes) {
@@ -168,8 +163,6 @@ void Echoes(SslMode clientMode, const TlsMaterial &clientMaterial,
   ASSERT_TRUE(tls.Write(payload, TIMEOUT, error)) << error;
   EXPECT_EQ(ReadAll(tls, payloadSize, error), payload) << error;
 
-  // The server closed after echoing: the client sees the end of stream,
-  // not an error.
   std::uint8_t buffer[16];
   std::size_t bytesRead = 0;
   EXPECT_EQ(tls.Read(buffer, bytesRead, TIMEOUT, error), ReadOutcome::Closed)
@@ -237,7 +230,6 @@ TEST(TlsContextTest, AClientVerifyingTheChainNeedsACa) {
   EXPECT_EQ(context.mode(), SslMode::Required);
 }
 
-// Forwards to another transport, counting the writes.
 class CountingTransport final : public Transport {
  public:
   explicit CountingTransport(Transport &inner) : m_inner(inner) {}
@@ -367,8 +359,6 @@ TEST(TlsTransportTest, AcceptFeedsBytesTheCallerAlreadyReadOffTheSocket) {
     ServerResult result;
     TcpTransport tcp;
     if (!tcp.Accept(listener.Accept(), result.error)) return result;
-    // Take the first bytes of the client hello off the socket the way a
-    // read-ahead PacketChannel would, and hand them to Accept().
     std::uint8_t first[5];
     std::size_t bytesRead = 0;
     while (bytesRead < sizeof(first)) {

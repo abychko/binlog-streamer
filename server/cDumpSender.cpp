@@ -45,23 +45,14 @@ namespace binlog_streamer {
 
 namespace {
 
-constexpr std::uint64_t FIRST_EVENT_OFFSET =
-    4;  // right after the file's magic number
+constexpr std::uint64_t FIRST_EVENT_OFFSET = 4;
 constexpr std::size_t FLAGS_OFFSET = 17;
-// Format_description body: binlog version (2), server version (50), then
-// the creation time.
 constexpr std::size_t CREATED_OFFSET = EVENT_HEADER_LENGTH + 2 + 50;
 constexpr std::chrono::milliseconds WAIT_STEP{1000};
 constexpr std::size_t WINDOW_SIZE = 64 * 1024;
-// An event buffer that grew past this for a large event is let go once the
-// dump catches up.
 constexpr std::size_t EVENT_BUFFER_KEEP = 1024 * 1024;
-// The OK marker every event packet of a dump starts with.
 constexpr std::uint8_t EVENT_PACKET_MARKER[] = {0x00};
 
-// The events that decide whether what follows them is skipped: a GTID by
-// whether the replica has it, the others by standing outside any
-// transaction.
 bool DecidesSkipping(std::uint8_t type) {
   switch (static_cast<EventType>(type)) {
     case EventType::Gtid:
@@ -158,9 +149,8 @@ DumpSender::ReadStatus DumpSender::PeekEvent(const FileCursor &cursor,
   const ReadStatus status =
       ReadHeader(cursor, offset, headerBytes, header, error);
   if (status != ReadStatus::Event) return status;
-  // The window, holding the header now, walks on to the event's last byte.
-  // Reading past what may be read right now is an error, so it steps from
-  // its own end rather than jumping there.
+  // Reading past what may be read right now is an error, so the window steps on
+  // from its own end instead of jumping to the event's last byte.
   const std::uint64_t last = offset + header.eventLength - 1;
   while (last >= m_windowOffset + m_windowSize) {
     std::uint8_t byte = 0;
@@ -195,15 +185,12 @@ std::size_t DumpSender::ReadAhead(const FileCursor &cursor,
 bool DumpSender::SendEvent(std::span<const std::uint8_t> event,
                            std::string &error) {
   m_lastSent = std::chrono::steady_clock::now();
-  // Events go out together until there is nothing more to read, when
-  // Send() flushes them before it waits.
   return m_channel.QueuePacket(EVENT_PACKET_MARKER, event, error);
 }
 
 bool DumpSender::SendRotate(const std::string &fileName, std::string &error) {
-  // Rotate_log_event as Binlog_sender::fake_rotate_event() builds it: no
-  // timestamp, no position of its own, flagged artificial, and pointing
-  // at the first event of the file.
+  // As Binlog_sender::fake_rotate_event(): no timestamp or position, flagged
+  // artificial, pointing at the file's first event.
   const std::size_t length = EVENT_HEADER_LENGTH + 8 + fileName.size() +
                              (m_eventChecksum ? CHECKSUM_LENGTH : 0);
   std::vector<std::uint8_t> event;
@@ -225,9 +212,9 @@ bool DumpSender::SendRotate(const std::string &fileName, std::string &error) {
 
 bool DumpSender::SendHeartbeat(const std::string &fileName,
                                std::uint64_t position, std::string &error) {
-  // Binlog_sender::send_heartbeat_event(): no timestamp, no flags, the
-  // header's position cut to 32 bits. The first form carries the file
-  // name alone; the second adds the full position as tagged fields.
+  // As Binlog_sender::send_heartbeat_event(): no timestamp or flags, header
+  // position cut to 32 bits; the second form adds the full position as tagged
+  // fields.
   std::vector<std::uint8_t> body;
   if (m_options.heartbeatV2) {
     LengthEncodedInteger::Encode(1, body);
@@ -281,16 +268,15 @@ bool DumpSender::ReplicaHas(const GtidSet &replicaSet,
   const bool parsed =
       tagged ? GtidEventCodec::ParseTagged(body, checksumLength, gtid, error)
              : GtidEventCodec::Parse(body, checksumLength, gtid, error);
-  if (!parsed)
-    return false;  // an event that cannot be read is sent, not dropped
+  if (!parsed) return false;
   return replicaSet.Contains(GtidSource{gtid.uuid, gtid.tag}, gtid.gno);
 }
 
 void DumpSender::PrepareFormatDescription(std::span<std::uint8_t> event,
                                           bool zeroCreated) {
   // A source computes this event's checksum with the flag already clear
-  // (Log_event_footer::event_checksum_test() masks it), so clearing it
-  // needs no new checksum.
+  // (Log_event_footer::event_checksum_test() masks it), so clearing it needs no
+  // new checksum.
   event[FLAGS_OFFSET] = static_cast<std::uint8_t>(event[FLAGS_OFFSET] &
                                                   ~EVENT_FLAG_BINLOG_IN_USE);
   if (!zeroCreated || event.size() < CREATED_OFFSET + 4) return;
@@ -323,8 +309,8 @@ bool DumpSender::ShouldStop(DumpEnd &end) const {
 DumpEnd DumpSender::Fail(DumpEnd end, const std::string &message) {
   end.kind = DumpEndKind::StorageFailure;
   end.message = message;
-  // ER_SOURCE_FATAL_ERROR_READING_BINLOG, as a source reports a file it
-  // cannot read.
+  // ER_SOURCE_FATAL_ERROR_READING_BINLOG, as a source reports a file it cannot
+  // read.
   ErrPacket err;
   err.errorCode = 1236;
   err.sqlState = "HY000";
@@ -340,8 +326,7 @@ DumpEnd DumpSender::Run(std::unique_ptr<FileCursor> cursor,
                         const GtidSet &replicaSet) {
   DumpEnd end = Send(std::move(cursor), replicaSet);
   std::string error;
-  m_channel.Flush(
-      error);  // whatever the end, what was queued before it goes out
+  m_channel.Flush(error);
   return end;
 }
 
@@ -352,8 +337,6 @@ DumpEnd DumpSender::Send(std::unique_ptr<FileCursor> cursor,
   m_eventChecksum = m_options.checksum;
   std::string error;
   bool startFile = true;
-  // When the dump caught up with something queued: the linger counts from
-  // there.
   std::optional<std::chrono::steady_clock::time_point> lingerSince;
   for (;;) {
     const std::string fileName = cursor->FileName();
@@ -369,10 +352,9 @@ DumpEnd DumpSender::Send(std::unique_ptr<FileCursor> cursor,
     ByteBuffer event;
     ByteBuffer lookahead;
     int idleRounds = 0;
-    // Binlog_sender::send_events(): inside a transaction the replica already
-    // has, every event is skipped until the next GTID says otherwise. A
-    // heartbeat stands in for what was skipped, so the replica can resume
-    // right.
+    // As Binlog_sender::send_events(): inside a transaction the replica already
+    // has, every event is skipped until the next GTID; a heartbeat stands in
+    // for what was skipped so the replica can resume.
     bool skipping = false;
     std::uint64_t heartbeatOwedAt = 0;
     std::size_t fileChecksumLength = 0;
@@ -382,8 +364,6 @@ DumpEnd DumpSender::Send(std::unique_ptr<FileCursor> cursor,
       heartbeatOwedAt = 0;
       return SendHeartbeat(fileName, position, error);
     };
-    // A skipped event is one the replica already has: it stands past it as
-    // if it had been sent.
     auto passOver = [&](std::uint64_t length, std::uint32_t timestamp) {
       ++end.skipped;
       offset += length;
@@ -409,8 +389,6 @@ DumpEnd DumpSender::Send(std::unique_ptr<FileCursor> cursor,
         event.swap(lookahead);
         lookahead.clear();
       } else if (skipping) {
-        // Inside a transaction the replica has, only an event that can end
-        // the skip is read whole; the rest are passed over by their header.
         EventHeader header;
         status = PeekEvent(*cursor, offset, header, error);
         if (status == ReadStatus::Event && !DecidesSkipping(header.type)) {
@@ -433,10 +411,9 @@ DumpEnd DumpSender::Send(std::unique_ptr<FileCursor> cursor,
             m_reader.Next(*cursor, offset, next, error);
         if (outcome == NextFileOutcome::Failed)
           return Fail(end, "moving on from " + fileName + ": " + error);
-        // Only at the live end of the history, one wait per linger rather
-        // than one per event: what arrives meanwhile goes in the same
-        // write. A closed file is followed without a pause, and a queued
-        // heartbeat is not held back.
+        // One wait per linger at the live end, not one per event, so what
+        // arrives meanwhile goes in the same write; a closed file is followed
+        // without a pause and a queued heartbeat is not held back.
         if (outcome != NextFileOutcome::Found &&
             m_options.sendLinger.count() > 0 && !m_options.nonBlocking &&
             m_channel.HasQueued() && !m_heartbeatQueued) {
@@ -471,12 +448,8 @@ DumpEnd DumpSender::Send(std::unique_ptr<FileCursor> cursor,
             PublishedPosition{fileName, offset}, WAIT_STEP,
             m_options.sendLinger.count() > 0 ? WaitStyle::Block
                                              : WaitStyle::PollFirst);
-        // Published moved but nothing is readable and no next file
-        // yet: this file is about to be closed.
         const bool stillNothing =
             waited == WaitOutcome::Advanced && ++idleRounds > 1;
-        // Nothing to send for a heartbeat period: tell the replica
-        // the connection is alive; no limit on how long this continues.
         if ((waited == WaitOutcome::TimedOut || stillNothing) &&
             HeartbeatDue() && !SendHeartbeat(fileName, offset, error)) {
           return replicaGone("sending a heartbeat");
@@ -489,9 +462,8 @@ DumpEnd DumpSender::Send(std::unique_ptr<FileCursor> cursor,
 
       const std::uint64_t eventLength = event.size();
       if (event[4] == static_cast<std::uint8_t>(EventType::FormatDescription)) {
-        // Whether the replica already holds part of this file shows
-        // in the following Previous_gtids event: it does when it
-        // has anything beyond them.
+        // Whether the replica already holds part of this file shows in the
+        // following Previous_gtids event.
         bool zeroCreated = false;
         if (startFile &&
             ReadEvent(*cursor, offset + eventLength, lookahead, error) ==
@@ -531,9 +503,9 @@ DumpEnd DumpSender::Send(std::unique_ptr<FileCursor> cursor,
                 ? CHECKSUM_LENGTH
                 : 0;
         // From here on the relay's own events carry this file's checksum
-        // algorithm, whatever the replica asked for - Binlog_sender takes it
-        // from each file's Format_description; a client that asked for none
-        // would otherwise cut four bytes off a file name.
+        // algorithm, whatever the replica asked for (as Binlog_sender does);
+        // otherwise a client that asked for none would cut four bytes off a
+        // file name.
         m_eventChecksum = fileChecksumLength != 0;
       }
 

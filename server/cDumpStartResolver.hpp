@@ -31,11 +31,9 @@
 
 namespace binlog_streamer {
 
-// Decides where a replica's dump starts, following the checks a MySQL
-// source runs first: the replica may not hold GTIDs of this server's own
-// UUID that this server never issued, nor need transactions before the first
-// stored file. The requested file name is ignored, as under GTID
-// auto-positioning.
+// Follows the checks a MySQL source runs first: the replica may not hold GTIDs
+// of this server's own UUID, nor need transactions before the first stored
+// file; the requested file name is ignored, as under GTID auto-positioning.
 class DumpStartResolver {
  public:
   static DumpStart Resolve(const BinlogDumpGtidCommand &command,

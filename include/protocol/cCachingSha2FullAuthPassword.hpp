@@ -33,15 +33,11 @@
 
 namespace binlog_streamer {
 
-// password + trailing NUL, XOR'd cyclically with the nonce, then
-// RSA-OAEP-encrypted - reordering any step breaks compatibility with the
-// real server.
+// password + NUL, XORed cyclically with the nonce, then RSA-OAEP encrypted.
 class CachingSha2FullAuthPassword {
  public:
-  // nonce must be the same combined auth-plugin-data
-  // CachingSha2Scramble::Compute uses for the fast path. Fails when the
-  // password exceeds this key's RSA-OAEP capacity (key size minus 42
-  // bytes of fixed OAEP/SHA-1 overhead).
+  // Fails when the password exceeds the key's RSA-OAEP capacity (key size minus
+  // 42 bytes).
   static bool Encrypt(std::string_view password,
                       std::span<const std::uint8_t, SCRAMBLE_LENGTH> nonce,
                       const RsaPublicKey &publicKey,

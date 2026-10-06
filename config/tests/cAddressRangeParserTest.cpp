@@ -72,7 +72,7 @@ void ExpectRangeFails(std::string_view text) {
 
 TEST(AddressRangeParserTest, ParsesPlainAddresses) {
   ExpectAddressParses("10.0.1.15", MakeIpv4(10, 0, 1, 15));
-  ExpectRangeParses("10.0.1.15", MakeIpv4(10, 0, 1, 15), 32);  // implicit /32
+  ExpectRangeParses("10.0.1.15", MakeIpv4(10, 0, 1, 15), 32);
   IpAddress documentation{AddressFamily::Ipv6, {}};
   documentation.bytes = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
                          0,    0,    0,    0,    0, 0, 0, 1};
@@ -106,13 +106,11 @@ TEST(AddressRangeParserTest, RejectsHostNamesAndZoneIdentifiers) {
   ExpectAddressFails("host.example");
   ExpectAddressFails("10.0.1.%");
   ExpectAddressFails("");
-  ExpectAddressFails("fe80::1%en0");  // zone identifiers are not addresses
-                                      // configuration accepts
+  ExpectAddressFails("fe80::1%en0");
 }
 
 TEST(AddressRangeParserTest, RejectsLeadingZeroOctets) {
-  ExpectAddressFails(
-      "010.0.0.1");  // macOS inet_pton accepts this; the pre-check rejects it
+  ExpectAddressFails("010.0.0.1");
 }
 
 }  // namespace

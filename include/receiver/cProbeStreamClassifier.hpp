@@ -30,8 +30,7 @@ namespace binlog_streamer {
 
 class ProbeStreamClassifier {
  public:
-  // Reached only for a non-success reason. StoppedBySink here does NOT
-  // mean success - it means the sink stopped before ever observing
+  // StoppedBySink here is not success: the sink stopped before observing
   // FORMAT_DESCRIPTION_EVENT.
   static SessionResult Classify(const StreamResult &streamResult);
 };

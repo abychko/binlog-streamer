@@ -30,8 +30,6 @@
 
 namespace binlog_streamer {
 
-// Every algorithm the `compression` key accepts, named as MySQL names it
-// (CompressionAlgorithmName).
 inline constexpr std::array<std::pair<std::string_view, CompressionAlgorithm>,
                             3>
     COMPRESSION_NAMES{{{CompressionAlgorithmName(CompressionAlgorithm::None),

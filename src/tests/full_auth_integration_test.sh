@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Usage: full_auth_integration_test.sh <path-to-binary>
-# CTest driver for caching_sha2_password full authentication against a live
-# source. Skipped under the same conditions as source_integration_test.sh,
-# plus when BINLOG_STREAMER_TEST_ADMIN_MYSQL is unset.
+# Skipped like source_integration_test.sh, and when
+# BINLOG_STREAMER_TEST_ADMIN_MYSQL is unset.
 set -u
 
 BINARY="${1:?usage: full_auth_integration_test.sh <path-to-binary>}"
@@ -31,12 +30,11 @@ if [ ! -e "$SOURCE_YML" ]; then
     exit 1
 fi
 
-# Expanded unquoted deliberately: BINLOG_STREAMER_TEST_ADMIN_MYSQL is a full
-# command line (e.g. "mysql -uroot") and may itself carry flags.
+# Unquoted deliberately: BINLOG_STREAMER_TEST_ADMIN_MYSQL is a command line that
+# may carry flags.
 # shellcheck disable=SC2206
 ADMIN=( $BINLOG_STREAMER_TEST_ADMIN_MYSQL )
 
-# Sets DUMP_STARTED/EXITED/EXIT_CODE as globals, mirroring source_integration_test.sh.
 wait_for_dump_then_stop() {
     local STDERR_LOG="$1"
     local PID="$2"
@@ -47,7 +45,7 @@ wait_for_dump_then_stop() {
             break
         fi
         if ! kill -0 "$PID" 2>/dev/null; then
-            break # exited before reaching dump - reported by the caller
+            break
         fi
         sleep 0.1
     done
@@ -71,7 +69,6 @@ wait_for_dump_then_stop() {
     return 0
 }
 
-# server_id ($2) must be distinct per scenario sharing this source in one ctest run.
 write_settings_yml() {
     local DIR="$1"
     local SERVER_ID="$2"
@@ -85,7 +82,6 @@ storage:
   retention:
     policy: age
     period: 30d
-  # Keep the test independent of the host file-system free space.
   disk:
     max_size: 2T
     purge_high_watermark: 1900G
@@ -100,13 +96,15 @@ SETTINGS
     chmod 640 "$DIR/settings.yml"
 }
 
-# The key is a SHOW STATUS value, not a secret: safe to read via the admin client.
+# The key is a SHOW STATUS value, not a secret: safe to read via the admin
+# client.
 fetch_source_public_key() {
     "${ADMIN[@]}" -N --raw -e "SHOW STATUS LIKE 'Caching_sha2_password_rsa_public_key'" |
         sed '1s/^[^\t]*\t//' > "$1"
 }
 
-# On failure, RELAY_PID is left set on purpose so cleanup_current can still reach it.
+# On failure, RELAY_PID is left set on purpose so cleanup_current can still
+# reach it.
 run_relay_to_dump_and_stop() {
     local DIR="$1"
     STDERR_LOG="$(mktemp)"
@@ -119,8 +117,6 @@ run_relay_to_dump_and_stop() {
     return 0
 }
 
-# Checks kill -0 before clearing RELAY_PID, to still reach a relay left
-# alive by a failed wait_for_dump_then_stop, not just ones that already exited.
 cleanup_current() {
     if [ -n "${RELAY_PID:-}" ] && kill -0 "$RELAY_PID" 2>/dev/null; then
         kill -KILL "$RELAY_PID" 2>/dev/null
@@ -133,9 +129,8 @@ cleanup_current() {
     STDERR_LOG=""
 }
 
-# Reconnects through the relay binary, not the admin client, so no password
-# ends up on the command line. Safe to call whether or not the hash is
-# already cached: the server only asks for the key when it needs it.
+# Reconnects through the relay binary, not the admin client, so no password ends
+# up on the command line.
 restore_source_auth_cache() {
     WORKDIR="$(mktemp -d)"
     chmod 700 "$WORKDIR"
@@ -172,9 +167,9 @@ restore_source_auth_cache() {
     return 0
 }
 
-# Single EXIT trap, shared by every scenario (a second `trap ... EXIT` would
-# silently replace it): always repopulates the auth cache, since scenario C
-# empties it deliberately and an earlier FATAL exit could too.
+# Single EXIT trap, shared by every scenario (a second one would silently
+# replace it): always repopulates the auth cache, since scenario C empties it
+# deliberately.
 final_exit() {
     local RC=$?
     cleanup_current
@@ -270,7 +265,7 @@ STDERR_LOG="$(mktemp)"
 "$BINARY" --config "$WORKDIR/settings.yml" >/dev/null 2>"$STDERR_LOG" &
 RELAY_PID=$!
 
-# SIGTERM the moment the refusal line shows up; don't wait for the retry loop to exhaust.
+# SIGTERM as soon as the refusal line shows up; don't wait for the retry loop.
 REFUSED=0
 for _ in $(seq 1 300); do
     if grep -q "Authentication requires secure connection." "$STDERR_LOG" 2>/dev/null; then
@@ -278,7 +273,7 @@ for _ in $(seq 1 300); do
         break
     fi
     if ! kill -0 "$RELAY_PID" 2>/dev/null; then
-        break # exited before ever refusing - reported below
+        break
     fi
     sleep 0.1
 done

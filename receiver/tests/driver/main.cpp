@@ -21,13 +21,10 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-// Test-only tool for StreamIntegrationTest's byte-exact comparison against
-// the source's own binlog; not part of the product build.
-
 #include "cFileEventSink.hpp"
 #include "cStreamDriver.hpp"
 
-#include "cSourceConfigLoader.hpp"  // config/'s own internal header - see this target's CMakeLists.txt
+#include "cSourceConfigLoader.hpp"
 #include "config/cConfigErrorPrinter.hpp"
 #include "config/cDiskProtectedFileReader.hpp"
 
@@ -47,8 +44,7 @@ namespace {
 
 std::atomic<bool> g_stopRequested{false};
 
-// No-op: only needed to make an in-progress blocking read return EINTR
-// (self-inflicted via alarm(), same pattern src/main.cpp uses for signals).
+// No-op: only makes a blocking read return EINTR (self-inflicted via alarm()).
 void HandleAlarm(int) { g_stopRequested.store(true); }
 
 std::optional<std::string_view> FlagValue(std::string_view arg,
@@ -59,8 +55,8 @@ std::optional<std::string_view> FlagValue(std::string_view arg,
   return arg.substr(flag.size() + 1);
 }
 
-// Files this tool reads belong to whoever runs it - no packaged,
-// root-owned deployment to check ownership against, unlike the built relay.
+// Files this tool reads belong to whoever runs it; there is no packaged,
+// root-owned deployment to check ownership against.
 std::string EffectiveUserName() {
   const auto *entry = getpwuid(geteuid());
   return entry != nullptr ? entry->pw_name : std::string();
@@ -138,7 +134,7 @@ int main(int argc, char *argv[]) {
     struct sigaction action{};
     action.sa_handler = HandleAlarm;
     sigemptyset(&action.sa_mask);
-    action.sa_flags = 0;  // deliberately no SA_RESTART - see cTcpTransport.cpp
+    action.sa_flags = 0;  // no SA_RESTART: a blocked read must return EINTR
     sigaction(SIGALRM, &action, nullptr);
     alarm(static_cast<unsigned>(maxSeconds));
   }

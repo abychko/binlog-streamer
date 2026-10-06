@@ -32,8 +32,6 @@
 
 namespace binlog_streamer {
 
-// One connected replica, from login to disconnect. Handed to the
-// connection's thread, which drives Progress() while its dump runs.
 class ReplicaRegistration {
  public:
   explicit ReplicaRegistration(ReplicaFacts facts);
@@ -44,7 +42,6 @@ class ReplicaRegistration {
   const StreamProgress &Progress() const { return m_progress; }
   void SetDumping(bool dumping) { m_dumping.store(dumping); }
   bool Dumping() const { return m_dumping.load(); }
-  // report_host from COM_REGISTER_SLAVE, which comes after the login.
   void SetReportHost(std::string host);
   std::string ReportHost() const;
 

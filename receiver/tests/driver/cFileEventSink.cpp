@@ -39,9 +39,8 @@ bool IsHeartbeat(std::uint8_t type) {
          type == static_cast<std::uint8_t>(EventType::HeartbeatV2);
 }
 
-// Both sit at an offset that never aligns with a resumed dump's own range;
-// FDE also never matches the source file's copy (IN_USE cleared on the
-// wire, set on disk, sql/rpl_binlog_sender.cc).
+// Offsets that never align with a resumed dump's range; an FDE also never
+// matches the source's copy (IN_USE is cleared on the wire, set on disk).
 bool IsAlwaysExcludedPreamble(std::uint8_t type) {
   return type == static_cast<std::uint8_t>(EventType::FormatDescription) ||
          type == static_cast<std::uint8_t>(EventType::PreviousGtids);
@@ -57,8 +56,6 @@ FileEventSink::FileEventSink(std::ostream &sinkStream,
 
 bool FileEventSink::OnEventBegin(const EventHeader &header,
                                  const StreamPosition &position) {
-  // Checked before this event is processed, not after: this lets the
-  // driver stop exactly at a transaction boundary, not mid-write.
   const bool gtidTargetSet = m_stopAfterGtidEvents > 0;
   const bool heartbeatTargetSet = m_waitHeartbeats > 0;
   if ((gtidTargetSet || heartbeatTargetSet) &&
@@ -80,7 +77,6 @@ bool FileEventSink::OnEventBegin(const EventHeader &header,
 
   if (m_writeCurrentEvent && !m_hasFirstWritten) {
     m_firstWrittenFileName = position.fileName;
-    // From the header's own fields, not this reader's position-tracking.
     m_firstWrittenOffset = header.nextPosition - header.eventLength;
     m_hasFirstWritten = true;
   }
@@ -91,8 +87,7 @@ bool FileEventSink::OnEventBytes(std::span<const std::uint8_t> bytes) {
   if (!m_writeCurrentEvent) return true;
   m_sinkStream.write(reinterpret_cast<const char *>(bytes.data()),
                      static_cast<std::streamsize>(bytes.size()));
-  return static_cast<bool>(
-      m_sinkStream);  // false (stop) if the write itself failed, e.g. disk full
+  return static_cast<bool>(m_sinkStream);
 }
 
 bool FileEventSink::OnEventEnd() {

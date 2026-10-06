@@ -71,7 +71,7 @@ TEST(HandshakeResponse41CodecTest, EncodesFixedHeaderAndUsername) {
   EXPECT_EQ(out[pos], 0);
   ++pos;
 
-  EXPECT_EQ(out[pos], 4);  // auth response length prefix (< 251, single byte)
+  EXPECT_EQ(out[pos], 4);
   ++pos;
   EXPECT_EQ((std::vector<std::uint8_t>(
                 out.begin() + static_cast<std::ptrdiff_t>(pos),
@@ -85,13 +85,12 @@ TEST(HandshakeResponse41CodecTest, EncodesFixedHeaderAndUsername) {
   pos += value.authPluginName.size();
   EXPECT_EQ(out[pos], 0);
   ++pos;
-  EXPECT_EQ(
-      pos, out.size());  // no connection attrs: nothing follows the plugin name
+  EXPECT_EQ(pos, out.size());
 }
 
 TEST(HandshakeResponse41CodecTest, OmitsPluginNameWithoutCapability) {
   HandshakeResponse41 value;
-  value.capabilities = CLIENT_PROTOCOL_41;  // no CLIENT_PLUGIN_AUTH
+  value.capabilities = CLIENT_PROTOCOL_41;
   value.username = "u";
   value.authResponse = {};
   value.authPluginName = "should_not_appear";
@@ -99,10 +98,8 @@ TEST(HandshakeResponse41CodecTest, OmitsPluginNameWithoutCapability) {
   std::vector<std::uint8_t> out;
   HandshakeResponse41Codec::Encode(value, out);
 
-  // 32 (header) + "u"+NUL (2) + auth response length prefix 0 (1 byte, empty)
   ASSERT_EQ(out.size(), 32u + 2u + 1u);
-  EXPECT_EQ(out.back(),
-            0);  // the auth response length prefix, not a plugin name byte
+  EXPECT_EQ(out.back(), 0);
 }
 
 TEST(HandshakeResponse41CodecTest,
@@ -115,11 +112,9 @@ TEST(HandshakeResponse41CodecTest,
   std::vector<std::uint8_t> out;
   HandshakeResponse41Codec::Encode(value, out);
 
-  // 32 (header) + "u"+NUL (2) + auth response prefix 0 (1) + attrs total-length
-  // prefix (1) + "k"(2) + "v"(2)
   ASSERT_EQ(out.size(), 32u + 2u + 1u + 1u + 2u + 2u);
   const std::size_t attrsStart = 32 + 2 + 1;
-  EXPECT_EQ(out[attrsStart], 4);  // total length: 1(len)+1('k') + 1(len)+1('v')
+  EXPECT_EQ(out[attrsStart], 4);
   EXPECT_EQ(out[attrsStart + 1], 1);
   EXPECT_EQ(out[attrsStart + 2], 'k');
   EXPECT_EQ(out[attrsStart + 3], 1);
@@ -136,7 +131,6 @@ std::vector<std::uint8_t> HexToBytes(std::string_view hex) {
   return bytes;
 }
 
-// os_user replaced with the equally long "testuser".
 std::vector<std::uint8_t> RealHandshakeResponse41Payload() {
   return HexToBytes(
       "85a2bf1900000001080000000000000000000000000000000000000000000000"
@@ -148,9 +142,6 @@ std::vector<std::uint8_t> RealHandshakeResponse41Payload() {
       "65720874657374757365720c70726f6772616d5f6e616d65056d7973716c");
 }
 
-// The same client and credentials; differences: the CLIENT_CONNECT_WITH_DB
-// bit, the database name between the auth response and the plugin name,
-// and the client's pid.
 std::vector<std::uint8_t> RealHandshakeResponse41PayloadWithDatabase() {
   return HexToBytes(
       "8da2bf1900000001080000000000000000000000000000000000000000000000"
@@ -163,8 +154,6 @@ std::vector<std::uint8_t> RealHandshakeResponse41PayloadWithDatabase() {
       "616d65056d7973716c");
 }
 
-// The nonce of the replayed greeting: its auth-plugin-data without the
-// trailing 0x00.
 constexpr std::array<std::uint8_t, SCRAMBLE_LENGTH> REPLAYED_GREETING_NONCE = {
     0x6d, 0x6a, 0x4f, 0x4b, 0x4b, 0x46, 0x3a, 0x3c, 0x44, 0x26,
     0x36, 0x30, 0x73, 0x03, 0x21, 0x32, 0x76, 0x7b, 0x11, 0x4f};
@@ -197,8 +186,6 @@ TEST(HandshakeResponse41CodecTest, ParsesRealClientReply) {
 
 TEST(HandshakeResponse41CodecTest,
      RealClientAuthResponseIsTheScrambleOfItsPassword) {
-  // Ties the parsed auth response to the algorithm the server checks it
-  // with: a wrong offset/length would still produce 32 bytes, just not these.
   HandshakeResponse41 value;
   std::string error;
   ASSERT_TRUE(HandshakeResponse41Codec::Parse(RealHandshakeResponse41Payload(),
@@ -264,9 +251,8 @@ std::vector<std::uint8_t> ResponseWithBody(
 
 TEST(HandshakeResponse41CodecTest,
      AuthResponseLengthIsOneRawByteWithoutLenencCapability) {
-  // 0xFC is a plain length of 252 here; read as a LengthEncodedInteger it
-  // would be the prefix of a 2-byte value and swallow the first two
-  // response bytes.
+  // 0xFC is a plain length of 252 here; read as a LengthEncodedInteger it would
+  // swallow the first two response bytes.
   std::vector<std::uint8_t> body = {'u', 0, 0xFC};
   body.insert(body.end(), 252, 0x5A);
   HandshakeResponse41 value;
@@ -279,8 +265,7 @@ TEST(HandshakeResponse41CodecTest,
 
 TEST(HandshakeResponse41CodecTest,
      AuthResponseLengthIsLengthEncodedWithLenencCapability) {
-  std::vector<std::uint8_t> body = {'u', 0, 0xFC, 0xFC,
-                                    0x00};  // 0xFC prefix + 2-byte value 252
+  std::vector<std::uint8_t> body = {'u', 0, 0xFC, 0xFC, 0x00};
   body.insert(body.end(), 252, 0x5A);
   HandshakeResponse41 value;
   std::string error;
@@ -388,7 +373,7 @@ TEST(HandshakeResponse41CodecTest, LeavesTheZstdLevelAtZeroWhenNotAskedFor) {
   value.capabilities = CLIENT_PROTOCOL_41 | CLIENT_PLUGIN_AUTH;
   value.username = "repl";
   value.authPluginName = "caching_sha2_password";
-  value.zstdCompressionLevel = 9;  // ignored: the capability is not set
+  value.zstdCompressionLevel = 9;
   std::vector<std::uint8_t> encoded;
   HandshakeResponse41Codec::Encode(value, encoded);
 
@@ -405,8 +390,6 @@ TEST(HandshakeResponse41CodecTest, LeavesTheZstdLevelAtZeroWhenItIsMissing) {
   value.authPluginName = "caching_sha2_password";
   std::vector<std::uint8_t> encoded;
   HandshakeResponse41Codec::Encode(value, encoded);
-  // The bit set after encoding, so the level byte the peer promised is
-  // simply not there.
   encoded[3] |=
       static_cast<std::uint8_t>(CLIENT_ZSTD_COMPRESSION_ALGORITHM >> 24);
 

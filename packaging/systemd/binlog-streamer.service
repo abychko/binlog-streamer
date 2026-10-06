@@ -1,32 +1,28 @@
 [Unit]
 Description=MySQL binary log relay
 Documentation=file:///usr/share/doc/binlog-streamer/README.md
-# listen_address may name a specific IP, which can be bound only once the
-# interface has it.
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-# The relay reports ready once its listeners are up, so a start or restart
-# that the configuration fails fails in systemctl itself.
+# The relay reports ready once its listeners are up, so a start or restart that
+# the configuration fails fails in systemctl itself.
 Type=notify
 User=binlog-streamer
 Group=binlog-streamer
 EnvironmentFile=-/etc/default/binlog-streamer
 ExecStart=/usr/bin/binlog-streamer $BINLOG_STREAMER_OPTS
-# A reload is refused, and the running configuration kept, when the new
-# one does not validate.
+# A reload is refused, and the running configuration kept, when the new one does
+# not validate.
 ExecReload=/usr/bin/binlog-streamer --validate-config $BINLOG_STREAMER_OPTS
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartPreventExitStatus=1 2 4
 
-# Stored binlog events carry source data: not readable by other users.
 UMask=0027
 NoNewPrivileges=yes
 # data_dir in settings.yml may be any directory the administrator chooses, so
-# the unit restricts writes only to the system trees (/usr, /boot, /etc) and
-# leaves /home and other locations writable.
+# writes are restricted only to the system trees (/usr, /boot, /etc).
 ProtectSystem=full
 PrivateTmp=yes
 PrivateDevices=yes
@@ -35,7 +31,6 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 # AF_UNIX: user and group lookups go through NSS (nscd, systemd-userdb).
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-# The relay runs unprivileged and listens on a non-privileged port.
 CapabilityBoundingSet=
 RestrictNamespaces=yes
 RestrictSUIDSGID=yes

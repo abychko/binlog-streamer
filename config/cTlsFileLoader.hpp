@@ -33,17 +33,12 @@
 
 namespace binlog_streamer {
 
-// Reads the files the ssl_ca/ssl_cert/ssl_key keys of source.yml and
-// replica.yml name, under the rules the keys' secrecy sets: the private
-// key like the yml itself (owner and mode), the certificates like a public
-// key file (integrity only). Each failure is reported at its key.
 class TlsFileLoader {
  public:
   TlsFileLoader(ProtectedFileReader &reader, std::string expectedOwner);
 
-  // An empty path is a key not set. True when every named file was read
-  // and, together, the material loads (TlsContext::Check); material is
-  // filled only then.
+  // An empty path means the key is not set. True when every named file was read
+  // and the material loads; material is filled only then.
   bool Read(const std::string &fileName,
             const std::map<std::string, KeyPosition> &positions,
             const std::string &caPath, const std::string &certPath,

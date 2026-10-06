@@ -58,17 +58,14 @@ TEST(FilePinTest,
   *firstPin = std::move(*secondPin);
   EXPECT_EQ(firstPin->FileName(), "binlog.000002");
 
-  // binlog.000001 is unpinned now; Remove() is oldest-first.
   EXPECT_TRUE(catalog.Remove(error)) << error;
   EXPECT_FALSE(catalog.Remove(error));
   EXPECT_EQ(error, "binlog.000002 is pinned by 1 reader(s)");
 
-  // secondPin is moved-from now; resetting it must not touch firstPin's pin.
   secondPin.reset();
   EXPECT_FALSE(catalog.Remove(error));
   EXPECT_EQ(error, "binlog.000002 is pinned by 1 reader(s)");
 
-  // Self-assignment must not release the pin it overwrites with itself.
   MoveAssign(*firstPin, *firstPin);
   EXPECT_FALSE(catalog.Remove(error));
   EXPECT_EQ(error, "binlog.000002 is pinned by 1 reader(s)");

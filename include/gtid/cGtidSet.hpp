@@ -35,44 +35,34 @@
 
 namespace binlog_streamer {
 
-// Text and binary forms mirror Percona Server's Gtid_set
-// (sql/rpl_gtid_set.cc).
 class GtidSet {
  public:
-  // Returns false and leaves the set unchanged if end <= start.
   bool AddInterval(const GtidSource &source, std::int64_t start,
                    std::int64_t end);
 
-  // Whitespace is only skipped right after a comma, matching the server
-  // exactly (Gtid_set::add_gtid_text) - not a bug.
+  // Whitespace is skipped only right after a comma, exactly as
+  // Gtid_set::add_gtid_text does.
   bool AddFromText(std::string_view text, std::string &error);
 
-  // Same shape/separator as the server's default_string_format
-  // (rpl_gtid_set.cc) and GTID_SUBTRACT() output.
   std::string ToText() const;
 
-  // Matches Gtid_set::get_encoded_length()/encode() byte-for-byte.
-  // skipTaggedGtids drops tagged sources entirely, not just their tag.
+  // Byte-for-byte Gtid_set::encode(); skipTaggedGtids drops tagged sources
+  // entirely.
   std::size_t GetEncodedLength(bool skipTaggedGtids) const;
   std::vector<std::uint8_t> Encode(bool skipTaggedGtids) const;
 
-  // Strict: trailing bytes are an error, matching the server's read of
-  // its own files, not its lenient live-binlog scan. No rollback on
-  // failure (unlike AddInterval).
+  // Strict: trailing bytes are an error. No rollback on failure, unlike
+  // AddInterval.
   bool AddFromEncoding(std::span<const std::uint8_t> encoded,
                        std::string &error);
 
   bool IsEmpty() const;
 
-  // Relies on both sides keeping intervals merged and ascending
-  // (mirrors Gtid_set::is_subset()).
+  // Both sides must keep their intervals merged and ascending.
   bool IsSubsetOf(const GtidSet &other) const;
 
-  // Whether the set holds this one transaction; nothing is copied, since a
-  // dump asks it of every transaction it passes over.
   bool Contains(const GtidSource &source, std::int64_t gno) const;
 
-  // Exposed for tests.
   std::vector<GtidInterval> GetIntervals(const GtidSource &source) const;
 
  private:

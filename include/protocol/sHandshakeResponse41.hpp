@@ -38,13 +38,9 @@ struct HandshakeResponse41 {
   std::uint8_t characterSet = 0;
   std::string username;
   std::vector<std::uint8_t> authResponse;
-  std::string
-      database;  // present only if capabilities has CLIENT_CONNECT_WITH_DB
-  std::string
-      authPluginName;  // present only if capabilities has CLIENT_PLUGIN_AUTH
-  std::vector<std::pair<std::string, std::string>>
-      connectionAttributes;  // present only if capabilities has
-                             // CLIENT_CONNECT_ATTRS
+  std::string database;
+  std::string authPluginName;
+  std::vector<std::pair<std::string, std::string>> connectionAttributes;
   std::uint8_t zstdCompressionLevel =
       0;  // present only if capabilities has
           // CLIENT_ZSTD_COMPRESSION_ALGORITHM; 0 when absent, which is

@@ -33,8 +33,6 @@
 namespace binlog_streamer {
 namespace {
 
-// Independent of GtidSet's own WriteUint64LE(), so this doesn't just echo
-// the production code.
 std::uint64_t ReadUint64LE(const std::vector<std::uint8_t> &bytes,
                            std::size_t pos) {
   std::uint64_t value = 0;
@@ -52,8 +50,6 @@ Uuid MakeUuid(std::uint8_t firstByte) {
   return uuid;
 }
 
-// Matches WriteUint64LE() in production code, kept separate for the same
-// reason as ReadUint64LE() above.
 void AppendUint64LE(std::vector<std::uint8_t> &out, std::uint64_t value) {
   for (int i = 0; i < 8; ++i)
     out.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
@@ -63,9 +59,6 @@ void AppendUuidBytes(std::vector<std::uint8_t> &out, const Uuid &uuid) {
   out.insert(out.end(), uuid.bytes.begin(), uuid.bytes.end());
 }
 
-// Matches Encode()'s tagged-format header layout for one source - used to
-// hand-build inputs Encode() itself would never produce (out-of-order
-// intervals, an invalid tag).
 constexpr std::uint64_t ONE_TAGGED_SOURCE_HEADER =
     (std::uint64_t{1} << 56) | (std::uint64_t{1} << 8) | std::uint64_t{1};
 
@@ -108,8 +101,6 @@ TEST(GtidSetTest, MultipleSourcesSeparatedByCommaAndNewline) {
 }
 
 TEST(GtidSetTest, AddFromTextAcceptsCommaNewlineSeparator) {
-  // Whitespace is only skipped right after a comma (sql/rpl_gtid_set.cc),
-  // so this checks exactly what ToText() emits, not tolerance in general.
   const std::string text =
       "3e11fa47-71ca-11e1-9e33-c80aa9429562:1,\n5f069f6f-71ca-11e1-9e33-"
       "c80aa9429562:2";
@@ -194,17 +185,14 @@ TEST(GtidSetTest, EncodeUntaggedLayoutMatchesServerFormat) {
   const std::vector<std::uint8_t> encoded =
       set.Encode(/*skipTaggedGtids=*/true);
   ASSERT_EQ(encoded.size(), set.GetEncodedLength(true));
-  ASSERT_EQ(encoded.size(),
-            48u);  // 8 header + 16 uuid + 8 n_intervals + 16 interval
+  ASSERT_EQ(encoded.size(), 48u);
 
-  EXPECT_EQ(ReadUint64LE(encoded, 0),
-            1u);  // 1 source, untagged format byte is 0
+  EXPECT_EQ(ReadUint64LE(encoded, 0), 1u);
   for (std::size_t i = 0; i < 16; ++i)
     EXPECT_EQ(encoded[8 + i], source.uuid.bytes[i]);
-  EXPECT_EQ(ReadUint64LE(encoded, 24), 1u);  // n_intervals
-  EXPECT_EQ(ReadUint64LE(encoded, 32), 5u);  // start
-  EXPECT_EQ(ReadUint64LE(encoded, 40),
-            10u);  // end - distinct from start, catches a swap
+  EXPECT_EQ(ReadUint64LE(encoded, 24), 1u);
+  EXPECT_EQ(ReadUint64LE(encoded, 32), 5u);
+  EXPECT_EQ(ReadUint64LE(encoded, 40), 10u);
 }
 
 TEST(GtidSetTest, EncodeTaggedLayoutMatchesServerFormat) {
@@ -215,11 +203,8 @@ TEST(GtidSetTest, EncodeTaggedLayoutMatchesServerFormat) {
   const std::vector<std::uint8_t> encoded =
       set.Encode(/*skipTaggedGtids=*/false);
   ASSERT_EQ(encoded.size(), set.GetEncodedLength(false));
-  ASSERT_EQ(
-      encoded.size(),
-      56u);  // 8 header + 16 uuid + 8 tag(1+7) + 8 n_intervals + 16 interval
+  ASSERT_EQ(encoded.size(), 56u);
 
-  // 1 source, tagged format (format byte in both low and high byte).
   const std::uint64_t expectedHeader =
       (std::uint64_t{1} << 56) | (std::uint64_t{1} << 8) | std::uint64_t{1};
   EXPECT_EQ(ReadUint64LE(encoded, 0), expectedHeader);
@@ -227,14 +212,13 @@ TEST(GtidSetTest, EncodeTaggedLayoutMatchesServerFormat) {
   for (std::size_t i = 0; i < 16; ++i)
     EXPECT_EQ(encoded[8 + i], source.uuid.bytes[i]);
 
-  EXPECT_EQ(encoded[24],
-            7u << 1);  // tag length prefix: length 7, single-byte varint form
+  EXPECT_EQ(encoded[24], 7u << 1);
   const std::string tagBytes(reinterpret_cast<const char *>(&encoded[25]), 7);
   EXPECT_EQ(tagBytes, "primary");
 
-  EXPECT_EQ(ReadUint64LE(encoded, 32), 1u);  // n_intervals
-  EXPECT_EQ(ReadUint64LE(encoded, 40), 1u);  // start
-  EXPECT_EQ(ReadUint64LE(encoded, 48), 2u);  // end
+  EXPECT_EQ(ReadUint64LE(encoded, 32), 1u);
+  EXPECT_EQ(ReadUint64LE(encoded, 40), 1u);
+  EXPECT_EQ(ReadUint64LE(encoded, 48), 2u);
 }
 
 TEST(GtidSetTest, SkipTaggedGtidsExcludesTaggedSourceEntirely) {
@@ -246,7 +230,6 @@ TEST(GtidSetTest, SkipTaggedGtidsExcludesTaggedSourceEntirely) {
 
   const std::vector<std::uint8_t> encoded =
       set.Encode(/*skipTaggedGtids=*/true);
-  // Only the untagged source is encoded: header n_sids == 1, not 2.
   EXPECT_EQ(ReadUint64LE(encoded, 0), 1u);
   ASSERT_EQ(encoded.size(), 48u);
   for (std::size_t i = 0; i < 16; ++i)
@@ -315,7 +298,7 @@ TEST(GtidSetTest, AddFromEncodingRoundTripsTaggedSource) {
 
 TEST(GtidSetTest, AddFromEncodingRejectsUnknownFormatByte) {
   std::vector<std::uint8_t> encoded(8, 0);
-  encoded[7] = 2;  // top byte: neither 0 (untagged) nor 1 (tagged)
+  encoded[7] = 2;
   GtidSet decoded;
   std::string error;
   EXPECT_FALSE(decoded.AddFromEncoding(encoded, error));
@@ -323,7 +306,7 @@ TEST(GtidSetTest, AddFromEncodingRejectsUnknownFormatByte) {
 }
 
 TEST(GtidSetTest, AddFromEncodingRejectsTruncatedHeader) {
-  const std::vector<std::uint8_t> encoded{1, 0, 0};  // header needs all 8 bytes
+  const std::vector<std::uint8_t> encoded{1, 0, 0};
   GtidSet decoded;
   std::string error;
   EXPECT_FALSE(decoded.AddFromEncoding(encoded, error));
@@ -332,8 +315,7 @@ TEST(GtidSetTest, AddFromEncodingRejectsTruncatedHeader) {
 }
 
 TEST(GtidSetTest, AddFromEncodingRejectsTruncatedUuid) {
-  std::vector<std::uint8_t> encoded(
-      8 + 10, 0);  // header claims 1 source, only 10 of 16 UUID bytes follow
+  std::vector<std::uint8_t> encoded(8 + 10, 0);
   encoded[0] = 1;
   GtidSet decoded;
   std::string error;
@@ -341,8 +323,7 @@ TEST(GtidSetTest, AddFromEncodingRejectsTruncatedUuid) {
 }
 
 TEST(GtidSetTest, AddFromEncodingRejectsTruncatedIntervalCount) {
-  std::vector<std::uint8_t> encoded(
-      8 + 16 + 4, 0);  // header + full UUID, only 4 of 8 interval-count bytes
+  std::vector<std::uint8_t> encoded(8 + 16 + 4, 0);
   encoded[0] = 1;
   GtidSet decoded;
   std::string error;
@@ -355,7 +336,7 @@ TEST(GtidSetTest, AddFromEncodingRejectsTruncatedIntervalData) {
   ASSERT_TRUE(original.AddInterval(source, 5, 10));
   std::vector<std::uint8_t> encoded = original.Encode(/*skipTaggedGtids=*/true);
   ASSERT_EQ(encoded.size(), 48u);
-  encoded.pop_back();  // one byte short of the one declared interval
+  encoded.pop_back();
 
   GtidSet decoded;
   std::string error;
@@ -367,7 +348,7 @@ TEST(GtidSetTest, AddFromEncodingRejectsTrailingBytes) {
   const GtidSource source{MakeUuid(1), ""};
   ASSERT_TRUE(original.AddInterval(source, 5, 10));
   std::vector<std::uint8_t> encoded = original.Encode(/*skipTaggedGtids=*/true);
-  encoded.push_back(0);  // one byte more than a complete encoding
+  encoded.push_back(0);
 
   GtidSet decoded;
   std::string error;
@@ -389,9 +370,8 @@ TEST(GtidSetTest, AddFromEncodingParsesRealPreviousGtidsEvent) {
 }
 
 TEST(GtidSetTest, AddFromEncodingRejectsOutOfOrderIntervals) {
-  // Encode() would merge or reorder these, so build the bytes directly:
-  // [10,20) then [5,30) - second start doesn't exceed first end, which
-  // the "start <= last" check (mirrors add_gtid_encoding) exists to catch.
+  // Encode() would merge or reorder these, so the bytes are built directly:
+  // [10,20) then [5,30), where the second start does not exceed the first end.
   std::vector<std::uint8_t> encoded;
   AppendUint64LE(encoded, 1);
   AppendUuidBytes(encoded, MakeUuid(1));
@@ -408,9 +388,8 @@ TEST(GtidSetTest, AddFromEncodingRejectsOutOfOrderIntervals) {
 }
 
 TEST(GtidSetTest, AddFromEncodingRejectsIntervalWithEndNotAfterStart) {
-  // [50,30): end doesn't exceed start. previousEnd starts at 0, so the
-  // ordering check alone wouldn't catch this - only AddInterval()'s own
-  // end<=start rejection does.
+  // [50,30): end does not exceed start; previousEnd starts at 0, so only
+  // AddInterval()'s own end <= start rejection catches this.
   std::vector<std::uint8_t> encoded;
   AppendUint64LE(encoded, 1);
   AppendUuidBytes(encoded, MakeUuid(1));
@@ -451,17 +430,16 @@ TEST(GtidSetTest, AddFromEncodingRejectsTaggedTruncationInsideTag) {
 }
 
 TEST(GtidSetTest, AddFromEncodingRejectsMultiByteTagLengthPrefix) {
-  // Low bit set = the multi-byte varint form Encode() never writes. A
-  // complete, well-formed source follows so a naive reading (0x03 as
-  // length 1) would wrongly succeed instead of failing.
+  // A set low bit is the multi-byte varint form Encode() never writes; a
+  // complete source follows so reading 0x03 as length 1 would wrongly succeed.
   std::vector<std::uint8_t> encoded;
   AppendUint64LE(encoded, ONE_TAGGED_SOURCE_HEADER);
   AppendUuidBytes(encoded, MakeUuid(1));
   encoded.push_back(0x03);
   encoded.push_back('a');
-  AppendUint64LE(encoded, 1);  // n_intervals=1
-  AppendUint64LE(encoded, 1);  // start
-  AppendUint64LE(encoded, 2);  // end
+  AppendUint64LE(encoded, 1);
+  AppendUint64LE(encoded, 1);
+  AppendUint64LE(encoded, 2);
 
   GtidSet decoded;
   std::string error;
@@ -470,9 +448,6 @@ TEST(GtidSetTest, AddFromEncodingRejectsMultiByteTagLengthPrefix) {
 }
 
 TEST(GtidSetTest, AddFromEncodingRejectsInvalidTagCharacters) {
-  // "1bad" starts with a digit, invalid per TagText::Parse's grammar
-  // ([a-zA-Z_][a-zA-Z0-9_]{0,31}). A complete source follows so ignoring
-  // TagText::Parse's result would wrongly succeed as untagged.
   std::vector<std::uint8_t> encoded;
   AppendUint64LE(encoded, ONE_TAGGED_SOURCE_HEADER);
   AppendUuidBytes(encoded, MakeUuid(1));
@@ -481,9 +456,9 @@ TEST(GtidSetTest, AddFromEncodingRejectsInvalidTagCharacters) {
   encoded.push_back('b');
   encoded.push_back('a');
   encoded.push_back('d');
-  AppendUint64LE(encoded, 1);  // n_intervals=1
-  AppendUint64LE(encoded, 1);  // start
-  AppendUint64LE(encoded, 2);  // end
+  AppendUint64LE(encoded, 1);
+  AppendUint64LE(encoded, 1);
+  AppendUint64LE(encoded, 2);
 
   GtidSet decoded;
   std::string error;
@@ -492,9 +467,8 @@ TEST(GtidSetTest, AddFromEncodingRejectsInvalidTagCharacters) {
 }
 
 TEST(GtidSetTest, AddFromEncodingRejectsHugeIntervalCountAgainstShortBuffer) {
-  // n_intervals claims UINT64_MAX with no interval bytes following. The
-  // bound check divides remaining bytes rather than multiplying
-  // intervalCount up, so nothing overflows while rejecting it.
+  // n_intervals claims UINT64_MAX with no interval bytes; the bound check
+  // divides the remaining bytes instead of multiplying, so nothing overflows.
   std::vector<std::uint8_t> encoded;
   AppendUint64LE(encoded, 1);
   AppendUuidBytes(encoded, MakeUuid(1));
@@ -554,14 +528,11 @@ TEST(GtidSetTest, RejectsIntervalEndBeforeStart) {
 }
 
 TEST(GtidSetTest, RejectsRangeEndAtGnoEnd) {
-  // GNO_END (sql/rpl_gtid.h) is itself INT64_MAX; a valid GNO must be
-  // strictly less than it.
+  // GNO_END (sql/rpl_gtid.h) is INT64_MAX; a valid GNO must be strictly less.
   GtidSet set;
   std::string error;
   EXPECT_FALSE(set.AddFromText(
       "3e11fa47-71ca-11e1-9e33-c80aa9429562:1-9223372036854775807", error));
-  // The exact message proves the GNO parser itself rejected the value; a
-  // later interval check would also fail, but only after an overflow.
   EXPECT_EQ(error, "expected a GTID number no smaller than the range start");
 }
 
@@ -586,8 +557,7 @@ TEST(GtidSetTest, AcceptsRangeEndOneBelowGnoEnd) {
   const auto intervals = set.GetIntervals(GtidSource{uuid, ""});
   ASSERT_EQ(intervals.size(), 1u);
   EXPECT_EQ(intervals[0].start, 1);
-  EXPECT_EQ(intervals[0].end,
-            9223372036854775807LL);  // half-open: end = 9223372036854775806 + 1
+  EXPECT_EQ(intervals[0].end, 9223372036854775807LL);
 }
 
 TEST(GtidSetTest, EmptyTextIsValidAndEmpty) {
@@ -628,13 +598,10 @@ TEST(GtidSetTest, IsSubsetOfTrueWhenFullyCoveredByOneWiderInterval) {
       superset.AddFromText("3e11fa47-71ca-11e1-9e33-c80aa9429562:1-10", error))
       << error;
   EXPECT_TRUE(subset.IsSubsetOf(superset));
-  EXPECT_FALSE(superset.IsSubsetOf(
-      subset));  // not symmetric: 1-10 is not covered by 3-5
+  EXPECT_FALSE(superset.IsSubsetOf(subset));
 }
 
 TEST(GtidSetTest, IsSubsetOfFalseWhenAnIntervalRunsPastEveryCoveringInterval) {
-  // superset has 1-5 and 8-10 (gap at 6-7); candidate's endpoints each
-  // land inside one interval but the span between isn't covered.
   GtidSet candidate;
   GtidSet superset;
   std::string error;
@@ -686,9 +653,6 @@ TEST(GtidSetTest, IsSubsetOfTrueForEqualSets) {
 }
 
 TEST(GtidSetTest, IsSubsetOfTrueAcrossTwoSourcesEachWithTwoIntervals) {
-  // U is covered by two of other's intervals (1-5, 8-10); otherIndex must
-  // advance past U's first interval, then reset to 0 for V's own - a
-  // stale index carried over would wrongly fail V's covered interval.
   GtidSet subset;
   GtidSet superset;
   std::string error;
@@ -706,8 +670,6 @@ TEST(GtidSetTest, IsSubsetOfTrueAcrossTwoSourcesEachWithTwoIntervals) {
 }
 
 TEST(GtidSetTest, IsSubsetOfTrueWhenCoveringIntervalIsTheThirdOne) {
-  // Covering interval (20-30) is other's third - forces the skip-ahead
-  // loop to advance past two non-covering intervals first.
   GtidSet subset;
   GtidSet superset;
   std::string error;
@@ -722,9 +684,6 @@ TEST(GtidSetTest, IsSubsetOfTrueWhenCoveringIntervalIsTheThirdOne) {
 
 TEST(GtidSetTest,
      IsSubsetOfFalseWhenCandidateRunsOneGtidPastTheCoveringIntervalsEnd) {
-  // 1-6 runs one GTID past other's first interval (1-5) into the gap
-  // before its second (7-10) - an off-by-one on either endpoint would
-  // wrongly call this covered.
   GtidSet candidate;
   GtidSet superset;
   std::string error;

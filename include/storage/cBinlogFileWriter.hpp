@@ -30,8 +30,7 @@
 
 namespace binlog_streamer {
 
-// Writes files the way MYSQL_BIN_LOG does (sql/binlog.cc). Not
-// thread-safe: one writer per data directory.
+// Not thread-safe: one writer per data directory.
 class BinlogFileWriter {
  public:
   BinlogFileWriter() = default;
@@ -39,38 +38,33 @@ class BinlogFileWriter {
   BinlogFileWriter(const BinlogFileWriter &) = delete;
   BinlogFileWriter &operator=(const BinlogFileWriter &) = delete;
 
-  // Forces fdeBytes' "file in use" bit to 1: the source always clears
-  // it before sending an FDE over the wire, but a stored file must
-  // record it as open.
+  // Forces the "file in use" bit to 1 in fdeBytes: the source clears it on the
+  // wire, but a stored file must record it as open.
   bool Create(const std::string &path, std::span<const std::uint8_t> fdeBytes,
               std::span<const std::uint8_t> previousGtidsBytes,
               std::string &error);
 
   bool OpenExisting(const std::string &path, std::string &error);
 
-  // Buffers into WRITE_BUFFER_SIZE, flushing when full; a call at least
-  // that long writes directly instead. Buffered bytes flush first, so
-  // file order always matches call order.
+  // Buffered bytes flush first, so file order matches call order.
   bool Append(std::span<const std::uint8_t> bytes, std::string &error);
 
-  // Does not fsync - callers wanting durability call Sync() too.
+  // Does not fsync: call Sync() too.
   bool Flush(std::string &error);
 
   bool Sync(std::string &error);
 
-  // Clears the bit by masking, not writing literal 0 like MySQL does.
-  // Does not flush the write buffer first - call Flush() before
-  // MarkClosed(), then Sync().
+  // Does not flush the write buffer: call Flush() before MarkClosed(), then
+  // Sync().
   bool MarkClosed(std::string &error);
 
-  // Fails untouched if length exceeds Size()+buffered - that would let
-  // ftruncate(2) zero-pad a gap instead of truncating.
+  // Fails untouched if length exceeds Size()+buffered: ftruncate(2) would
+  // zero-pad a gap.
   bool Truncate(std::uint64_t length, std::string &error);
 
-  // Buffered-but-unflushed bytes are not counted.
   std::uint64_t Size() const { return length_; }
 
-  // Unbuffered append; do not mix with Append without flushing first.
+  // Unbuffered append; flush before mixing with Append.
   bool WriteDirect(std::span<const std::uint8_t> bytes, std::string &error,
                    std::uint64_t *calls = nullptr);
 

@@ -27,14 +27,10 @@
 #include "net/eSslMode.hpp"
 #include "net/sTlsMaterial.hpp"
 
-// Keeps <openssl/ssl.h> out of this header.
 struct ssl_ctx_st;
 
 namespace binlog_streamer {
 
-// One SSL_CTX, loaded once from PEM text and shared by every TlsTransport
-// of the same side: the listener's connections all present the same
-// certificate, and every session to the source checks it the same way.
 class TlsContext {
  public:
   TlsContext() = default;
@@ -42,20 +38,11 @@ class TlsContext {
   TlsContext(const TlsContext &) = delete;
   TlsContext &operator=(const TlsContext &) = delete;
 
-  // certPem and keyPem are required; caPem, when set, is what a client
-  // certificate has to chain to. A client presenting none is accepted, as
-  // a MySQL server with ssl_ca accepts one (vio/viosslfactories.cc).
   bool LoadServer(const TlsMaterial &material, std::string &error);
 
-  // mode decides what is checked of the source's certificate; VerifyCa
-  // and VerifyIdentity require caPem. certPem/keyPem, when set, are the
-  // relay's own client certificate, presented if the source asks.
   bool LoadClient(SslMode mode, const TlsMaterial &material,
                   std::string &error);
 
-  // Whether the material loads at all - each PEM parses, the key matches
-  // the certificate - without deciding a side; what a configuration check
-  // asks before any connection is made.
   static bool Check(const TlsMaterial &material, std::string &error);
   bool Loaded() const { return m_context != nullptr; }
   SslMode mode() const { return m_mode; }

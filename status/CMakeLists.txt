@@ -4,8 +4,8 @@ ADD_LIBRARY(bs-status STATIC
     cStatusJsonWriter.cpp
     cStreamProgress.cpp
 )
-# Nothing but the standard library: receiver/ and server/ feed it and must
-# not pick up a dependency on anything above them through it.
+# Standard library only: receiver/ and server/ feed it and must not pick up a
+# dependency on anything above them through it.
 TARGET_LINK_LIBRARIES(bs-status PUBLIC bs-warnings)
 ADD_HEADER_CHECK(bs-status-hc
     "${BINLOG_STREAMER_INCLUDE_DIR}/status" "${BINLOG_STREAMER_INCLUDE_DIR}")

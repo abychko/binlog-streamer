@@ -30,8 +30,6 @@
 
 namespace binlog_streamer {
 
-// Implements only what the tagged GTID event (type 42) body needs, not the
-// full percona-server serialization wire format.
 class SerializationDecoder {
  public:
   explicit SerializationDecoder(std::span<const std::uint8_t> bytes)
@@ -39,15 +37,11 @@ class SerializationDecoder {
 
   bool ReadUnsigned(std::uint64_t &value);
   bool ReadSigned(std::int64_t &value);
-  // maxLength mirrors the same bound the encoder enforced; a longer
-  // length is rejected.
   bool ReadString(std::size_t maxLength, std::string &value);
-  // Each element is its own varint (Serializer_array_tag), not a raw
-  // byte: 0x80..0xFF take two bytes each.
+  // Each element is its own varint, so 0x80..0xFF take two bytes.
   bool ReadByteArray(std::span<std::uint8_t> out);
 
-  // version(=1) is encoded in the slot a nested message's field id would
-  // occupy.
+  // version (=1) occupies the slot of a nested message's field id.
   bool ReadMessageHeader(std::uint64_t &payloadSize,
                          std::uint64_t &lastNonIgnorableFieldId);
   bool PeekFieldId(std::uint64_t &id);

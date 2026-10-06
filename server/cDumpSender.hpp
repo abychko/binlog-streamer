@@ -41,9 +41,9 @@
 
 namespace binlog_streamer {
 
-// The Format_description event's creation time is zeroed when the replica
-// already holds part of the file - non-zero tells it the source restarted,
-// rolling back its in-progress transaction.
+// The Format_description creation time is zeroed when the replica already holds
+// part of the file; non-zero tells it the source restarted, rolling back its
+// in-progress transaction.
 class DumpSender {
  public:
   DumpSender(BinlogStorageReader &reader, PacketChannel &channel,
@@ -60,10 +60,8 @@ class DumpSender {
                         EventHeader &header, std::string &error);
   ReadStatus ReadEvent(const FileCursor &cursor, std::uint64_t offset,
                        ByteBuffer &event, std::string &error);
-  // Event when the whole event at offset is readable; its body is not read.
   ReadStatus PeekEvent(const FileCursor &cursor, std::uint64_t offset,
                        EventHeader &header, std::string &error);
-  // Zero with no error: nothing more is readable yet.
   std::size_t ReadAhead(const FileCursor &cursor, std::uint64_t offset,
                         std::span<std::uint8_t> out, std::string &error);
   bool SendEvent(std::span<const std::uint8_t> event, std::string &error);
@@ -84,12 +82,10 @@ class DumpSender {
   DumpSenderOptions m_options;
   std::chrono::steady_clock::time_point m_lastSent{};
   bool m_eventChecksum = true;
-  // A heartbeat waits in the channel: the send linger does not hold it.
   bool m_heartbeatQueued = false;
-  // Caches one read's worth of the file, since content up to its readable
-  // boundary does not change after. Left uninitialized: a read that stops
-  // at the published boundary refills it every time a replica catches up,
-  // and zeroing the whole window each time cost more than the read.
+  // Left uninitialized: a read that stops at the published boundary refills it
+  // every time a replica catches up, and zeroing the whole window each time
+  // cost more than the read.
   std::unique_ptr<std::uint8_t[]> m_window;
   std::size_t m_windowSize = 0;
   std::string m_windowFile;

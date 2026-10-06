@@ -28,7 +28,6 @@
 
 namespace binlog_streamer {
 
-// Only the hosts of accounts already running are taken from a reload.
 class ConfigurationReload {
  public:
   static ReloadOutcome Compare(const Configuration &running,

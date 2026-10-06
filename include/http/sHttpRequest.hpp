@@ -27,13 +27,11 @@
 
 namespace binlog_streamer {
 
-// The request line only; headers are read past and not kept, since
-// nothing served here depends on one.
 struct HttpRequest {
-  std::string method;   // as sent, e.g. "GET"
-  std::string path;     // "/status.json", without the query
-  std::string query;    // what follows "?", empty when nothing does
-  std::string version;  // "HTTP/1.1"
+  std::string method;
+  std::string path;
+  std::string query;
+  std::string version;
 };
 
 }  // namespace binlog_streamer

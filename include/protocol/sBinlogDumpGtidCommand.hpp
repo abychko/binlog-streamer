@@ -33,11 +33,9 @@ namespace binlog_streamer {
 struct BinlogDumpGtidCommand {
   std::uint16_t flags = 0;
   std::uint32_t serverId = 0;
-  std::string fileName;  // a source starts from here instead of the GTID set
-                         // when non-empty
-  std::uint64_t position = 4;  // default matches a replica's auto-positioning
-  // GtidSet::Encode()d bytes; skipTaggedGtids must match flags's
-  // SKIP_TAGGED_GTIDS bit
+  std::string fileName;
+  std::uint64_t position = 4;
+  // skipTaggedGtids must match flags's SKIP_TAGGED_GTIDS bit.
   std::vector<std::uint8_t> gtidSetEncoded;
 };
 

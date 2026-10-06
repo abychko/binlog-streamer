@@ -35,9 +35,6 @@
 namespace binlog_streamer {
 namespace {
 
-// std::chrono::milliseconds::rep can exceed int's range; poll()'s timeout
-// argument is an int, so clamp instead of letting a very large caller
-// timeout wrap around to something small or negative.
 int ClampToPollTimeout(std::chrono::milliseconds timeout) {
   const auto count = timeout.count();
   if (count < 0) return 0;
@@ -55,15 +52,11 @@ bool SetNonBlocking(int fd, std::string &error) {
   return true;
 }
 
-// Non-blocking mode plus SIGPIPE suppression, applied identically to a
-// fresh outbound socket and an accepted one - kept in one place so the two
-// call sites cannot drift on a security-relevant setting.
 bool PrepareSocket(int fd, std::string &error) {
   if (!SetNonBlocking(fd, error)) return false;
 #ifdef SO_NOSIGPIPE
-  // Sending after the peer closes raises SIGPIPE, killing this process
-  // unless suppressed. macOS has SO_NOSIGPIPE but not MSG_NOSIGNAL; Linux
-  // is the reverse - both are applied so neither platform loses protection.
+  // Sending to a closed peer raises SIGPIPE; macOS has SO_NOSIGPIPE but not
+  // MSG_NOSIGNAL, Linux the reverse, so both are applied.
   const int noSigPipe = 1;
   if (setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe)) !=
       0) {
@@ -74,8 +67,6 @@ bool PrepareSocket(int fd, std::string &error) {
   return true;
 }
 
-// Tracks the timeout remaining across EINTR retries instead of restarting
-// the full timeout on every signal.
 class Deadline {
  public:
   explicit Deadline(std::chrono::milliseconds timeout)
@@ -119,8 +110,6 @@ bool TcpTransport::Connect(const std::string &host, std::uint16_t port,
     return false;
   }
 
-  // First working address wins - one configured source, not a pool to
-  // race or fail over between.
   bool connected = false;
   for (const struct addrinfo *candidate = resolved; candidate != nullptr;
        candidate = candidate->ai_next) {
@@ -130,9 +119,6 @@ bool TcpTransport::Connect(const std::string &host, std::uint16_t port,
       error = std::strerror(errno);
       continue;
     }
-    // Not survivable on a platform where this is the only SIGPIPE
-    // protection (macOS has no MSG_NOSIGNAL) - fails the candidate
-    // rather than continuing with a socket that could kill this process.
     if (!PrepareSocket(fd, error)) {
       close(fd);
       continue;
@@ -140,9 +126,8 @@ bool TcpTransport::Connect(const std::string &host, std::uint16_t port,
     const Deadline deadline(timeout);
     int rc = connect(fd, candidate->ai_addr, candidate->ai_addrlen);
     if (rc != 0 && errno == EINTR) {
-      // POSIX: after EINTR the connect continues in the background as after
-      // EINPROGRESS; calling connect() again mid-connect is undefined, so this
-      // falls through to the same poll-for-completion path.
+      // After EINTR the connect continues in the background; calling connect()
+      // again is undefined (POSIX).
       errno = EINPROGRESS;
     }
     if (rc == 0) {
@@ -228,9 +213,6 @@ ReadOutcome TcpTransport::Read(std::span<std::uint8_t> buffer,
   }
   const Deadline deadline(timeout);
   for (;;) {
-    // Checked before poll(): a signal handled while not blocked in a
-    // syscall sets the flag but interrupts nothing, so poll() would
-    // otherwise wait out its full timeout before noticing it.
     if (m_stopRequested != nullptr && m_stopRequested->load())
       return ReadOutcome::Interrupted;
 
@@ -256,14 +238,12 @@ ReadOutcome TcpTransport::Read(std::span<std::uint8_t> buffer,
     }
     if (pollResult == 0) return ReadOutcome::TimedOut;
     if (wakeupPolled && (pfds[1].revents & POLLIN) != 0) {
-      // Self-pipe trick, closing a race a flag-and-EINTR check alone leaves
-      // open. Deliberately not drained: WakeupPipe is shared across every
-      // connection's TcpTransport, and Wake() is only ever called once (final
-      // process stop).
+      // Self-pipe: closes the race a flag-and-EINTR check leaves open. Not
+      // drained: the pipe is shared by every connection and Wake() is called
+      // once, at process stop.
       return ReadOutcome::Interrupted;
     }
-    if (wakeupPolled && pfds[0].revents == 0)
-      continue;  // this readiness was the wakeup pipe alone
+    if (wakeupPolled && pfds[0].revents == 0) continue;
 
     const ssize_t count = recv(m_socket, buffer.data(), buffer.size(), 0);
     if (count < 0) {
@@ -271,8 +251,7 @@ ReadOutcome TcpTransport::Read(std::span<std::uint8_t> buffer,
         if (m_stopRequested != nullptr && m_stopRequested->load())
           return ReadOutcome::Interrupted;
         if (deadline.Expired()) return ReadOutcome::TimedOut;
-        continue;  // re-poll: the signal may have arrived before any bytes were
-                   // read
+        continue;
       }
       error = std::strerror(errno);
       return ReadOutcome::Failed;
@@ -292,8 +271,6 @@ bool TcpTransport::Write(std::span<const std::uint8_t> data,
   }
   const Deadline deadline(timeout);
   std::size_t offset = 0;
-  // Send first, poll only when the buffer is full - a poll() before every
-  // send would double the syscalls of a dump that sends one packet per event.
   bool wait = false;
   while (offset < data.size()) {
     if (wait) {
@@ -320,8 +297,7 @@ bool TcpTransport::Write(std::span<const std::uint8_t> data,
 #ifdef MSG_NOSIGNAL
     const int sendFlags = MSG_NOSIGNAL;
 #else
-    const int sendFlags = 0;  // SO_NOSIGPIPE (Connect(), above) is this
-                              // platform's protection instead
+    const int sendFlags = 0;
 #endif
     const ssize_t count =
         send(m_socket, data.data() + offset, data.size() - offset, sendFlags);

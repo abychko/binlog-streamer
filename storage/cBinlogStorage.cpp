@@ -80,9 +80,6 @@ bool BinlogStorage::Open(const std::filesystem::path &dataDir,
   }
   m_lockFd = dirFd;
 
-  // Probed unconditionally, not only when the index is about to be
-  // created: a directory that lost write access is unusable even with an
-  // existing index.
   if (access(dirPath.c_str(), W_OK) != 0) {
     const int savedErrno = errno;
     failure = IsAccessErrno(savedErrno) ? StorageOpenFailure::AccessProblem
@@ -93,9 +90,7 @@ bool BinlogStorage::Open(const std::filesystem::path &dataDir,
 
   bool indexExisted = false;
   if (!m_catalog.Load(dataDir, indexExisted, error)) {
-    failure =
-        StorageOpenFailure::StorageProblem;  // a directory-reconciliation
-                                             // problem, never an access one
+    failure = StorageOpenFailure::StorageProblem;
     return false;
   }
 
@@ -121,8 +116,7 @@ bool BinlogStorage::OpenResumed(const std::filesystem::path &dataDir,
                                 std::string &error) {
   if (!Open(dataDir, failure, error)) return false;
   if (!StorageRecovery::Recover(dataDir, m_catalog, state, error)) {
-    failure = StorageOpenFailure::StorageProblem;  // never an access problem -
-                                                   // Open() already passed
+    failure = StorageOpenFailure::StorageProblem;
     return false;
   }
   SeedPublished(state);

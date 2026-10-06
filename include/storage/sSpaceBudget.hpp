@@ -29,7 +29,6 @@ struct SpaceBudget {
   std::uint64_t lowWatermark =
       0;  // Once started, purge down to this used size.
   std::uint64_t minFreeSpace = 0;  // Also purge below this free size.
-  std::uint64_t availableBytes =
-      0;  // File-system free bytes measured by the caller.
+  std::uint64_t availableBytes = 0;
 };
 }  // namespace binlog_streamer

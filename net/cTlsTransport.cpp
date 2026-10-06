@@ -34,13 +34,8 @@
 namespace binlog_streamer {
 namespace {
 
-// One TLS record's worth of plaintext (RFC 8446, 5.1): what a single
-// SSL_write is given, so the write BIO never holds more than one record
-// plus its framing before it is flushed.
 constexpr std::size_t CHUNK_SIZE = 16 * 1024;
 
-// The largest record on the wire: a whole one is handed to the inner
-// transport in one write, not split with a small tail.
 constexpr std::size_t MAX_RECORD_SIZE =
     SSL3_RT_HEADER_LENGTH + SSL3_RT_MAX_ENCRYPTED_LENGTH;
 
@@ -82,7 +77,7 @@ const char *OutcomeText(ReadOutcome outcome) {
 TlsTransport::~TlsTransport() { Drop(); }
 
 void TlsTransport::Drop() {
-  if (m_ssl != nullptr) SSL_free(m_ssl);  // frees both BIOs with it
+  if (m_ssl != nullptr) SSL_free(m_ssl);
   m_ssl = nullptr;
   m_readBio = nullptr;
   m_writeBio = nullptr;
@@ -105,8 +100,7 @@ bool TlsTransport::Begin(const TlsContext &context, std::string &error) {
     error = OpenSslError("creating the TLS connection");
     return false;
   }
-  // An empty read BIO means "nothing arrived yet", never end of stream:
-  // the inner transport is the one that reports Closed.
+  // An empty read BIO means nothing arrived yet, never end of stream.
   BIO_set_mem_eof_return(m_readBio, -1);
   SSL_set_bio(m_ssl, m_readBio, m_writeBio);
   return true;
@@ -151,7 +145,6 @@ bool TlsTransport::RunHandshake(std::chrono::milliseconds timeout,
     const int result = SSL_do_handshake(m_ssl);
     const int reason =
         result == 1 ? SSL_ERROR_NONE : SSL_get_error(m_ssl, result);
-    // Whatever this step produced goes out before the next step waits.
     if (!Flush(timeout, error)) {
       error = "TLS handshake: " + error;
       Drop();
@@ -169,8 +162,6 @@ bool TlsTransport::RunHandshake(std::chrono::milliseconds timeout,
       Drop();
       return false;
     }
-    // The verify result names the reason more precisely than the alert
-    // OpenSSL's own error text repeats.
     const long verify = SSL_get_verify_result(m_ssl);
     if (verify != X509_V_OK) {
       error = std::string("TLS handshake: certificate verification failed: ") +
@@ -223,7 +214,6 @@ std::string TlsTransport::Version() const {
 bool TlsTransport::Connect(const std::string &host, std::uint16_t port,
                            std::chrono::milliseconds timeout,
                            std::string &error) {
-  // A reconnect starts a new handshake, which begins in the clear.
   Drop();
   return m_inner.Connect(host, port, timeout, error);
 }
@@ -231,8 +221,6 @@ bool TlsTransport::Connect(const std::string &host, std::uint16_t port,
 void TlsTransport::Close() {
   if (m_ssl != nullptr) {
     std::string ignored;
-    // One call sends close_notify without waiting for the peer's; the
-    // peer may already be gone, so neither step's failure matters.
     SSL_shutdown(m_ssl);
     Flush(CLOSE_TIMEOUT, ignored);
     Drop();
@@ -256,8 +244,6 @@ ReadOutcome TlsTransport::Read(std::span<std::uint8_t> buffer,
     }
     const int reason = SSL_get_error(m_ssl, 0);
     if (reason == SSL_ERROR_WANT_READ) {
-      // A read can leave a record to send (a TLS 1.3 key update, a
-      // session ticket's acknowledgement).
       if (!Flush(timeout, error)) return ReadOutcome::Failed;
       const ReadOutcome outcome = Feed(timeout, error);
       if (outcome != ReadOutcome::Data) return outcome;

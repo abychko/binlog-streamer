@@ -76,9 +76,8 @@ bool OkPacketCodec::Parse(std::span<const std::uint8_t> payload,
   value.warnings = warnings;
 
   if (clientSessionTrack) {
-    // net_send_ok() writes nothing at all here when there is neither a
-    // message nor a session state change, so an empty remainder is
-    // "no info", not a malformed missing length prefix.
+    // net_send_ok() writes nothing here with neither a message nor a session
+    // state change: an empty remainder means no info.
     if (pos == payload.size()) {
       value.info.clear();
     } else {
@@ -88,8 +87,7 @@ bool OkPacketCodec::Parse(std::span<const std::uint8_t> payload,
         return false;
       }
       value.info = std::move(info);
-      // Whatever follows is session state change data (SessionStateInfo),
-      // not part of info - not decoded here.
+      // What follows is session state change data, not decoded here.
     }
   } else {
     value.info.assign(reinterpret_cast<const char *>(payload.data() + pos),

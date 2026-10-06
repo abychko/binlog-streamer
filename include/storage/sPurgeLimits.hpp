@@ -29,6 +29,6 @@ namespace binlog_streamer {
 struct PurgeLimits {
   std::optional<std::uint64_t>
       cutoff;  // Source-clock seconds; nullopt disables age expiry.
-  std::optional<SpaceBudget> space;  // nullopt disables space limits.
+  std::optional<SpaceBudget> space;
 };
 }  // namespace binlog_streamer

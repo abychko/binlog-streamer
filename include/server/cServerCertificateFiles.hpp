@@ -30,10 +30,6 @@
 
 namespace binlog_streamer {
 
-// The relay's own certificate when replica.yml names none: read from the
-// data directory, or generated there on the first start, as
-// auto_generate_certs does for a server. Four files, so the CA
-// can sign a replica's certificate later; the keys are written 0600.
 class ServerCertificateFiles {
  public:
   static constexpr std::string_view CA_FILE_NAME = "ca.pem";
@@ -41,9 +37,8 @@ class ServerCertificateFiles {
   static constexpr std::string_view CERT_FILE_NAME = "server-cert.pem";
   static constexpr std::string_view KEY_FILE_NAME = "server-key.pem";
 
-  // Fills material.certPem/keyPem, and caPem when it is empty and ca.pem
-  // is there. Generates when neither certificate file exists; one of the
-  // two without the other is an error, never silently regenerated.
+  // One certificate file without the other is an error, never silently
+  // regenerated.
   static bool LoadOrCreate(const std::filesystem::path &dataDir,
                            const std::string &name, TlsMaterial &material,
                            std::string &error);

@@ -25,9 +25,6 @@
 
 namespace binlog_streamer {
 
-// Distinct from StorageFailure, which classifies a failure inside an
-// already-running stream. main() maps AccessProblem to the same exit
-// code a bad data_dir setting gets.
 enum class StorageOpenFailure {
   AccessProblem,
   StorageProblem,

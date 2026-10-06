@@ -54,7 +54,7 @@ DriverResult StreamDriver::Run(std::ostream &sinkStream) {
 
   TcpTransport transport(m_stopRequested);
   ReplicaSessionOptions sessionOptions;
-  sessionOptions.registerAsReplica = false;  // a driver, not a real replica
+  sessionOptions.registerAsReplica = false;
   sessionOptions.heartbeatPeriod = m_options.heartbeatPeriod;
   const std::string replicaUuid = SessionUuid::Generate();
   ReplicaSession session(transport, m_options.source, m_options.server,

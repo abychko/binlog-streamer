@@ -25,16 +25,11 @@
 
 namespace binlog_streamer {
 
-// Why a connection is over before its greeting. The listener decides it,
-// but the connection still needs a channel and a peer address to send the
-// ERR packet the way a server sends it.
 enum class ConnectionRefusal {
   None,
-  // ERR 1040, as a server already at max_connections answers.
   TooManyConnections,
-  // ERR 3168: nothing is stored yet, so the relay knows neither the
-  // source's version nor a single event to serve. A replica retries on
-  // its own connect-retry timer, which is what waiting looks like here.
+  // ERR 3168: nothing is stored yet, so the relay knows no source version; a
+  // replica retries on its own connect-retry timer.
   NotReady,
 };
 

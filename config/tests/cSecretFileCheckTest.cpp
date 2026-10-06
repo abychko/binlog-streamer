@@ -47,10 +47,6 @@ struct stat MakeDirectoryStatus(mode_t mode, uid_t uid = EXPECTED_UID) {
   return status;
 }
 
-// Manually-filled struct stat is used throughout: CheckFile and
-// CheckDirectory are pure functions over stat, so the "foreign owner/group"
-// cases do not need real files and do not need a root skip.
-
 TEST(SecretFileCheckTest, AcceptsMode0640) {
   EXPECT_TRUE(SecretFileCheck::CheckFile(MakeFileStatus(0640), EXPECTED_UID,
                                          EXPECTED_GID)
@@ -62,10 +58,6 @@ TEST(SecretFileCheckTest, AcceptsMode0600) {
                                          EXPECTED_GID)
                   .empty());
 }
-
-// Below, each rejection is checked against the exact violation(s) it must
-// produce, not just non-emptiness: a regression that flags 0660 for the
-// wrong reason would otherwise go unnoticed.
 
 TEST(SecretFileCheckTest, RejectsOtherReadable0644) {
   EXPECT_EQ(SecretFileCheck::CheckFile(MakeFileStatus(0644), EXPECTED_UID,

@@ -41,10 +41,9 @@ sigset_t ReloadSignalSet() {
 
 }  // namespace
 
-// Signal state is inherited from the parent, as mysqld also assumes. SIG_IGN
-// (nohup) makes macOS discard SIGHUP even while blocked, so neither a reload
-// nor Stop() would wake sigwait(); an inherited blocked SIGTERM would keep
-// the process from ever seeing a stop request. Hence SIG_DFL and SETMASK.
+// A SIG_IGN inherited from the parent (nohup) makes macOS discard SIGHUP even
+// while blocked, and an inherited blocked SIGTERM would hide a stop request:
+// hence SIG_DFL and SETMASK.
 void ReloadSignalThread::BlockReloadSignal() {
   signal(SIGHUP, SIG_DFL);
   const sigset_t set = ReloadSignalSet();
@@ -62,8 +61,6 @@ void ReloadSignalThread::Start() {
   m_thread = std::thread([this] { Run(); });
 }
 
-// A SIGHUP sent to the thread itself wakes sigwait(); pending while the
-// thread is not yet waiting, it is taken on its first call.
 void ReloadSignalThread::Stop() {
   if (!m_thread.joinable()) return;
   m_stopping.store(true);

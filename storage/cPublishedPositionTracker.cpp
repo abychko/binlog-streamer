@@ -96,8 +96,6 @@ WaitOutcome PublishedPositionTracker::Wait(const PublishedPosition &target,
     file = m_file.load(std::memory_order_relaxed);
   }
 
-  // Lock-free poll first: avoids the mutex/condvar path entirely on a
-  // busy stream, where the next group publishes within this window.
   const auto pollUntil =
       style == WaitStyle::Block
           ? startedAt

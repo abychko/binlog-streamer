@@ -31,21 +31,15 @@
 
 namespace binlog_streamer {
 
-// Kept as a free struct, not nested in StartupSequence: a default ctor
-// argument referring to a nested type's default member initializers hits
-// an AppleClang 21 compiler limitation.
+// A free struct: a default ctor argument naming a nested type's default member
+// initializers trips an AppleClang 21 limitation.
 struct RetryOptions {
   unsigned attempts = CONNECT_ATTEMPTS;
   std::chrono::seconds interval = CONNECT_RETRY_INTERVAL;
-  // Overridable so tests can make the retry loop run instantly instead
-  // of waiting up to 60s between each of up to 10 tries.
   std::function<void(std::chrono::seconds)> sleep =
       [](std::chrono::seconds duration) {
         std::this_thread::sleep_for(duration);
       };
-  // Called after each TransientFailure attempt, before the possible
-  // sleep - lets the caller report progress without StartupSequence
-  // doing I/O itself.
   std::function<void(unsigned attempt, unsigned maxAttempts,
                      const std::string &reason)>
       onRetry;

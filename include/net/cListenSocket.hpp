@@ -32,31 +32,21 @@
 
 namespace binlog_streamer {
 
-// Not part of net/'s Transport hierarchy, which models an already-established
-// byte stream only.
 class ListenSocket {
  public:
-  // Same self-pipe technique as TcpTransport::Read(): Accept() polls the
-  // same wakeup pipe every connection thread polls, so a stop signal
-  // unblocks a listener in accept() too. Neither pointer is owned.
   ListenSocket(const std::atomic<bool> *stopRequested,
                const WakeupPipe *wakeupPipe);
   ~ListenSocket() { Close(); }
   ListenSocket(const ListenSocket &) = delete;
   ListenSocket &operator=(const ListenSocket &) = delete;
 
-  // address's family selects the socket's family - listens on exactly the
-  // one address named, not dual-stack. SO_REUSEADDR is always set, so a
-  // restarted relay can rebind a port left in TIME_WAIT.
+  // Listens on exactly the one address, not dual-stack; SO_REUSEADDR lets a
+  // restarted relay rebind a port in TIME_WAIT.
   bool Open(const IpAddress &address, std::uint16_t port, std::string &error);
 
-  // On Accepted, acceptedSocket is still blocking and not yet protocol-ready
-  // (TcpTransport::Accept() finishes that); peerAddress names the peer.
   AcceptOutcome Accept(int &acceptedSocket, IpAddress &peerAddress,
                        std::string &error);
 
-  // The port bound, which a port of 0 leaves to the system; 0 when not
-  // open.
   std::uint16_t Port() const;
 
   void Close();

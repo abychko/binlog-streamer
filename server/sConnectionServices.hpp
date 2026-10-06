@@ -37,9 +37,7 @@ class QueryResponder;
 class RelayStatusTracker;
 class TlsContext;
 
-// What a connection needs beyond its own socket, shared between
-// connections and owned by the listener or the application. Leaving a
-// field null switches the matching command off (error 1047), for testing one
+// A null field switches the matching command off (error 1047), for testing one
 // part alone.
 struct ConnectionServices {
   const QueryResponder *queryResponder = nullptr;
@@ -48,19 +46,10 @@ struct ConnectionServices {
   std::string serverUuid;
   std::uint32_t serverId = 0;
   const std::atomic<bool> *stopRequested = nullptr;
-  // What the greeting offers a replica. None advertises no compression
-  // bit, so every replica that can fall back to uncompressed does.
   CompressionAlgorithm compression = CompressionAlgorithm::None;
-  // The relay's certificate; null advertises no CLIENT_SSL, and a
-  // replica insisting on TLS is refused as by a server without one.
   const TlsContext *tls = nullptr;
-  // Refuses a replica that stays in the clear (ERR 3159), as
-  // require_secure_transport does.
   bool requireSecureTransport = false;
-  // Where a logged-in replica is registered for the status page; null
-  // registers none.
   RelayStatusTracker *status = nullptr;
-  // server.send_linger: zero sends each dump's events at once.
   std::chrono::microseconds sendLinger{0};
 };
 

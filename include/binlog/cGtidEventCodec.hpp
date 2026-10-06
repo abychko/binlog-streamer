@@ -30,17 +30,14 @@
 
 namespace binlog_streamer {
 
-// Caller must dispatch by header.type (33/34 -> Parse, 42 -> ParseTagged);
-// neither function checks it, so calling the wrong one silently produces a
-// plausible but wrong GtidEvent.
+// Caller dispatches by header.type (33/34 -> Parse, 42 -> ParseTagged); neither
+// function checks it.
 class GtidEventCodec {
  public:
   static bool Parse(std::span<const std::uint8_t> body,
                     std::size_t checksumLength, GtidEvent &value,
                     std::string &error);
 
-  // Stops reading at field 8, matching the source's own parser;
-  // transactionLength is optional but a type-42 source always sends it.
   static bool ParseTagged(std::span<const std::uint8_t> body,
                           std::size_t checksumLength, GtidEvent &value,
                           std::string &error);

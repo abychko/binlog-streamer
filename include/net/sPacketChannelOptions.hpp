@@ -32,8 +32,6 @@ namespace binlog_streamer {
 struct PacketChannelOptions {
   std::chrono::milliseconds readTimeout;
   std::chrono::milliseconds writeTimeout;
-  // Turns a peer stuck sending an unbounded packet into a clear error
-  // instead of unbounded memory growth.
   std::size_t maxPacketSize;
   std::string_view peerName;
 };

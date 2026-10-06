@@ -27,8 +27,6 @@
 
 namespace binlog_streamer {
 namespace {
-// Heartbeat's own TLV field type codes; not shared with any other event's
-// TLV codec (Transaction_payload numbers its own independently).
 constexpr std::uint64_t FIELD_END_MARK = 0;
 constexpr std::uint64_t FIELD_LOG_FILENAME = 1;
 constexpr std::uint64_t FIELD_LOG_POSITION = 2;
@@ -41,8 +39,7 @@ void HeartbeatEventCodec::ParseV1(std::span<const std::uint8_t> body,
       body.size() > checksumLength ? body.size() - checksumLength : 0;
   value.fileName.assign(body.begin(),
                         body.begin() + static_cast<std::ptrdiff_t>(nameLength));
-  value.position
-      .reset();  // v1 never carries a position field (see the header comment)
+  value.position.reset();
 }
 
 bool HeartbeatEventCodec::ParseV2(std::span<const std::uint8_t> body,
@@ -66,7 +63,7 @@ bool HeartbeatEventCodec::ParseV2(std::span<const std::uint8_t> body,
     }
     pos += consumed;
     if (type == FIELD_END_MARK)
-      break;  // no length/value follows the end marker (Heartbeat::decode())
+      break;  // no length or value follows the end marker
 
     std::uint64_t length = 0;
     consumed = LengthEncodedInteger::Decode(data.subspan(pos), length, isNull);
@@ -83,9 +80,8 @@ bool HeartbeatEventCodec::ParseV2(std::span<const std::uint8_t> body,
     if (type == FIELD_LOG_FILENAME) {
       value.fileName.assign(fieldValue.begin(), fieldValue.end());
     } else if (type == FIELD_LOG_POSITION) {
-      // The value here is itself a lenenc integer (net_store_length()
-      // in the encoder) - `length` is that inner encoding's size, not the
-      // position.
+      // The value is itself a lenenc integer (net_store_length() in the
+      // encoder); `length` is that inner encoding's size, not the position.
       std::uint64_t position = 0;
       bool positionIsNull = false;
       if (LengthEncodedInteger::Decode(fieldValue, position, positionIsNull) ==
@@ -96,8 +92,6 @@ bool HeartbeatEventCodec::ParseV2(std::span<const std::uint8_t> body,
       }
       value.position = position;
     }
-    // Unrecognized field types are skipped by their declared length
-    // (forward compatibility); pos already advances past them below.
     pos += length;
   }
   return true;

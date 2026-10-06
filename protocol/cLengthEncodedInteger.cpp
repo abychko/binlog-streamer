@@ -75,7 +75,6 @@ std::size_t LengthEncodedInteger::Decode(std::span<const std::uint8_t> data,
             (static_cast<std::uint64_t>(data[3]) << 16);
     return 4;
   }
-  // first == 0xFE
   if (data.size() < 9) return 0;
   std::uint64_t decoded = 0;
   for (int i = 0; i < 8; ++i)

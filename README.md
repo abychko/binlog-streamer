@@ -46,6 +46,9 @@ cmake --build build
 ctest --test-dir build
 ```
 
+On x86-64 the relay is built for x86-64-v3 processors (AVX2);
+`-DX86_64_LEVEL=x86-64-v2` or `-DX86_64_LEVEL="<NONE>"` builds for older ones.
+
 The Debian package is built on Debian and Ubuntu (`BUILD_DEB`, on by default
 there) and is the only package the build produces.
 

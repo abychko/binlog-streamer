@@ -40,8 +40,8 @@ TEST(StreamProgressTest, StartsEmptyAndFollowsTheStream) {
   EXPECT_EQ(point.timestamp, 1'700'000'000u);
   EXPECT_FALSE(point.idle);
 
-  // A new file starts where its events begin, and is not idle: the
-  // rotate itself is progress.
+  // A new file starts where its events begin, and is not idle: the rotate
+  // itself is progress.
   progress.Idle(200);
   EXPECT_TRUE(progress.Read().idle);
   progress.SetFile("binlog.000002", 4);

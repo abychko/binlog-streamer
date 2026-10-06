@@ -41,9 +41,8 @@ YamlMapReader::YamlMapReader(std::string file, YAML::Node map,
       prefix_(std::move(prefix)),
       errors_(errors),
       positions_(positions) {
-  // Mark's 3-argument constructor is private
-  // (yaml-cpp/include/yaml-cpp/mark.h); the default constructor gives the same
-  // (0, 0, 0) value publicly.
+  // yaml-cpp's Mark(int, int, int) constructor is private; the default one
+  // gives the same (0, 0, 0).
   if (!map_.IsMap())
     ErrorAt(prefix_, "expected a mapping",
             map_.Mark().is_null() ? YAML::Mark{} : map_.Mark());
@@ -62,10 +61,8 @@ YAML::Node YamlMapReader::Document(const std::string &text,
                         "expected a single YAML document"});
       return {};
     }
-    // An empty or comment-only text yields zero documents from LoadAll, unlike
-    // YAML::Load's single-document Null result; normalize to Null so callers
-    // that treat an empty file as "no content" (e.g. absent replica.yml) see it
-    // consistently.
+    // LoadAll yields zero documents for empty or comment-only text; normalize
+    // to Null as YAML::Load does.
     return documents.empty() ? YAML::Node(YAML::NodeType::Null)
                              : documents.front();
   } catch (const YAML::Exception &error) {
@@ -185,10 +182,6 @@ std::optional<std::uint64_t> YamlMapReader::OptionalNonEmptyUnsignedInteger(
                               maximum);
 }
 std::optional<bool> YamlMapReader::Bool(std::string_view key, bool required) {
-  // Reuses String() so absent/present-but-empty follow the same rule every
-  // other scalar leaf uses: absent is fine when optional, present-but-empty
-  // is always an error (OptionalNonEmptyString and "clients:" differ on
-  // purpose).
   const auto text = String(key, required);
   if (!text) return std::nullopt;
   if (*text == "true") return true;

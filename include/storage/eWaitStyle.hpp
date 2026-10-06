@@ -25,11 +25,9 @@
 
 namespace binlog_streamer {
 
-// How a caught-up reader waits for the next publication. Polling first
-// saves the wakeup on a busy stream, where the next group arrives within
-// the poll window; a reader that lingers before each write already
-// gathers what arrives meanwhile, so it blocks straight away and polls
-// for nothing.
+// How a caught-up reader waits for the next publication: polling first saves
+// the wakeup on a busy stream; a reader that lingers before each write blocks
+// straight away.
 enum class WaitStyle {
   PollFirst,
   Block,

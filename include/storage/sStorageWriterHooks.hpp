@@ -27,14 +27,11 @@
 #include <string>
 namespace binlog_streamer {
 struct StorageWriterHooks {
-  // Return false and set error to reject a body write before touching disk.
   std::function<bool(std::string &error)> beforeWrite;
   std::function<void()> beforeSync;
-  // Runs after the cache snapshot, outside both mutexes.
   std::function<void()> afterSnapshot;
   // Runs with the writer mutex held immediately before waiting; do not reenter.
   std::function<void()> beforeSleep;
-  // Replaces the file-system free-space query.
   std::function<bool(std::uint64_t &available, std::string &error)>
       measureAvailable;
 };

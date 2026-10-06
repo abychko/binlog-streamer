@@ -35,8 +35,7 @@
 namespace binlog_streamer {
 namespace {
 
-// The FDE's Common-Header timestamp doubles as the file's creation time
-// (binlog.cc:5082).
+// The FDE header timestamp is the file's creation time.
 class ProbeSink : public EventSink {
  public:
   std::optional<std::uint64_t> formatDescriptionTimestamp;
@@ -81,9 +80,7 @@ ProbeResult DumpProbe::Probe(const GtidSet &startSet) {
 
   TcpTransport transport(m_stopRequested, m_wakeupPipe);
   ReplicaSessionOptions sessionOptions;
-  sessionOptions.registerAsReplica =
-      false;  // a probe is not a replica the source should list
-              // (sReplicaSessionOptions.hpp)
+  sessionOptions.registerAsReplica = false;
   ReplicaSession session(transport, m_source, m_server, m_replicaUuid,
                          m_relayName, m_relayVersion, sessionOptions);
   const SessionResult sessionResult = session.Run();
@@ -114,9 +111,7 @@ ProbeResult DumpProbe::Probe(const GtidSet &startSet) {
   }
 
   result.ok = true;
-  result.fileName =
-      streamResult.lastPosition
-          .fileName;  // set by EventStreamReader's own ROTATE handling
+  result.fileName = streamResult.lastPosition.fileName;
   result.position = streamResult.lastPosition.position;
   result.createdAt = *sink.formatDescriptionTimestamp;
   return result;
@@ -127,35 +122,29 @@ PreviousGtidsResult DumpProbe::PreviousGtidsText(std::string_view fileName) {
 
   TcpTransport transport(m_stopRequested, m_wakeupPipe);
   ReplicaSessionOptions sessionOptions;
-  sessionOptions.registerAsReplica =
-      false;  // a plain query, not a dump - no reason to register either
+  sessionOptions.registerAsReplica = false;
   ReplicaSession session(transport, m_source, m_server, m_replicaUuid,
                          m_relayName, m_relayVersion, sessionOptions);
   const SessionResult sessionResult = session.Run();
   if (sessionResult.outcome != SessionOutcome::Registered) {
-    result.failure =
-        sessionResult;  // carries its own outcome (Transient for a transport
-                        // failure, Permanent/Stopped otherwise)
+    result.failure = sessionResult;
     return result;
   }
 
-  // fileName is never external input: callers build it from a basename
-  // this probe already read from the source's own ROTATE events, so
-  // interpolating it into SQL here carries no injection risk.
+  // fileName comes from the source's own ROTATE events, never external input,
+  // so interpolating it into SQL is injection-safe.
   const std::string sql =
       "SHOW BINLOG EVENTS IN '" + std::string(fileName) + "' LIMIT 1,1";
   const auto rowResult = session.QueryRow(sql, 6);
   if (!rowResult.ok) {
-    result.failure =
-        rowResult.failure;  // same: already Transient/Permanent-classified by
-                            // QueryRow
+    result.failure = rowResult.failure;
     return result;
   }
   constexpr std::size_t INFO_COLUMN = 5;
   if (rowResult.columns.size() != 6 ||
       !rowResult.columns[INFO_COLUMN].has_value()) {
-    // Not a transport problem and not retryable - the file exists but
-    // genuinely has no Previous_gtids row (predates GTIDs, or a bad file).
+    // Not retryable: the file has no Previous_gtids row (it predates GTIDs or
+    // is damaged).
     result.failure =
         MakeFailure("file '" + std::string(fileName) +
                     "' has no second event (no Previous_gtids row)");

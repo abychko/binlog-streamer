@@ -31,8 +31,6 @@
 namespace binlog_streamer {
 namespace {
 
-// Raw wire type code rather than EventType: some events below (Query,
-// Table_map, Write_rows_v2, Xid) have no enumerator of their own.
 EventHeader MakeHeader(std::uint8_t type, std::uint32_t eventLength) {
   EventHeader header;
   header.type = type;
@@ -44,9 +42,7 @@ EventHeader MakeHeader(EventType type, std::uint32_t eventLength) {
   return MakeHeader(static_cast<std::uint8_t>(type), eventLength);
 }
 
-// Wire type codes for events used below that have no EventType enumerator
-// of their own (percona-server dfc6d1f,
-// libs/mysql/binlog/event/binlog_event.h:300,313,317,348).
+// Wire type codes of events that have no EventType enumerator.
 constexpr std::uint8_t QUERY_EVENT_TYPE = 2;
 constexpr std::uint8_t XID_EVENT_TYPE = 16;
 constexpr std::uint8_t TABLE_MAP_EVENT_TYPE = 19;
@@ -85,9 +81,7 @@ TEST(TransactionBoundaryTrackerTest,
                             nullptr, error),
             BoundaryOutcome::InGroup)
       << error;
-  // This last event lands exactly at the group's end (103445 + 331) - it
-  // must trip GroupEnd, not InGroup, catching a `<=` mutant on the InGroup
-  // comparison.
+  // Lands exactly at the group's end: GroupEnd, not InGroup.
   EXPECT_EQ(
       tracker.OnEvent(MakeHeader(XID_EVENT_TYPE, 31), 103745, nullptr, error),
       BoundaryOutcome::GroupEnd)
@@ -95,9 +89,7 @@ TEST(TransactionBoundaryTrackerTest,
   EXPECT_FALSE(tracker.InGroup());
 }
 
-// Same real group as above, its last event shifted one byte past the
-// boundary its own GTID event promised (eventLength 32 instead of the real
-// 31) - the sum overshoots groupEndOffset_ instead of landing on it.
+// One byte past the boundary its GTID promised (eventLength 32 instead of 31).
 TEST(TransactionBoundaryTrackerTest,
      AnEventCrossingTheGroupEndByOneByteIsMalformed) {
   TransactionBoundaryTracker tracker;
@@ -168,8 +160,7 @@ TEST(TransactionBoundaryTrackerTest,
       tracker.OnEvent(MakeHeader(EventType::Rotate, 50), 1079, nullptr, error),
       BoundaryOutcome::Malformed);
   EXPECT_FALSE(error.empty());
-  EXPECT_TRUE(tracker.InGroup());  // left open - Reset() is the recovery, not
-                                   // another event
+  EXPECT_TRUE(tracker.InGroup());  // left open: Reset() is the recovery
 }
 
 TEST(TransactionBoundaryTrackerTest, AServiceEventOutsideAnyGroupIsStandalone) {
@@ -181,9 +172,6 @@ TEST(TransactionBoundaryTrackerTest, AServiceEventOutsideAnyGroupIsStandalone) {
   EXPECT_FALSE(tracker.InGroup());
 }
 
-// A GTID event always opens a new group (percona-server dfc6d1f,
-// trx_boundary_parser.cpp:305-337) - one arriving mid-group must not be
-// read as an ordinary in-group event.
 TEST(TransactionBoundaryTrackerTest,
      ANestedGtidEventInsideAnOpenGroupIsMalformed) {
   TransactionBoundaryTracker tracker;
@@ -198,10 +186,8 @@ TEST(TransactionBoundaryTrackerTest,
                             &secondGtid, error),
             BoundaryOutcome::Malformed);
   EXPECT_FALSE(error.empty());
-  EXPECT_TRUE(tracker.InGroup());  // left open, same recovery contract as
-                                   // AServiceEventInsideAnOpenGroupIsMalformed
+  EXPECT_TRUE(tracker.InGroup());
 
-  // AnonymousGtid interrupts an open group just as much as Gtid does.
   TransactionBoundaryTracker anotherTracker;
   ASSERT_EQ(anotherTracker.OnEvent(MakeHeader(EventType::Gtid, 79), 103445,
                                    &firstGtid, error),
@@ -213,9 +199,7 @@ TEST(TransactionBoundaryTrackerTest,
   EXPECT_FALSE(error.empty());
 }
 
-// error is cleared on the Standalone path just like every other non-
-// Malformed outcome - a caller inspecting error only after a non-Malformed
-// return must not see a message left over from an earlier, unrelated event.
+// error is cleared on every non-Malformed outcome.
 TEST(TransactionBoundaryTrackerTest,
      StandaloneClearsAnErrorLeftBehindByAnEarlierMalformedEvent) {
   TransactionBoundaryTracker tracker;
@@ -243,9 +227,6 @@ TEST(TransactionBoundaryTrackerTest, ResetDropsAnOpenGroup) {
   tracker.Reset();
   EXPECT_FALSE(tracker.InGroup());
 
-  // The event that would have completed the dropped group (offset 1079,
-  // ending exactly at the old groupEndOffset_ 1200) is now just an
-  // ordinary event outside any group, not a leftover GroupEnd.
   EXPECT_EQ(
       tracker.OnEvent(MakeHeader(QUERY_EVENT_TYPE, 121), 1079, nullptr, error),
       BoundaryOutcome::Standalone);
@@ -293,8 +274,7 @@ TEST(TransactionBoundaryTrackerTest,
   EXPECT_FALSE(error.empty());
 }
 
-// GNO_END (percona-server dfc6d1f, control_events.h:1248) is INT64_MAX
-// itself, exclusive - catches a mutant computing the upper bound inclusive.
+// GNO_END is INT64_MAX itself, exclusive.
 TEST(TransactionBoundaryTrackerTest,
      AnOrdinaryGtidEventWithAGnoAtTheUpperBoundIsMalformed) {
   TransactionBoundaryTracker tracker;

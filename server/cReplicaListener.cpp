@@ -107,8 +107,7 @@ void ReplicaListener::AcceptLoop() {
     }
     if (outcome == AcceptOutcome::Failed) {
       if (m_log) m_log("accept failed: " + error);
-      continue;  // transient (e.g. a resource limit) - one failed accept does
-                 // not end the listener
+      continue;
     }
 
     auto transport =
@@ -119,17 +118,17 @@ void ReplicaListener::AcceptLoop() {
       continue;
     }
 
-    // Counted synchronously in the accept loop, not inside the spawned
-    // thread, so two connections arriving close together cannot both
-    // read the same under-the-cap count before either increments it.
+    // Counted synchronously in the accept loop, not in the spawned thread, so
+    // two connections arriving together cannot both read the same under-the-cap
+    // count before either increments it.
     const bool tooMany = m_activeConnections.load() >= m_maxConnections;
     if (!tooMany) m_activeConnections.fetch_add(1);
 
     auto finished = std::make_shared<std::atomic<bool>>(false);
     ReplicaClientList::Snapshot clients = m_clients.Current();
     std::atomic<unsigned> &activeConnections = m_activeConnections;
-    // Read per connection, not once at start-up: the first file is
-    // stored while replicas are already free to connect.
+    // Read per connection, not once at start-up: the first file is stored while
+    // replicas are already free to connect.
     std::string serverVersion = ServerVersionString(
         m_state != nullptr ? m_state->SourceVersion() : std::string(),
         m_identity.relayName, m_identity.relayVersion);
@@ -139,7 +138,6 @@ void ReplicaListener::AcceptLoop() {
     else if (serverVersion.empty())
       refusal = ConnectionRefusal::NotReady;
     LogFunction log = m_log;
-    // Everything named here outlives every connection: Stop() joins them first.
     ConnectionServices services{m_queryResponder.get(),
                                 m_storageReader,
                                 m_dumpSessions.get(),

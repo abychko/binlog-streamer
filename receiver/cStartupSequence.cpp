@@ -63,8 +63,6 @@ StartupOutcome StartupSequence::Run() {
   StartSetResolver resolver(m_probe);
   SessionResult last;
   for (unsigned attempt = 1; attempt <= m_options.attempts; ++attempt) {
-    // A fresh session per attempt - only a Registered outcome's session
-    // survives past it.
     auto session = std::make_unique<ReplicaSession>(
         m_transport, m_source, m_server, m_replicaUuid, m_relayName,
         m_relayVersion, m_sessionOptions);
@@ -80,9 +78,9 @@ StartupOutcome StartupSequence::Run() {
         if (!gtidPurged.ok) {
           last = gtidPurged.failure;
         } else {
-          // While the source still has our last file, nothing binlogged after
-          // our history was purged: what gtid_purged adds never was in a
-          // binlog. Without the file, the source alone decides (1236 on a gap).
+          // While the source still has our last file, what gtid_purged adds was
+          // never in a binlog; without the file the source decides (1236 on a
+          // gap).
           const auto lastFile = m_probe.PreviousGtidsText(m_storedFileName);
           if (lastFile.ok && gtidPurged.value.has_value()) {
             std::string parseError;
@@ -128,9 +126,8 @@ StartupOutcome StartupSequence::Run() {
       return StartupOutcome{last, nullptr, {}};
     if (m_options.onRetry)
       m_options.onRetry(attempt, m_options.attempts, last.message);
-    // Checked after onRetry() and again after sleep() - a stop request
-    // arriving between attempts would otherwise go unnoticed until all
-    // remaining attempts ran.
+    // Checked after onRetry() and again after sleep(): a stop arriving between
+    // attempts must not wait out the remaining attempts.
     if (m_stopRequested != nullptr && m_stopRequested->load()) {
       return StartupOutcome{
           MakeStopped("stop requested between start-up attempts"), nullptr, {}};

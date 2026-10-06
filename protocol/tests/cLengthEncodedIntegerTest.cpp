@@ -73,8 +73,7 @@ TEST(LengthEncodedIntegerTest, DecodeReportsNullMarker) {
 }
 
 TEST(LengthEncodedIntegerTest, DecodeReturnsZeroWhenTruncated) {
-  const std::vector<std::uint8_t> data{
-      0xFD, 0x01};  // declares a 3-byte value, only 1 byte present
+  const std::vector<std::uint8_t> data{0xFD, 0x01};
   std::uint64_t value = 0;
   bool isNull = false;
   EXPECT_EQ(LengthEncodedInteger::Decode(data, value, isNull), 0u);

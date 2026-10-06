@@ -34,17 +34,16 @@ namespace binlog_streamer {
 namespace {
 
 TEST(PacketFramerTest, EncodesSmallPayloadAsOnePacket) {
-  const std::vector<std::uint8_t> payload{0x03, 'a', 'b',
-                                          'c'};  // COM_QUERY "abc"
+  const std::vector<std::uint8_t> payload{0x03, 'a', 'b', 'c'};
   std::uint8_t sequenceId = 0;
   std::vector<std::uint8_t> out;
   PacketFramer::Encode(payload, sequenceId, out);
 
   ASSERT_EQ(out.size(), 4 + payload.size());
-  EXPECT_EQ(out[0], 0x04);  // length low byte
+  EXPECT_EQ(out[0], 0x04);
   EXPECT_EQ(out[1], 0x00);
   EXPECT_EQ(out[2], 0x00);
-  EXPECT_EQ(out[3], 0x00);  // sequence id
+  EXPECT_EQ(out[3], 0x00);
   EXPECT_EQ(sequenceId, 1);
   EXPECT_TRUE(std::equal(payload.begin(), payload.end(), out.begin() + 4));
 }
@@ -59,9 +58,6 @@ TEST(PacketFramerTest, EncodeStartsFromGivenSequenceIdAndAdvancesIt) {
 }
 
 TEST(PacketFramerTest, EncodeSplitsExactBoundaryWithEmptyTerminator) {
-  // A payload exactly MAX_PAYLOAD_PER_PACKET long must still be followed
-  // by a zero-length terminator sub-packet, because a full-size
-  // sub-packet alone is indistinguishable from "more to come".
   const std::vector<std::uint8_t> payload(MAX_PAYLOAD_PER_PACKET, 0x7A);
   std::uint8_t sequenceId = 0;
   std::vector<std::uint8_t> out;
@@ -134,18 +130,17 @@ TEST(PacketFramerTest, DecodeReassemblesSinglePacket) {
 }
 
 TEST(PacketFramerTest, DecodeReportsNeedMoreBytesForIncompleteHeader) {
-  const std::vector<std::uint8_t> data{0x04, 0x00};  // only 2 of 4 header bytes
+  const std::vector<std::uint8_t> data{0x04, 0x00};
   std::uint8_t sequenceId = 0;
   std::vector<std::uint8_t> payload;
   const auto result = PacketFramer::Decode(data, sequenceId, payload);
   EXPECT_EQ(result.status, PacketDecodeStatus::NeedMoreBytes);
   EXPECT_GT(result.bytesNeeded, 0u);
-  EXPECT_EQ(sequenceId, 0);  // unchanged
+  EXPECT_EQ(sequenceId, 0);
 }
 
 TEST(PacketFramerTest, DecodeReportsNeedMoreBytesForIncompletePayload) {
-  const std::vector<std::uint8_t> data{0x04, 0x00, 0x00,
-                                       0x00, 0x03, 'a'};  // declares 4, has 2
+  const std::vector<std::uint8_t> data{0x04, 0x00, 0x00, 0x00, 0x03, 'a'};
   std::uint8_t sequenceId = 0;
   std::vector<std::uint8_t> payload;
   const auto result = PacketFramer::Decode(data, sequenceId, payload);
@@ -155,10 +150,9 @@ TEST(PacketFramerTest, DecodeReportsNeedMoreBytesForIncompletePayload) {
 
 TEST(PacketFramerTest, DecodeReassemblesSubPacketsAtExactBoundary) {
   std::vector<std::uint8_t> data;
-  data.insert(data.end(), {0xFF, 0xFF, 0xFF,
-                           0});  // first sub-packet header: length MAX, seq 0
+  data.insert(data.end(), {0xFF, 0xFF, 0xFF, 0});
   data.insert(data.end(), MAX_PAYLOAD_PER_PACKET, 0x7A);
-  data.insert(data.end(), {0, 0, 0, 1});  // terminator: length 0, seq 1
+  data.insert(data.end(), {0, 0, 0, 1});
 
   std::uint8_t sequenceId = 0;
   std::vector<std::uint8_t> payload;
@@ -170,13 +164,12 @@ TEST(PacketFramerTest, DecodeReassemblesSubPacketsAtExactBoundary) {
 }
 
 TEST(PacketFramerTest, DecodeDetectsSequenceMismatch) {
-  const std::vector<std::uint8_t> data{0x01, 0x00, 0x00, 0x07,
-                                       0x00};  // seq 7, expected 3
+  const std::vector<std::uint8_t> data{0x01, 0x00, 0x00, 0x07, 0x00};
   std::uint8_t sequenceId = 3;
   std::vector<std::uint8_t> payload;
   const auto result = PacketFramer::Decode(data, sequenceId, payload);
   EXPECT_EQ(result.status, PacketDecodeStatus::SequenceMismatch);
-  EXPECT_EQ(sequenceId, 3);  // unchanged
+  EXPECT_EQ(sequenceId, 3);
 }
 
 TEST(PacketFramerTest,
@@ -190,16 +183,14 @@ TEST(PacketFramerTest,
 }
 
 TEST(PacketFramerTest, MeasureReportsNeedMoreBytesForIncompleteHeader) {
-  const std::vector<std::uint8_t> data{0x04, 0x00};  // only 2 of 4 header bytes
+  const std::vector<std::uint8_t> data{0x04, 0x00};
   const auto result = PacketFramer::Measure(data, 0);
   EXPECT_EQ(result.status, PacketDecodeStatus::NeedMoreBytes);
-  EXPECT_EQ(result.bytesNeeded,
-            2u);  // exact: 4 header bytes needed, 2 already visible
+  EXPECT_EQ(result.bytesNeeded, 2u);
 }
 
 TEST(PacketFramerTest, MeasureReportsNeedMoreBytesForIncompletePayload) {
-  const std::vector<std::uint8_t> data{0x04, 0x00, 0x00,
-                                       0x00, 0x03, 'a'};  // declares 4, has 2
+  const std::vector<std::uint8_t> data{0x04, 0x00, 0x00, 0x00, 0x03, 'a'};
   const auto result = PacketFramer::Measure(data, 0);
   EXPECT_EQ(result.status, PacketDecodeStatus::NeedMoreBytes);
   EXPECT_EQ(result.bytesNeeded, 2u);
@@ -207,10 +198,9 @@ TEST(PacketFramerTest, MeasureReportsNeedMoreBytesForIncompletePayload) {
 
 TEST(PacketFramerTest, MeasureReassemblesSubPacketsAtExactBoundary) {
   std::vector<std::uint8_t> data;
-  data.insert(data.end(), {0xFF, 0xFF, 0xFF,
-                           0});  // first sub-packet header: length MAX, seq 0
+  data.insert(data.end(), {0xFF, 0xFF, 0xFF, 0});
   data.insert(data.end(), MAX_PAYLOAD_PER_PACKET, 0x7A);
-  data.insert(data.end(), {0, 0, 0, 1});  // terminator: length 0, seq 1
+  data.insert(data.end(), {0, 0, 0, 1});
 
   const auto result = PacketFramer::Measure(data, 0);
   EXPECT_EQ(result.status, PacketDecodeStatus::Complete);
@@ -218,25 +208,20 @@ TEST(PacketFramerTest, MeasureReassemblesSubPacketsAtExactBoundary) {
 }
 
 TEST(PacketFramerTest, MeasureDetectsSequenceMismatch) {
-  const std::vector<std::uint8_t> data{0x01, 0x00, 0x00, 0x07,
-                                       0x00};  // seq 7, expected 3
+  const std::vector<std::uint8_t> data{0x01, 0x00, 0x00, 0x07, 0x00};
   const auto result = PacketFramer::Measure(data, 3);
   EXPECT_EQ(result.status, PacketDecodeStatus::SequenceMismatch);
 }
 
 TEST(PacketFramerTest,
      MeasureAndDecodeAgreeOnACompletePacketFollowedByLeftoverBytes) {
-  // The leftover bytes belong to a second, not-yet-relevant packet -
-  // Measure() (and PacketChannel, which relies on this) must stop
-  // exactly at the first packet's end and not require or consume them.
   std::vector<std::uint8_t> data{0x03, 0x00, 0x00, 0x00, 'a', 'b', 'c'};
   const std::vector<std::uint8_t> nextPacketHeader{0x01, 0x00, 0x00, 0x01};
   data.insert(data.end(), nextPacketHeader.begin(), nextPacketHeader.end());
 
   const auto measured = PacketFramer::Measure(data, 0);
   ASSERT_EQ(measured.status, PacketDecodeStatus::Complete);
-  EXPECT_EQ(measured.bytesConsumed,
-            7u);  // header (4) + payload (3), not the trailing 4 bytes
+  EXPECT_EQ(measured.bytesConsumed, 7u);
 
   std::uint8_t sequenceId = 0;
   std::vector<std::uint8_t> payload;

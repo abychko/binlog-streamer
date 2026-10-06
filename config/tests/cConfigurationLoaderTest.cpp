@@ -135,23 +135,17 @@ TEST(ConfigurationLoaderTest, DirectoryViolationIsReportedOnce) {
   fixture.WriteFile("settings.yml", SETTINGS);
   fixture.WriteFile("source.yml", SOURCE);
   fixture.WriteFile("replica.yml", REPLICA);
-  ASSERT_EQ(chmod(fixture.Directory().c_str(), 0770),
-            0);  // group-writable: both protected files see the violation
+  ASSERT_EQ(chmod(fixture.Directory().c_str(), 0770), 0);
   DiskProtectedFileReader reader(ProtectedFileFixture::CurrentUserName(),
                                  ProtectedFileFixture::CurrentGroupName());
   const auto result =
       ConfigurationLoader(reader, ProtectedFileFixture::CurrentUserName())
           .Load((fixture.Directory() / "settings.yml").string());
   EXPECT_FALSE(result.value);
-  // ConfigurationLoader deduplicates the identical directory error raised
-  // separately for source.yml and replica.yml.
   ASSERT_EQ(result.errors.size(), 1u);
   EXPECT_EQ(result.errors[0].file, fixture.Directory().string());
 }
 
-// Proves expectedOwner reaches SourceConfigLoader's public-key-file check
-// too, not just DiskProtectedFileReader: a wrong owner there would fail
-// with "wrong owner" before RsaPublicKey::Parse, not the PEM message below.
 TEST(ConfigurationLoaderTest,
      SourcePublicKeyPathOwnerCheckUsesConfigurationLoadersExpectedOwner) {
   ProtectedFileFixture fixture;
@@ -178,14 +172,12 @@ TEST(ConfigurationLoaderTest, PackagedSettingsExampleLoadsWithoutErrors) {
   EXPECT_TRUE(result.errors.empty());
 }
 
-// Keep the shipped cache.max_size at or above the validator's 2 MiB minimum
-// so a typo in the template is caught here rather than during installation.
 TEST(ConfigurationLoaderTest,
      PackagedSettingsCacheMaxSizeParsesToAtLeastTwoMebibytes) {
   const auto result = ConfigLoader::Load(
       std::string(BINLOG_STREAMER_PACKAGING_DIR) + "/settings.yml");
   ASSERT_TRUE(result.value) << ::testing::PrintToString(result.errors);
-  EXPECT_GE(result.value->cache.maxSize, std::uint64_t{2} << 20);  // 2 MiB
+  EXPECT_GE(result.value->cache.maxSize, std::uint64_t{2} << 20);
 }
 
 std::string ReadFile(const std::filesystem::path &path) {
@@ -221,9 +213,6 @@ TEST(ConfigurationLoaderTest,
   }
 }
 
-// Unlike source.yml, an unfilled replica.yml template loads without errors:
-// empty listen_address/listen_port mean "use the default", matching the
-// file being absent entirely - both leave the relay serving no replica.
 TEST(ConfigurationLoaderTest, UnfilledReplicaTemplateLoadsSameAsAbsentFile) {
   ProtectedFileFixture fixture;
   const auto content =

@@ -17,9 +17,6 @@ ADD_EXECUTABLE(bs-storage-tests
     cStorageReaderCacheTest.cpp
     cStorageRecoveryTest.cpp
 )
-# receiver/tests headers (ScriptedStreamBuilder) are needed only by
-# cStorageEventSinkTest.cpp's end-to-end cases, which drive a real
-# EventStreamReader into StorageEventSink instead of calling it directly.
 TARGET_INCLUDE_DIRECTORIES(bs-storage-tests PRIVATE ${PROJECT_SOURCE_DIR}/receiver/tests)
 TARGET_LINK_LIBRARIES(bs-storage-tests PRIVATE bs-storage bs-receiver
     bs-protocol bs-net-test-support GTest::gtest_main)
@@ -27,17 +24,14 @@ GTEST_DISCOVER_TESTS(bs-storage-tests PROPERTIES TIMEOUT 30)
 
 ADD_TEST(NAME StorageIntegrationTest
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/storage_integration_test.sh $<TARGET_FILE:${PROJECT_NAME}>)
-# Same RESOURCE_LOCK name as StreamIntegrationTest/SourceIntegrationTest: all
-# three force rotations against the same live source, so ctest -j must never
-# run two at once, or one test's rotation can clear a bit a sibling still holds.
+# Shares RESOURCE_LOCK with the other integration tests: they all force
+# rotations on the same live source, so ctest -j must not run two at once.
 SET_TESTS_PROPERTIES(StorageIntegrationTest PROPERTIES
     SKIP_REGULAR_EXPRESSION "skipped:"
     RESOURCE_LOCK "binlog_streamer_live_source")
 
 ADD_TEST(NAME StorageResumeTest
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/storage_resume_test.sh $<TARGET_FILE:${PROJECT_NAME}>)
-# Same RESOURCE_LOCK reasoning as StorageIntegrationTest: also restarts the
-# relay against the same live source's current file.
 SET_TESTS_PROPERTIES(StorageResumeTest PROPERTIES
     SKIP_REGULAR_EXPRESSION "skipped:"
     RESOURCE_LOCK "binlog_streamer_live_source")
@@ -59,8 +53,6 @@ SET_TESTS_PROPERTIES(StorageSpaceTest PROPERTIES
 FIND_PACKAGE(Threads REQUIRED)
 ADD_EXECUTABLE(storage_sink_bench cStorageEventSinkBench.cpp)
 TARGET_LINK_LIBRARIES(storage_sink_bench PRIVATE bs-storage bs-receiver Threads::Threads)
-# Cheap smoke run; the larger, memory-limited invocations this tool is for
-# are run by hand against a real Linux disk, not through ctest.
 ADD_TEST(NAME StorageSinkBenchSmoke COMMAND storage_sink_bench --groups 1000 --readers 1)
 ADD_TEST(NAME StorageSinkBenchWindowSmoke COMMAND storage_sink_bench --readers 1 --readers-lag 2 --rate 5 --window 1 --groups 27000)
 

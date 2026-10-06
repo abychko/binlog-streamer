@@ -21,10 +21,6 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-// Real-socket coverage for the listener: end-to-end through a real
-// loopback TCP connection and a minimal client that computes its own
-// scramble from whatever nonce the greeting actually sent.
-
 #include "server/cReplicaListener.hpp"
 
 #include "net/cPacketChannel.hpp"
@@ -83,7 +79,7 @@ ReplicaClient MakeClient(std::string user, std::string password,
 
 struct LoginAttempt {
   bool ok = false;
-  ErrPacket err;  // meaningful only if !ok
+  ErrPacket err;
 };
 
 LoginAttempt AttemptLogin(std::uint16_t port, std::string_view username,
@@ -105,8 +101,7 @@ LoginAttempt AttemptLogin(std::uint16_t port, std::string_view username,
   }
   if (ErrPacketCodec::IsErrPacket(payload)) {
     ErrPacketCodec::Parse(payload, result.err, error);
-    return result;  // rejected before a greeting (e.g. ERR 1130 for a
-                    // disallowed address)
+    return result;
   }
   HandshakeV10 greeting;
   if (!HandshakeV10Codec::Parse(payload, greeting, error)) {
@@ -114,9 +109,7 @@ LoginAttempt AttemptLogin(std::uint16_t port, std::string_view username,
     return result;
   }
   EXPECT_EQ(greeting.authPluginName, "caching_sha2_password");
-  if (greeting.authPluginData.size() <
-      SCRAMBLE_LENGTH) {  // ASSERT_* cannot be used here -
-                          // LoginAttempt-returning, not void
+  if (greeting.authPluginData.size() < SCRAMBLE_LENGTH) {
     ADD_FAILURE() << "greeting nonce shorter than expected";
     return result;
   }
@@ -161,9 +154,7 @@ LoginAttempt AttemptLogin(std::uint16_t port, std::string_view username,
   }
   result.ok = OkPacketCodec::IsOkPacket(
       payload.empty() ? std::uint8_t{0} : payload[0], false);
-  if (result.ok)
-    transport.Close();  // best-effort - this test does not exercise the
-                        // post-login command loop
+  if (result.ok) transport.Close();
   return result;
 }
 
@@ -178,10 +169,6 @@ class ReplicaListenerLoopbackTest : public ::testing::Test {
   }
 };
 
-// ReplicaListener does not report back which port the OS chose for
-// listen_port 0, so tests find a free port themselves (bind to 0, read it
-// back, close) - a small TOCTOU race, negligible in a short localhost-only
-// test.
 std::uint16_t FindFreePort() {
   const int probe = socket(AF_INET, SOCK_STREAM, 0);
   struct sockaddr_in address{};
@@ -197,9 +184,6 @@ std::uint16_t FindFreePort() {
   return port;
 }
 
-// Every connection is refused before its greeting while the relay holds
-// nothing, so a listener under test is given a source version the way a
-// stored file supplies one.
 class FixedServerState : public ServerState {
  public:
   explicit FixedServerState(std::string sourceVersion = "8.4.11")
@@ -269,9 +253,9 @@ TEST_F(ReplicaListenerLoopbackTest,
   ReplicaSettings settings;
   settings.listenAddress = Loopback();
   settings.listenPort = FindFreePort();
-  // The client connects from loopback, but no configured client allows
-  // that address - 203.0.113.0/24 (RFC 5737, a documentation range) keeps
-  // this test's intent independent of what loopback resolves to here.
+  // 203.0.113.0/24 (RFC 5737, a documentation range): no configured client
+  // allows loopback, and this keeps the test independent of what loopback
+  // resolves to.
   IpAddress documentationRange{};
   documentationRange.family = AddressFamily::Ipv4;
   documentationRange.bytes = {203, 0, 113, 0};
@@ -304,9 +288,6 @@ TEST_F(ReplicaListenerLoopbackTest,
   std::string error;
   ASSERT_TRUE(listener.Start(error)) << error;
 
-  // Two connections logged in and idle, waiting for their next command
-  // (COMMAND_WAIT_TIMEOUT is 8h, so nothing times out here). Left open
-  // deliberately - the test only needs live threads when Stop() runs.
   TcpTransport clientA;
   TcpTransport clientB;
   ASSERT_TRUE(clientA.Connect("127.0.0.1", settings.listenPort,
@@ -315,14 +296,10 @@ TEST_F(ReplicaListenerLoopbackTest,
   ASSERT_TRUE(clientB.Connect("127.0.0.1", settings.listenPort,
                               std::chrono::milliseconds(2000), error))
       << error;
-  // Let both connection threads reach their own blocking read before
-  // Stop() runs - the point is that Stop() unblocks waiting threads, not
-  // that it's race-free against connections mid-handshake.
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   const auto start = std::chrono::steady_clock::now();
-  stopRequested.store(
-      true);  // mirrors HandleStopSignal(): the flag, then the wakeup
+  stopRequested.store(true);
   wakeupPipe.Wake();
   listener.Stop();
   const auto elapsed = std::chrono::steady_clock::now() - start;
@@ -330,12 +307,7 @@ TEST_F(ReplicaListenerLoopbackTest,
   EXPECT_LT(elapsed, std::chrono::milliseconds(2000));
 }
 
-// The listener applies the limit it is given; the connection past it
-// gets ERR 1040 as its first packet, not a greeting.
 TEST_F(ReplicaListenerLoopbackTest, TheConnectionPastTheLimitGetsErr1040) {
-  // The limit the listener is given, not the packaged default: what is
-  // under test is the counting, and three sockets say the same about it
-  // as a hundred and twenty-eight would.
   constexpr unsigned CONNECTION_LIMIT = 3;
 
   ReplicaSettings settings;
@@ -348,8 +320,6 @@ TEST_F(ReplicaListenerLoopbackTest, TheConnectionPastTheLimitGetsErr1040) {
   std::string error;
   ASSERT_TRUE(listener.Start(error)) << error;
 
-  // Each of these reads its greeting and then stays silent: the listener
-  // has counted it, and its login deadline is far longer than this test.
   std::vector<std::unique_ptr<TcpTransport>> held;
   for (unsigned i = 0; i < CONNECTION_LIMIT; ++i) {
     auto transport = std::make_unique<TcpTransport>();
@@ -376,10 +346,6 @@ TEST_F(ReplicaListenerLoopbackTest, TheConnectionPastTheLimitGetsErr1040) {
   listener.Stop();
 }
 
-// A replica is switched over to a relay that already holds events; one
-// that holds none cannot name the server it stands for, and says so
-// instead of inventing a version. The replica retries on its own
-// connect-retry timer, which is what waiting looks like from here.
 TEST_F(ReplicaListenerLoopbackTest,
        AConnectionGetsErr3168UntilSomethingIsHeld) {
   ReplicaSettings settings;
@@ -421,7 +387,7 @@ TEST_F(ReplicaListenerLoopbackTest,
   source.password = "s3cret";
   ServerSettings downstream;
   downstream.serverId = 2002;
-  ReplicaSessionOptions options;  // registers as a replica, as a real one does
+  ReplicaSessionOptions options;
   TcpTransport transport;
   ReplicaSession session(transport, source, downstream,
                          "11111111-2222-3333-4444-555555555555",
@@ -431,9 +397,8 @@ TEST_F(ReplicaListenerLoopbackTest,
   EXPECT_EQ(result.outcome, SessionOutcome::Registered) << result.message;
   EXPECT_EQ(result.identity.serverId, 1001u);
   EXPECT_EQ(result.identity.serverUuid, RELAY_UUID);
-  // What a downstream relay reads: its source's version is the version of
-  // the server the events came from, and the suffix tells it the answer
-  // came from a relay.
+  // A downstream relay reads its source's version as the version of the server
+  // the events came from; the suffix tells it the answer came from a relay.
   EXPECT_EQ(result.identity.versionString,
             ServerVersionString("8.4.11", RELAY_NAME, RELAY_VERSION));
   EXPECT_TRUE(IsRelayServerVersion(result.identity.versionString, RELAY_NAME));
@@ -446,8 +411,6 @@ TEST_F(ReplicaListenerLoopbackTest,
   listener.Stop();
 }
 
-// The relay's certificate, generated once per process: keygen is the
-// slow part of these tests.
 const GeneratedCertificates &Certificates() {
   static const GeneratedCertificates certificates = [] {
     GeneratedCertificates generated;
@@ -461,7 +424,7 @@ const GeneratedCertificates &Certificates() {
 
 const TlsContext &ServerTls() {
   static const TlsContext &context = [] {
-    auto *loaded = new TlsContext;  // lives for the process, as a static
+    auto *loaded = new TlsContext;
     std::string error;
     if (!loaded->LoadServer(
             TlsMaterial{Certificates().caCertPem, Certificates().serverCertPem,

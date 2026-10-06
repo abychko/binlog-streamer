@@ -41,7 +41,6 @@ std::vector<std::uint8_t> HexToBytes(std::string_view hex) {
   return bytes;
 }
 
-// 21-byte auth-plugin-data: 20 real nonce bytes + trailing 0x00.
 std::vector<std::uint8_t> RealHandshakeV10Payload() {
   return HexToBytes(
       "0a382e342e313100a0cf00006d6a4f4b4b463a3c00ffffff0200ffdf15000000"
@@ -59,8 +58,7 @@ TEST(HandshakeV10CodecTest, ParsesRealServerGreeting) {
   EXPECT_EQ(value.serverVersion, "8.4.11");
   EXPECT_EQ(value.threadId, 53152u);
   ASSERT_EQ(value.authPluginData.size(), 21u);
-  EXPECT_EQ(value.authPluginData[20],
-            0);  // trailing NUL, not part of the real nonce
+  EXPECT_EQ(value.authPluginData[20], 0);
   EXPECT_TRUE((value.capabilities & CLIENT_PLUGIN_AUTH) != 0);
   EXPECT_TRUE((value.capabilities & CLIENT_PROTOCOL_41) != 0);
   EXPECT_EQ(value.characterSet, 255);
@@ -68,8 +66,6 @@ TEST(HandshakeV10CodecTest, ParsesRealServerGreeting) {
 }
 
 TEST(HandshakeV10CodecTest, ScramblePart1MatchesWireBytes) {
-  // The first 8 bytes of the reassembled scramble must match the wire
-  // bytes right after thread_id - copied out before extended fields are read.
   HandshakeV10 value;
   std::string error;
   ASSERT_TRUE(
@@ -100,8 +96,6 @@ TEST(HandshakeV10CodecTest, RejectsTruncatedPacket) {
 
 TEST(HandshakeV10CodecTest, RejectsMissingServerVersionTerminator) {
   std::vector<std::uint8_t> payload = RealHandshakeV10Payload();
-  // Replace the server version's NUL terminator with a non-NUL byte,
-  // leaving no terminator anywhere in the buffer.
   for (std::size_t i = 1; i < payload.size(); ++i) {
     if (payload[i] == 0) payload[i] = 'x';
   }

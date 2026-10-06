@@ -10,8 +10,6 @@ ADD_LIBRARY(bs-net STATIC
     cWakeupPipe.cpp
 )
 
-# OpenSSL::SSL PRIVATE: the TLS headers forward-declare OpenSSL's types, so
-# no consumer needs its include path.
 TARGET_LINK_LIBRARIES(bs-net PUBLIC bs-warnings
     PRIVATE bs-protocol libzstd_static zlib-ng OpenSSL::SSL)
 

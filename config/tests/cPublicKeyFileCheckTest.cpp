@@ -34,14 +34,9 @@ struct stat MakeFileStatus(mode_t mode, uid_t uid = EXPECTED_UID) {
   struct stat status{};
   status.st_mode = S_IFREG | mode;
   status.st_uid = uid;
-  status.st_gid =
-      999999;  // arbitrary - PublicKeyFileCheck never looks at st_gid
+  status.st_gid = 999999;
   return status;
 }
-
-// Manually-filled struct stat: CheckFile is a pure function over stat, so
-// "wrong owner" doesn't need a real file or a root skip to exercise -
-// running this process as a different real uid needs root.
 
 TEST(PublicKeyFileCheckTest, Accepts0644) {
   EXPECT_TRUE(PublicKeyFileCheck::CheckFile(MakeFileStatus(0644), EXPECTED_UID)
@@ -54,8 +49,6 @@ TEST(PublicKeyFileCheckTest, Accepts0640) {
 }
 
 TEST(PublicKeyFileCheckTest, IgnoresGroupOwnership) {
-  // st_gid above is an arbitrary value nowhere near a real expected group -
-  // if CheckFile looked at it at all, every test in this file would fail.
   EXPECT_TRUE(PublicKeyFileCheck::CheckFile(MakeFileStatus(0644), EXPECTED_UID)
                   .empty());
 }

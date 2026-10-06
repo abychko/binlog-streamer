@@ -27,22 +27,14 @@
 
 namespace binlog_streamer {
 
-// What a replica reads as the version of the server it is attached to:
-// the version of the source whose events this relay stores, with the
-// relay's own name and version after it - 8.4.11-binlog-streamer-0.27.0.
-// A replica's IO thread refuses a source whose greeting does not start
-// with a numeric major >= 5, and the source's own version supplies that
-// much without this relay inventing a number of its own.
-//
-// Empty when the source version is not known: the relay has stored
-// nothing yet, so there is nothing to serve and no version to name.
+// The source's version followed by the relay's own name and version. Empty
+// while the source version is unknown.
 std::string ServerVersionString(const std::string &sourceVersion,
                                 const std::string &relayName,
                                 const std::string &relayVersion);
 
-// How a relay tells that its source is a relay too, regardless of the
-// version the chain started from: the name and version a relay appends
-// end the string.
+// A trailing relay name and version tells a relay that its source is a relay
+// too.
 bool IsRelayServerVersion(const std::string &serverVersion,
                           const std::string &relayName);
 

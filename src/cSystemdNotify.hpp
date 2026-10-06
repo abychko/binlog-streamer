@@ -33,7 +33,6 @@ namespace binlog_streamer {
 class SystemdNotify {
  public:
   // Nothing is sent, and nothing is wrong, when NOTIFY_SOCKET is not set.
-  // Returns the reason the message could not be sent.
   static std::optional<std::string> Send(std::string_view message);
 };
 

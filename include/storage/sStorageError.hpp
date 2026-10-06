@@ -28,8 +28,6 @@
 
 namespace binlog_streamer {
 
-// The pair main() needs to print a useful stderr line and pick the
-// right exit code.
 struct StorageError {
   StorageFailure failure = StorageFailure::Malformed;
   std::string message;

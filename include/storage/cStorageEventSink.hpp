@@ -40,14 +40,9 @@
 #include "storage/cStorageWriter.hpp"
 #include "storage/sStorageError.hpp"
 namespace binlog_streamer {
-// StorageWriter alone creates, appends and closes files; the chained
-// sink (m_next) sees every callback before storage validates it.
 class StorageEventSink : public EventSink {
  public:
   // Cache, writer, catalog and tracker must outlive this sink.
-  // onAbandonedFileClosed reports logical closure of an abandoned file
-  // using its recovered size; clearing the disk flag follows
-  // separately, on the writer.
   StorageEventSink(std::filesystem::path dataDir, std::size_t checksumLength,
                    EventSink &next, StorageCatalog &catalog, EventCache &cache,
                    StorageWriter &writer,
@@ -61,41 +56,30 @@ class StorageEventSink : public EventSink {
   bool HasFailed() const { return m_failed; }
   const StorageError &LastError() const { return m_error; }
 
-  // The stream ended and another one is about to take its place, with
-  // the same storage behind it. Everything held stays held: the open
-  // file, the position in it, a transaction the lost stream ended
-  // inside. The next stream begins at that file's start, as a resumed
-  // one does, and its events are compared against what is stored rather
-  // than written again.
+  // Called when the stream ended and another takes its place: the open file,
+  // the position and any interrupted transaction stay held. The next stream
+  // restarts at the file's start and its events are compared against what is
+  // stored.
   void RestartStream();
 
  private:
-  // Decided once, up front, in OnEventBegin() - the checks need only
-  // the header and position, both already known by then.
   enum class Action {
-    Ignore,  // heartbeat, already fully handled in OnEventBegin()
-    BufferRotateAnnouncement,  // artificial ROTATE, buffered to decode the
-                               // next file's name
-    BufferFormatDescription,   // buffered to hand whole to background creation
-    BufferPreviousGtids,       // buffered to hand whole to background creation
-    BufferGtid,    // buffered so TransactionBoundaryTracker gets its decoded
-                   // fields
-    AppendDirect,  // appended to the cache as bytes arrive
-    AppendThenCloseFile,       // a genuine ROTATE ending the open file
-    CompareFormatDescription,  // resuming a file: buffered, compared against
-                               // disk with FDE's own field exclusions
-    CompareStreamed,  // resuming a file: every other event, compared against
-                      // disk chunk by chunk
+    Ignore,
+    BufferRotateAnnouncement,
+    BufferFormatDescription,
+    BufferPreviousGtids,
+    BufferGtid,
+    AppendDirect,
+    AppendThenCloseFile,
+    CompareFormatDescription,
+    CompareStreamed,
   };
 
   enum class State {
-    AwaitingRotate,  // no file open; next event must be the artificial ROTATE
-                     // naming one
-    AwaitingHeader,  // artificial ROTATE seen; next event must be the
-                     // Format_description_event
-    AwaitingPreviousGtids,  // Format_description_event buffered; next event
-                            // must be Previous_gtids_event
-    Writing,                // file open; ordinary events are appended to it
+    AwaitingRotate,
+    AwaitingHeader,
+    AwaitingPreviousGtids,
+    Writing,
   };
 
   bool Fail(StorageFailure failure, std::string message);
@@ -118,7 +102,6 @@ class StorageEventSink : public EventSink {
   bool PublishBoundary();
   bool AppendBytes(std::span<const std::uint8_t> bytes);
 
-  // Publishes the recovered size and queues disk closure in stream order.
   bool CloseAbandonedFile(const StoredFileRecord &record, std::string &error);
 
   std::filesystem::path m_dataDir;
@@ -141,40 +124,30 @@ class StorageEventSink : public EventSink {
   EventHeader m_currentHeader;
   std::uint64_t m_currentEventStartOffset = 0;
 
-  // Every other event streams straight to the cache per chunk - never
-  // buffered whole.
   std::vector<std::uint8_t> m_pendingEventBytes;
 
   std::vector<std::uint8_t> m_fdeBytes;
-  // Captured before the next OnEventBegin() (for the PGE) overwrites
-  // m_currentHeader; createdAt/serverId for the StoredFileRecord come
-  // from here, not from the PGE's own header.
+  // Captured before the next OnEventBegin() overwrites m_currentHeader.
   EventHeader m_fdeHeader;
   std::uint64_t m_expectedPreviousGtidsOffset = 0;
 
-  // Logical end accepted by the cache; disk may still be behind.
   std::uint64_t m_appendedPosition = 0;
 
-  // The end of the last event accepted whole. Behind m_appendedPosition
-  // only after a stream ended in the middle of an event: its first bytes
-  // are stored, and the source sends the event again from its start.
+  // Behind m_appendedPosition only after a stream ended mid-event: the source
+  // sends that event again from its start.
   std::uint64_t m_completedPosition = 0;
 
-  // Separate from m_currentEventStartOffset since a streamed comparison
-  // has no single moment with the whole event in hand.
   std::uint64_t m_compareOffset = 0;
 
-  // Where the comparison of the event being compared stops: what storage
-  // held when that event began. Frozen, unlike m_appendedPosition, which
-  // the same event's own appended remainder moves.
+  // What storage held when the compared event began; frozen, unlike
+  // m_appendedPosition.
   std::uint64_t m_compareLimit = 0;
 
-  // Set by RestartStream(): the next event is the artificial ROTATE of
-  // the new stream, and it can arrive with a file of this sink's still
-  // open.
+  // Set by RestartStream(): the next event is the new stream's artificial
+  // ROTATE, which can arrive while a file is still open.
   bool m_restarted = false;
-  // The event being compared begins before the end of what storage holds
-  // and runs past it - the one event a lost stream can cut in half.
+  // The event being compared begins before the end of stored data and runs past
+  // it: the one event a lost stream can cut in half.
   bool m_straddled = false;
 
   bool m_failed = false;

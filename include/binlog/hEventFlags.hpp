@@ -27,10 +27,7 @@
 
 namespace binlog_streamer {
 
-// Subset of Log_event_header::flags (binlog_event.h): only the bits the
-// tract inspects.
 inline constexpr std::uint16_t EVENT_FLAG_BINLOG_IN_USE = 0x1;
-// A synthesized Rotate sent at dump start, not read from a file.
 inline constexpr std::uint16_t EVENT_FLAG_ARTIFICIAL = 0x20;
 
 }  // namespace binlog_streamer

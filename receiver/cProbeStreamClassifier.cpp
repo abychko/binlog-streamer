@@ -51,9 +51,8 @@ SessionResult MakeStopped(std::string message) {
 
 SessionResult ProbeStreamClassifier::Classify(
     const StreamResult &streamResult) {
-  // A network-level problem (ConnectionClosed/Timeout) is retried by
-  // StartupSequence like a connect failure; a protocol-level one (the
-  // source rejected the dump, or sent something unrecognized) is not.
+  // Network-level failures are retried like a connect failure; protocol-level
+  // ones (dump rejected, unrecognized reply) are not.
   switch (streamResult.reason) {
     case StreamEndReason::ConnectionClosed:
     case StreamEndReason::Timeout:

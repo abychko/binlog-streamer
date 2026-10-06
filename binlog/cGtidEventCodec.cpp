@@ -29,21 +29,18 @@
 namespace binlog_streamer {
 namespace {
 
-// Byte offsets of the untagged Gtid_event body (percona-server dfc6d1f,
-// control_events.cpp:461-511). Requires lt_type present, stricter than the
-// source's own can_read(), which also accepts an older 25-byte body.
+// Byte offsets of the untagged Gtid_event body. lt_type must be present,
+// stricter than the server's can_read(), which also accepts an older 25-byte
+// body.
 constexpr std::size_t UUID_LENGTH = 16;
 constexpr std::size_t GNO_LENGTH = 8;
 constexpr std::size_t FIXED_PREFIX_LENGTH =
     1 /*flags*/ + UUID_LENGTH + GNO_LENGTH + 1 /*lt_type*/;
 constexpr std::uint8_t LOGICAL_TIMESTAMP_TYPECODE = 2;
-constexpr std::size_t LOGICAL_CLOCK_LENGTH =
-    8 + 8;  // last_committed + sequence_number, unused by GtidEvent
-constexpr std::size_t COMMIT_TIMESTAMP_LENGTH =
-    7;  // IMMEDIATE_COMMIT_TIMESTAMP_LENGTH / ORIGINAL_COMMIT_TIMESTAMP_LENGTH
-// Bit 55 of immediate_commit_timestamp: set when the transaction
-// originated elsewhere, and a second 7-byte original_commit_timestamp
-// follows (percona-server dfc6d1f, control_events.cpp:570-582).
+constexpr std::size_t LOGICAL_CLOCK_LENGTH = 8 + 8;
+constexpr std::size_t COMMIT_TIMESTAMP_LENGTH = 7;
+// Bit 55 of immediate_commit_timestamp is set when the transaction originated
+// elsewhere; a second 7-byte original_commit_timestamp follows.
 constexpr std::uint64_t ORIGINAL_TIMESTAMP_FOLLOWS_BIT = 1ULL << 55;
 
 std::uint64_t ReadLittleEndian(std::span<const std::uint8_t> data,
@@ -54,9 +51,6 @@ std::uint64_t ReadLittleEndian(std::span<const std::uint8_t> data,
   return value;
 }
 
-// Field ids of the tagged form (control_events.h:1111-1137, in definition
-// order) and the tag's bound (libs/mysql/gtid/gtid_constants.h,
-// tag_max_length).
 constexpr std::uint64_t TAGGED_FIELD_FLAGS = 0;
 constexpr std::uint64_t TAGGED_FIELD_UUID = 1;
 constexpr std::uint64_t TAGGED_FIELD_GNO = 2;
@@ -64,9 +58,9 @@ constexpr std::uint64_t TAGGED_FIELD_TAG = 3;
 constexpr std::uint64_t TAGGED_FIELD_TRANSACTION_LENGTH = 8;
 constexpr std::size_t TAG_MAX_LENGTH = 32;
 
-// Positions the decoder on field `id` if it's next: present=true after
-// consuming the id, present=false if the next id is later (field left
-// out), false/error if the next id is earlier - ids only ascend.
+// Positions the decoder on field `id` if it is next: present=true after
+// consuming the id, present=false if the next id is later, error if it is
+// earlier (ids only ascend).
 bool EnterField(SerializationDecoder &decoder, std::uint64_t id, bool &present,
                 std::string &error) {
   present = false;
@@ -104,9 +98,7 @@ bool GtidEventCodec::ParseTagged(std::span<const std::uint8_t> body,
     error = "tagged GTID event: malformed message header";
     return false;
   }
-  // The size counts the whole message, its own header included
-  // (serializer_default_impl.hpp, get_size_serializable) - a real event
-  // has it equal to the body without the checksum.
+  // The size counts the whole message, its own header included.
   if (messageSize > body.size() - checksumLength) {
     error = "tagged GTID event: message size " + std::to_string(messageSize) +
             " exceeds the body";
@@ -136,9 +128,8 @@ bool GtidEventCodec::ParseTagged(std::span<const std::uint8_t> body,
     error = "tagged GTID event: missing, truncated or overlong tag";
     return false;
   }
-  // Fields 4..7 are single varints this relay does not use; each is
-  // read only to step over it, and an absent one (7 is optional) costs
-  // nothing.
+  // Fields 4..7 are single varints this relay does not use; each is read only
+  // to step over it.
   for (std::uint64_t id = TAGGED_FIELD_TAG + 1;
        id < TAGGED_FIELD_TRANSACTION_LENGTH; ++id) {
     if (!EnterField(decoder, id, present, error)) return false;
@@ -176,7 +167,7 @@ bool GtidEventCodec::Parse(std::span<const std::uint8_t> body,
   }
 
   GtidEvent parsed;
-  std::size_t pos = 1;  // skip gtid_flags: not needed by GtidEvent
+  std::size_t pos = 1;  // skip gtid_flags
   for (std::size_t i = 0; i < parsed.uuid.bytes.size(); ++i)
     parsed.uuid.bytes[i] = content[pos + i];
   pos += parsed.uuid.bytes.size();
@@ -186,8 +177,8 @@ bool GtidEventCodec::Parse(std::span<const std::uint8_t> body,
   const std::uint8_t logicalTimestampType = content[pos];
   pos += 1;
 
-  // A source without the optional tail leaves transactionLength unset
-  // rather than 0 - callers must not treat "unknown" as "zero-length".
+  // A source without the optional tail leaves transactionLength unset rather
+  // than 0: "unknown" is not "zero-length".
   if (logicalTimestampType != LOGICAL_TIMESTAMP_TYPECODE) {
     value = parsed;
     error.clear();
@@ -202,8 +193,7 @@ bool GtidEventCodec::Parse(std::span<const std::uint8_t> body,
   pos += LOGICAL_CLOCK_LENGTH;
 
   if (content.size() - pos < COMMIT_TIMESTAMP_LENGTH) {
-    // Older source, no commit-timestamp section - success, not an
-    // error (percona-server dfc6d1f, control_events.cpp:565-587).
+    // An older source has no commit-timestamp section: success, not an error.
     value = parsed;
     error.clear();
     return true;
@@ -222,8 +212,7 @@ bool GtidEventCodec::Parse(std::span<const std::uint8_t> body,
   }
 
   if (content.size() - pos < 1) {
-    // Commit timestamps present, nothing after - genuinely absent, not
-    // truncated.
+    // Commit timestamps present and nothing after: absent, not truncated.
     value = parsed;
     error.clear();
     return true;

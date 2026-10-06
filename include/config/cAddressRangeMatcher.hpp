@@ -28,12 +28,10 @@
 
 namespace binlog_streamer {
 
-// Counterpart to AddressRangeParser, which only turns text into a
-// range/address.
 class AddressRangeMatcher {
  public:
-  // False if address families differ - no implicit IPv4-mapped-IPv6
-  // normalization, write that form explicitly if you mean it.
+  // False if the address families differ: no implicit IPv4-mapped-IPv6
+  // normalization.
   static bool Contains(const AddressRange &range, const IpAddress &address);
 };
 

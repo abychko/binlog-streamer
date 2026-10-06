@@ -25,9 +25,6 @@
 
 namespace binlog_streamer {
 
-// How one ListenSocket::Accept() call ended. Not net/'s ReadOutcome:
-// TimedOut/Closed don't apply to a listening socket, which blocks until a
-// connection, a stop request, or an error.
 enum class AcceptOutcome {
   Accepted,
   Interrupted,

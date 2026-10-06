@@ -45,8 +45,6 @@ namespace {
 
 using test::TempDirectoryFixture;
 
-// A minimal but valid stored file: magic + FDE (server version 5.5.62, no
-// checksum trailer) + an empty Previous_gtids_event, nothing past it.
 void WriteFreshFile(const std::filesystem::path &path) {
   std::vector<std::uint8_t> fdeBody(57, 0x00);
   fdeBody[0] = 3;
@@ -55,10 +53,9 @@ void WriteFreshFile(const std::filesystem::path &path) {
     fdeBody[2 + i] = static_cast<std::uint8_t>(version[i]);
   fdeBody[56] = 19;
 
-  const auto pgeBody =
-      GtidSet().Encode(/*skipTaggedGtids=*/false);  // 8 zero bytes, empty set
+  const auto pgeBody = GtidSet().Encode(/*skipTaggedGtids=*/false);
 
-  std::vector<std::uint8_t> file{0xfe, 0x62, 0x69, 0x6e};  // BINLOG_MAGIC
+  std::vector<std::uint8_t> file{0xfe, 0x62, 0x69, 0x6e};
 
   const std::uint32_t fdeEventLength =
       static_cast<std::uint32_t>(19 + fdeBody.size());
@@ -66,8 +63,7 @@ void WriteFreshFile(const std::filesystem::path &path) {
   fdeHeader[4] = 15;
   fdeHeader[9] = static_cast<std::uint8_t>(fdeEventLength);
   fdeHeader[13] = static_cast<std::uint8_t>(4 + fdeEventLength);
-  fdeHeader[17] = 0x01;  // LOG_EVENT_BINLOG_IN_USE_F - the last (only) file in
-                         // the index is allowed to be open
+  fdeHeader[17] = 0x01;  // LOG_EVENT_BINLOG_IN_USE_F
   file.insert(file.end(), fdeHeader.begin(), fdeHeader.end());
   file.insert(file.end(), fdeBody.begin(), fdeBody.end());
 
@@ -84,9 +80,6 @@ void WriteFreshFile(const std::filesystem::path &path) {
             static_cast<std::streamsize>(file.size()));
 }
 
-// WriteFreshFile() plus a garbage tail shorter than EVENT_HEADER_LENGTH (19),
-// simulating a crash cutting a write short. Returns the header length,
-// i.e. what Recover() truncates the file back down to.
 std::uint64_t WriteFreshFileWithGarbageTail(const std::filesystem::path &path) {
   WriteFreshFile(path);
   std::error_code sizeError;
@@ -112,12 +105,9 @@ TEST(BinlogStorageTest, OpensAFreshDataDirectory) {
   std::string error;
   ASSERT_TRUE(storage.Open(fixture.Directory(), failure, error)) << error;
   EXPECT_EQ(storage.Catalog().Size(), 0u);
-  EXPECT_TRUE(std::filesystem::exists(
-      fixture.Path("binlog.index")));  // created (empty) once Load() succeeded
+  EXPECT_TRUE(std::filesystem::exists(fixture.Path("binlog.index")));
 }
 
-// One writer per data_dir - a second instance pointed at the same
-// directory has to refuse rather than race the first one's own writes.
 TEST(BinlogStorageTest, RefusesASecondInstanceOnTheSameDataDirectory) {
   TempDirectoryFixture fixture;
   BinlogStorage first;
@@ -131,14 +121,9 @@ TEST(BinlogStorageTest, RefusesASecondInstanceOnTheSameDataDirectory) {
   std::string secondError;
   EXPECT_FALSE(second.Open(fixture.Directory(), secondFailure, secondError));
   EXPECT_FALSE(secondError.empty());
-  EXPECT_EQ(secondFailure,
-            StorageOpenFailure::StorageProblem);  // a second writer, not an
-                                                  // access problem
+  EXPECT_EQ(secondFailure, StorageOpenFailure::StorageProblem);
 }
 
-// The lock must survive binlog.index being rewritten with rename(2), which a
-// plain flock() on the old fd would not: a stale fd's lock no longer guards
-// the path anyone else opens.
 TEST(BinlogStorageTest,
      RefusesASecondInstanceEvenAfterTheIndexFileHasBeenRewritten) {
   TempDirectoryFixture fixture;
@@ -159,12 +144,9 @@ TEST(BinlogStorageTest,
   std::string secondError;
   EXPECT_FALSE(second.Open(fixture.Directory(), secondFailure, secondError));
   EXPECT_EQ(secondFailure, StorageOpenFailure::StorageProblem);
-  EXPECT_EQ(second.Catalog().Size(),
-            0u);  // never got far enough to reconcile anything
+  EXPECT_EQ(second.Catalog().Size(), 0u);
 }
 
-// access(2) is probed unconditionally, not only when the index still needs
-// creating, so a directory that turned read-only is refused up front.
 TEST(BinlogStorageTest, RefusesAReadOnlyDataDirectoryEvenWithAnExistingIndex) {
   if (geteuid() == 0) GTEST_SKIP() << "chmod does not restrict the root user";
 
@@ -175,7 +157,7 @@ TEST(BinlogStorageTest, RefusesAReadOnlyDataDirectoryEvenWithAnExistingIndex) {
     std::string firstError;
     ASSERT_TRUE(first.Open(fixture.Directory(), firstFailure, firstError))
         << firstError;
-  }  // releases the lock; binlog.index now exists, empty
+  }
 
   ASSERT_EQ(chmod(fixture.Directory().c_str(), 0500), 0)
       << std::strerror(errno);
@@ -186,9 +168,7 @@ TEST(BinlogStorageTest, RefusesAReadOnlyDataDirectoryEvenWithAnExistingIndex) {
   const bool opened =
       second.Open(fixture.Directory(), secondFailure, secondError);
 
-  chmod(fixture.Directory().c_str(),
-        0700);  // restore before the fixture's own cleanup has to remove this
-                // directory
+  chmod(fixture.Directory().c_str(), 0700);
 
   EXPECT_FALSE(opened);
   EXPECT_EQ(secondFailure, StorageOpenFailure::AccessProblem);
@@ -213,8 +193,6 @@ TEST(BinlogStorageTest, ALaterInstanceCanOpenOnceTheEarlierOneIsGone) {
       << secondError;
 }
 
-// Published() must end up at the length that survived truncation, not the
-// file's original untruncated size.
 TEST(BinlogStorageTest, SeedsThePublishedPositionFromRecoveredHistory) {
   TempDirectoryFixture fixture;
   const std::uint64_t headerLength =
@@ -237,8 +215,7 @@ TEST(BinlogStorageTest, SeedsThePublishedPositionFromRecoveredHistory) {
       << recoverError;
   ASSERT_FALSE(state.empty);
   ASSERT_EQ(state.lastFileName, "binlog.000001");
-  ASSERT_EQ(state.lastFileLength,
-            headerLength);  // the garbage tail was trimmed away
+  ASSERT_EQ(state.lastFileLength, headerLength);
 
   storage.SeedPublished(state);
 
@@ -247,9 +224,6 @@ TEST(BinlogStorageTest, SeedsThePublishedPositionFromRecoveredHistory) {
   EXPECT_EQ(current.position, headerLength);
 }
 
-// Appends bytes directly to the file after OpenResumed() returns, so a
-// version that forgot to call SeedPublished() would let Read() return them
-// instead of stopping at the seeded position.
 TEST(BinlogStorageTest,
      ALiveReaderSeesOnlyTheSeededHistoryImmediatelyAfterOpenResumed) {
   TempDirectoryFixture fixture;
@@ -268,9 +242,7 @@ TEST(BinlogStorageTest,
       storage.OpenResumed(fixture.Directory(), state, openFailure, error))
       << error;
   ASSERT_FALSE(state.empty);
-  ASSERT_EQ(state.lastFileLength,
-            headerLength);  // the garbage tail was trimmed away by Recover(),
-                            // inside the call
+  ASSERT_EQ(state.lastFileLength, headerLength);
 
   StorageReader reader(fixture.Directory(), storage.Catalog(),
                        storage.Published());
@@ -292,7 +264,6 @@ TEST(BinlogStorageTest,
   ASSERT_GE(onDisk.size(), headerLength);
   EXPECT_TRUE(std::equal(buffer.begin(), buffer.end(), onDisk.begin()));
 
-  // Must stop at the seeded published position, not the larger on-disk length.
   EXPECT_EQ(reader.Read(*cursor, headerLength, buffer, readError), 0u);
   EXPECT_TRUE(readError.empty()) << readError;
 }

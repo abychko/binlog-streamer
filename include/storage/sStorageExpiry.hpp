@@ -30,13 +30,9 @@
 #include "storage/sStorageDiskLimits.hpp"
 namespace binlog_streamer {
 struct StorageExpiry {
-  // Source-clock seconds on the writer thread; nullopt or an empty callback
-  // disables age expiry only.
   std::function<std::optional<std::uint64_t>()> sourceNow;
   std::chrono::seconds period{0};
-  // Writer thread, once per pass with removed names or unlink warnings.
   std::function<void(const PurgeResult &)> onPurged;
-  std::optional<StorageDiskLimits> disk =
-      std::nullopt;  // nullopt: no space limits.
+  std::optional<StorageDiskLimits> disk = std::nullopt;
 };
 }  // namespace binlog_streamer

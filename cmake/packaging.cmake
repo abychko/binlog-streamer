@@ -19,9 +19,8 @@ SET(CPACK_SET_DESTDIR ON)
 SET(CPACK_INSTALL_PREFIX "/usr")
 SET(CPACK_STRIP_FILES ON)
 
-# Directories cpack creates implicitly as parents of installed files
-# otherwise inherit the packaging machine's umask instead of a fixed mode
-# (e.g. umask 002 would ship them 0775 instead of 0755).
+# Implicit parent directories would inherit the packaging machine's umask (umask
+# 002 ships 0775 instead of 0755).
 SET(CPACK_INSTALL_DEFAULT_DIRECTORY_PERMISSIONS
     OWNER_READ OWNER_WRITE OWNER_EXECUTE
     GROUP_READ GROUP_EXECUTE
@@ -47,8 +46,7 @@ IF(BUILD_DEB)
     SET(CPACK_DEBIAN_PACKAGE_CONTROL_STRICT_PERMISSION TRUE)
     SET(CPACK_DEBIAN_PACKAGE_DEPENDS "adduser")
 
-    # The DEB is the only package: CPack is not included without BUILD_DEB,
-    # since with CPACK_GENERATOR unset it would fall back to its own
-    # archive generators.
+    # CPack is not included without BUILD_DEB: with CPACK_GENERATOR unset it
+    # would fall back to its own archive generators.
     INCLUDE(CPack)
 ENDIF()

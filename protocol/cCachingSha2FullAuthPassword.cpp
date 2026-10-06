@@ -30,9 +30,8 @@
 namespace binlog_streamer {
 
 namespace {
-// RSA-OAEP's fixed overhead with SHA-1/MGF1 (RFC 8017 SS7.1.1: max message
-// length is k - 2*hLen - 2). OpenSSL exposes no named constant; the
-// reference client hardcodes the same 41/42 split.
+// RSA-OAEP with SHA-1/MGF1: the maximum message length is k - 2*hLen - 2 (RFC
+// 8017, 7.1.1).
 constexpr int OAEP_SHA1_OVERHEAD = 42;
 }  // namespace
 
@@ -41,16 +40,13 @@ bool CachingSha2FullAuthPassword::Encrypt(
     std::span<const std::uint8_t, SCRAMBLE_LENGTH> nonce,
     const RsaPublicKey &publicKey, std::vector<std::uint8_t> &ciphertext,
     std::string &error) {
-  // Password + NUL terminator, XOR'd with the nonce (matches the reference
-  // client's xor_string()). Explicit loop, not memcpy(): GCC 14's
-  // -Wstringop-overflow (RelWithDebInfo) flags a false overflow otherwise.
+  // Explicit loop, not memcpy(): GCC 14's -Wstringop-overflow flags a false
+  // overflow otherwise.
   std::vector<std::uint8_t> obfuscated(password.size() + 1);
   for (std::size_t i = 0; i < password.size(); ++i)
     obfuscated[i] =
         static_cast<std::uint8_t>(password[i]) ^ nonce[i % nonce.size()];
-  obfuscated[password.size()] =
-      nonce[password.size() % nonce.size()];  // XOR of the NUL terminator (0)
-                                              // is the nonce byte itself
+  obfuscated[password.size()] = nonce[password.size() % nonce.size()];
 
   const int keySize = static_cast<int>(publicKey.SizeInBytes());
   if (static_cast<int>(obfuscated.size()) > keySize - OAEP_SHA1_OVERHEAD) {
@@ -70,9 +66,6 @@ bool CachingSha2FullAuthPassword::Encrypt(
     error = "failed to initialize RSA-OAEP encryption";
     return false;
   }
-  // Two-call form (EVP_PKEY_encrypt(3)): the first call only sizes the
-  // output and performs no encryption, so ciphertext is allocated exactly
-  // instead of over-allocated to some assumed maximum.
   std::size_t outLen = 0;
   if (EVP_PKEY_encrypt(ctx.get(), nullptr, &outLen, obfuscated.data(),
                        obfuscated.size()) <= 0) {

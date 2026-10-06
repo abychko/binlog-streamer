@@ -34,7 +34,6 @@
 
 namespace binlog_streamer {
 
-// One consistent snapshot, taken by RelayStatusTracker::Snapshot().
 struct RelayStatus {
   std::string name;
   std::string version;

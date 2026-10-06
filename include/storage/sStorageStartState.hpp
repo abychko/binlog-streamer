@@ -30,23 +30,14 @@
 namespace binlog_streamer {
 
 struct StorageStartState {
-  // True only for a data_dir with no files yet - startSet, lastFileName
-  // and lastFileLength are all meaningless then.
   bool empty = true;
 
-  // Previous_gtids of the last indexed file plus every group found
-  // fully written past it - never gtid_executed, since this must be
-  // exactly the boundary of a file the relay actually holds.
+  // Never gtid_executed: it must be exactly the boundary of a file the relay
+  // holds.
   GtidSet startSet;
   std::string lastFileName;
-  // Post-truncation length if the file was still "in use"; used by
-  // BinlogStorage::SeedPublished() to make history visible early. The
-  // writer re-derives its own on resume.
   std::uint64_t lastFileLength = 0;
 
-  // Travels out through this struct because library code here never
-  // writes to stdout/stderr itself; only main.cpp prints, once, before
-  // connecting.
   bool truncated = false;
   std::uint64_t truncatedBytes = 0;
 };

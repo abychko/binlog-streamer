@@ -42,13 +42,11 @@ TEST(ComRegisterSlaveCommandTest, EncodesFieldsInOrder) {
   const auto payload = ComRegisterSlaveCommand::Encode(value);
 
   std::size_t pos = 0;
-  EXPECT_EQ(payload[pos++], 0x15);  // command byte
-  // server_id, little-endian
+  EXPECT_EQ(payload[pos++], 0x15);
   EXPECT_EQ(payload[pos++], 0x04);
   EXPECT_EQ(payload[pos++], 0x03);
   EXPECT_EQ(payload[pos++], 0x02);
   EXPECT_EQ(payload[pos++], 0x01);
-  // report_host: length-prefixed
   EXPECT_EQ(payload[pos++], 4);
   EXPECT_EQ(std::string(reinterpret_cast<const char *>(&payload[pos]), 4),
             "host");
@@ -61,10 +59,8 @@ TEST(ComRegisterSlaveCommandTest, EncodesFieldsInOrder) {
   EXPECT_EQ(std::string(reinterpret_cast<const char *>(&payload[pos]), 2),
             "pw");
   pos += 2;
-  // report_port, little-endian
   EXPECT_EQ(payload[pos++], 0x16);
   EXPECT_EQ(payload[pos++], 0x15);
-  // rpl_recovery_rank and master_id: both always 0
   for (int i = 0; i < 8; ++i) EXPECT_EQ(payload[pos++], 0);
   EXPECT_EQ(pos, payload.size());
 }
@@ -91,13 +87,13 @@ TEST(ComRegisterSlaveCommandTest, ParseReadsBackWhatEncodeWrote) {
 }
 
 TEST(ComRegisterSlaveCommandTest, ParseReadsStringLengthAsOneRawByte) {
-  // A 252-byte host: its length byte 0xFC is a plain length on this
-  // packet, not the prefix of a 2-byte LengthEncodedInteger.
+  // A 252-byte host: its length byte 0xFC is a plain length here, not a
+  // LengthEncodedInteger prefix.
   std::vector<std::uint8_t> wire = {0x15, 7, 0, 0, 0, 0xFC};
   wire.insert(wire.end(), 252, 'h');
-  wire.insert(wire.end(), {0, 0});        // empty user and password
-  wire.insert(wire.end(), {0xEA, 0x0C});  // port 3306
-  wire.insert(wire.end(), 8, 0);          // rank + master_id
+  wire.insert(wire.end(), {0, 0});
+  wire.insert(wire.end(), {0xEA, 0x0C});
+  wire.insert(wire.end(), 8, 0);
   RegisterSlaveCommand parsed;
   std::string error;
   ASSERT_TRUE(ComRegisterSlaveCommand::Parse(wire, parsed, error)) << error;

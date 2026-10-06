@@ -1,6 +1,3 @@
-# INTERFACE: an include path plus OpenSSL::Crypto, not a compiled library -
-# the test-support headers here are header-only, reused by receiver/tests
-# for the same RSA key-pair generation and RSA-OAEP-plus-XOR decryption.
 ADD_LIBRARY(bs-protocol-test-support INTERFACE)
 TARGET_INCLUDE_DIRECTORIES(bs-protocol-test-support INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 TARGET_LINK_LIBRARIES(bs-protocol-test-support INTERFACE OpenSSL::Crypto)

@@ -28,15 +28,10 @@
 
 namespace binlog_streamer {
 
-// Where a stream of events stands: the source's as received, a replica's
-// as sent. timestamp is the header timestamp of the last event, on the
-// source's clock; 0 until an event passed.
 struct StreamPoint {
   std::string file;
   std::uint64_t position = 0;
   std::uint32_t timestamp = 0;
-  // Nothing more to pass at the moment: a heartbeat came from the source,
-  // or the sender waits for new events.
   bool idle = false;
   bool operator==(const StreamPoint &) const = default;
 };

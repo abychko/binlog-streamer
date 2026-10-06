@@ -63,7 +63,6 @@ int main(int argc, char **argv) {
   writer.PostCreate(record.name, fde, pge);
   writer.Start();
   if (!writer.DrainAndSync()) return 2;
-  // Match the small-group workload: GTID, Query, Xid, one publication.
   const std::size_t eventsPerChunk = chunk == 744 ? 3 : 1;
   const std::vector<std::uint8_t> bytes(chunk, 0x51);
   bool success = true;

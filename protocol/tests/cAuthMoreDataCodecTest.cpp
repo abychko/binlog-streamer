@@ -48,8 +48,7 @@ TEST(AuthMoreDataCodecTest, RecognizesPerformFullAuthentication) {
 }
 
 TEST(AuthMoreDataCodecTest, ClassifiesLongerPayloadAsOther) {
-  const std::vector<std::uint8_t> payload{
-      0x01, '-', '-', '-', '-', '-'};  // e.g. an RSA key placeholder
+  const std::vector<std::uint8_t> payload{0x01, '-', '-', '-', '-', '-'};
   AuthMoreDataSignal signal{};
   std::span<const std::uint8_t> data;
   std::string error;

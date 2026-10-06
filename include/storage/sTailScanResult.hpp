@@ -29,16 +29,12 @@
 namespace binlog_streamer {
 
 struct TailScanResult {
-  // Nothing past this point is handed to a reader or survives a
-  // resumed file's truncation.
   std::uint64_t lastBoundary = 0;
 
   // Every transaction found fully written; never includes an anonymous
   // transaction (GNO 0), which has no identity a GtidSet can represent.
   GtidSet completedGroups;
 
-  // The file's actual size minus lastBoundary. Zero if the file already
-  // ends exactly on a boundary.
   std::uint64_t truncatedBytes = 0;
 };
 

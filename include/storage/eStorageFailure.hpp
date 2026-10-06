@@ -25,15 +25,11 @@
 
 namespace binlog_streamer {
 
-// Kept separate from process exit codes so a future caller other than
-// main() can branch on it; main() itself maps every value here to the
-// same ExitCode::StorageError.
 enum class StorageFailure {
   WriteFailed,
   GapDetected,
   Malformed,
-  NotEmpty,  // resuming a file that already exists on disk is not
-             // supported yet
+  NotEmpty,
 };
 
 }  // namespace binlog_streamer

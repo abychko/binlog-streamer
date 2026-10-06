@@ -30,10 +30,8 @@ namespace binlog_streamer {
 
 struct PacketDecodeResult {
   PacketDecodeStatus status = PacketDecodeStatus::NeedMoreBytes;
-  std::size_t bytesConsumed = 0;  // meaningful when status == Complete: wire
-                                  // bytes read, headers included
-  std::size_t bytesNeeded = 0;    // meaningful when status == NeedMoreBytes: a
-                                  // lower bound on extra bytes required
+  std::size_t bytesConsumed = 0;
+  std::size_t bytesNeeded = 0;
 };
 
 }  // namespace binlog_streamer

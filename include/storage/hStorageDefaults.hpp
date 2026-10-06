@@ -31,42 +31,29 @@
 
 namespace binlog_streamer {
 
-// Matches MySQL's own BINLOG_MAGIC (sql/log_event.h).
 inline constexpr std::array<std::uint8_t, 4> BINLOG_MAGIC{0xfe, 0x62, 0x69,
                                                           0x6e};
 
-// Matches Percona Server's binlog write buffer size (LOG_BIN_IO_SIZE,
-// sql/binlog.cc).
 inline constexpr std::size_t WRITE_BUFFER_SIZE = 64 * 1024;
 
-// Matches sync_relay_log's default event count between fsyncs
-// (Sys_sync_relaylog_period). Not read by cBinlogFileWriter itself; the
-// driving code counts events and calls Sync().
+// Not read by cBinlogFileWriter; the driving code counts events and calls
+// Sync().
 inline constexpr std::uint64_t SYNC_EVENT_PERIOD = 10000;
 
-// How long the writer lets newly published bytes gather before writing
-// them, once it is already busy. Waking it for every group cost a context
-// switch and a write(2) per group; the bytes are in the cache meanwhile.
 inline constexpr std::chrono::milliseconds WRITE_COALESCE{5};
 
-// Fixed, unlike MySQL's own <log-bin-basename>.index: this index only
-// ever holds plain file names, independent of the source's own naming.
+// Fixed, unlike MySQL's <log-bin-basename>.index: it only holds plain file
+// names.
 inline constexpr std::string_view INDEX_FILE_NAME = "binlog.index";
 
-// Storage never reads/writes it - only needs the name so it isn't
-// mistaken for a stray file.
 inline constexpr std::string_view SERVER_UUID_FILE_NAME = "auto.cnf";
-// The relay's own TLS files, generated next to auto.cnf on the first start
-// with TLS and nothing configured; storage only needs to leave them alone.
 inline constexpr std::array<std::string_view, 4> TLS_FILE_NAMES{
     "ca.pem", "ca-key.pem", "server-cert.pem", "server-key.pem"};
 
-// 4-byte magic plus 17 bytes into the Common-Header's flags field,
-// where LOG_EVENT_BINLOG_IN_USE_F (0x1) lives while a file is open.
+// 4-byte magic plus 17 bytes: the Common-Header flags field, where
+// LOG_EVENT_BINLOG_IN_USE_F lives.
 inline constexpr std::uint64_t IN_USE_FLAG_OFFSET = 21;
 
-// Headroom against a misbehaving source claiming an implausibly large
-// event, not a modeled real size.
 inline constexpr std::size_t MAX_BUFFERED_EVENT_SIZE = 16UL * 1024UL * 1024UL;
 
 }  // namespace binlog_streamer

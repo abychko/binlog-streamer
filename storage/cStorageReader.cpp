@@ -68,8 +68,6 @@ std::unique_ptr<FileCursor> StorageReader::Open(const std::string &fileName,
 
 bool StorageReader::Boundary(const FileCursor &cursor, std::uint64_t &boundary,
                              std::string &error) const {
-  // Only a change of the published file can change whether it is this
-  // one, and that shows in the mark without the tracker's mutex.
   PublishedMark mark = m_published.Mark();
   if (mark.file != cursor.m_checkedMark) {
     mark = m_published.Locate(cursor.FileName(), cursor.m_published);
@@ -99,7 +97,7 @@ std::size_t StorageReader::Read(const FileCursor &cursor, std::uint64_t offset,
             ")";
     return 0;
   }
-  if (offset == boundary) return 0;  // not an error: nothing new yet
+  if (offset == boundary) return 0;
 
   const std::uint64_t available = boundary - offset;
   std::size_t toRead =
@@ -154,7 +152,6 @@ NextFileOutcome StorageReader::Next(const FileCursor &current,
               ")";
       return NextFileOutcome::Failed;
     case SuccessorOutcome::NotFound:
-      // Should be unreachable: current's own pin keeps this from happening.
       error = current.FileName() + " is no longer in the storage catalog";
       return NextFileOutcome::Failed;
     case SuccessorOutcome::Found:

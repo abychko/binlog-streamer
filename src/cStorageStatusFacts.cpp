@@ -35,8 +35,6 @@ std::uint64_t StorageStatusFacts::Bytes() const {
 
 std::uint64_t StorageStatusFacts::MaxBytes() const { return m_diskMaxBytes; }
 
-// The cache counts whole segments: a segment with one byte in it is
-// occupied, which is what the memory is.
 MemoryStatus StorageStatusFacts::Memory() const {
   if (m_cache == nullptr) return {};
   const CacheCounters counters = m_cache->Counters();

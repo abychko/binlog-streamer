@@ -32,21 +32,17 @@ namespace binlog_streamer {
 
 class StorageRecovery {
  public:
-  // Run once, before main() ever connects to a source. catalog must
-  // already be Load()ed. A nonzero truncatedBytes is acted on only if
-  // the file's "in use" bit is true - a closed file with a trimmed tail
-  // is refused as corruption, not truncated.
+  // Run once, before connecting; catalog must be Load()ed. A trimmed tail is
+  // truncated only if the file is still "in use"; a closed one is refused as
+  // corruption.
   static bool Recover(const std::filesystem::path &dataDir,
                       StorageCatalog &catalog, StorageStartState &state,
                       std::string &error);
 
-  // The same boundary for a relay that is already running and has just
-  // lost its stream: where the next dump has to start from. Nothing is
-  // truncated - a stream cut mid-transaction, or mid-event, left only
-  // bytes the source sends again from the same position, and storage
-  // compares them instead of writing them twice. Every byte must be on
-  // disk before this is called (StorageWriter::DrainAndSync()): the
-  // answer is read from the file, not from the cache.
+  // The same boundary for a running relay that lost its stream. Nothing is
+  // truncated. Every byte must be on disk first
+  // (StorageWriter::DrainAndSync()): the answer is read from the file, not the
+  // cache.
   static bool ResumePoint(const std::filesystem::path &dataDir,
                           const StorageCatalog &catalog,
                           StorageStartState &state, std::string &error);

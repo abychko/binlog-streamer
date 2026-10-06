@@ -28,9 +28,8 @@
 
 namespace binlog_streamer {
 
-// Field layout and the two-part scramble reassembly mirror the reference
-// client parser (sql-common/client.cc, csm_parse_handshake()). Only the
-// modern, always-extended form MySQL 8.0+/Percona Server sends is accepted.
+// Only the extended form sent by MySQL 8.0+/Percona Server is accepted; layout
+// follows csm_parse_handshake() (sql-common/client.cc).
 bool HandshakeV10Codec::Parse(std::span<const std::uint8_t> payload,
                               HandshakeV10 &value, std::string &error) {
   if (payload.size() < 1 + 1 + 4 + AUTH_PLUGIN_DATA_PART_1_LENGTH + 1) {
@@ -138,9 +137,8 @@ bool HandshakeV10Codec::Parse(std::span<const std::uint8_t> payload,
   return true;
 }
 
-// Field layout mirrors the server (sql/auth/sql_authentication.cc,
-// send_server_handshake_packet()). Only the CLIENT_PLUGIN_AUTH form is
-// built - the one every supported server sends.
+// Only the CLIENT_PLUGIN_AUTH form is built, the one every supported server
+// sends.
 bool HandshakeV10Codec::Encode(const HandshakeV10 &value,
                                std::vector<std::uint8_t> &out,
                                std::string &error) {
@@ -171,7 +169,7 @@ bool HandshakeV10Codec::Encode(const HandshakeV10 &value,
       value.authPluginData.begin() +
       static_cast<std::ptrdiff_t>(AUTH_PLUGIN_DATA_PART_1_LENGTH);
   out.insert(out.end(), value.authPluginData.begin(), part2Begin);
-  out.push_back(0);  // filler
+  out.push_back(0);
 
   out.push_back(static_cast<std::uint8_t>(value.capabilities));
   out.push_back(static_cast<std::uint8_t>(value.capabilities >> 8));
@@ -181,7 +179,7 @@ bool HandshakeV10Codec::Encode(const HandshakeV10 &value,
   out.push_back(static_cast<std::uint8_t>(value.capabilities >> 16));
   out.push_back(static_cast<std::uint8_t>(value.capabilities >> 24));
   out.push_back(static_cast<std::uint8_t>(value.authPluginData.size()));
-  out.insert(out.end(), 10, std::uint8_t{0});  // reserved
+  out.insert(out.end(), 10, std::uint8_t{0});
 
   out.insert(out.end(), part2Begin, value.authPluginData.end());
   out.insert(out.end(), value.authPluginName.begin(),

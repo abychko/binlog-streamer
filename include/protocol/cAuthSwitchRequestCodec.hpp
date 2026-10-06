@@ -36,8 +36,7 @@ class AuthSwitchRequestCodec {
   static bool IsAuthSwitchRequest(std::span<const std::uint8_t> payload);
   static bool Parse(std::span<const std::uint8_t> payload,
                     AuthSwitchRequest &value, std::string &error);
-  // pluginData is written as given - the caller must already include the
-  // trailing 0x00, as sHandshakeV10 does.
+  // pluginData is written as given: the caller includes the trailing 0x00.
   static void Encode(const AuthSwitchRequest &value,
                      std::vector<std::uint8_t> &out);
 };

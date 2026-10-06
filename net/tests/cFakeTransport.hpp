@@ -44,24 +44,13 @@ class FakeTransport : public Transport {
   bool connectAlwaysFails = false;
   unsigned connectCallCount = 0;
 
-  // Outcomes returned instead of normal byte-serving, one per Read() call
-  // in order. Data is a no-op entry, letting a script leave a normal read
-  // between scripted TimedOut/Interrupted/Closed entries.
   std::deque<ReadOutcome> scriptedOutcomes;
   unsigned readCallCount = 0;
 
-  // Timeout each Read() call received, in call order (e.g. to assert
-  // idleTimeout applies only to a call's first Read()).
   std::vector<std::chrono::milliseconds> readTimeouts;
 
-  // 0 (default): deliver as many bytes as the buffer/script allow. Set to
-  // simulate a source delivering only a few bytes per read, to exercise
-  // PacketChannel's buffer-growth/compaction at byte granularity.
   std::size_t maxBytesPerRead = 0;
 
-  // Set instead of `incoming` for a scenario spanning more than one
-  // successful connection. Each successful Connect() switches to the next
-  // entry here (the last entry repeats for any further reconnect).
   std::vector<std::vector<std::uint8_t>> incomingByConnection;
   unsigned successfulConnectCount = 0;
 

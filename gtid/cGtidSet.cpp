@@ -35,8 +35,8 @@
 namespace binlog_streamer {
 namespace {
 
-// GNO_END (sql/rpl_gtid.h): valid GTID numbers are < INT64_MAX. Checked
-// here rather than after "endInclusive + 1" to also avoid signed overflow.
+// Valid GNOs are < INT64_MAX (GNO_END, sql/rpl_gtid.h); checked before
+// endInclusive + 1 to avoid signed overflow.
 constexpr std::int64_t GNO_END = std::numeric_limits<std::int64_t>::max();
 
 bool ParseGno(std::string_view text, std::size_t &pos, std::int64_t &value) {
@@ -73,8 +73,7 @@ std::uint64_t ReadUint64LE(std::span<const std::uint8_t> bytes,
 bool GtidSet::AddInterval(const GtidSource &source, std::int64_t start,
                           std::int64_t end) {
   if (end <= start) return false;
-  // Enforced here: Encode() packs tag length into one byte, and GtidSource
-  // itself carries no such limit.
+  // Encode() stores the tag length in one byte.
   if (source.tag.size() > GTID_TAG_MAX_LENGTH) return false;
   std::vector<GtidInterval> &intervals = m_bySource[source];
   intervals.push_back(GtidInterval{start, end});
@@ -85,7 +84,6 @@ bool GtidSet::AddInterval(const GtidSource &source, std::int64_t start,
   std::vector<GtidInterval> merged;
   merged.reserve(intervals.size());
   for (const auto &interval : intervals) {
-    // Touching intervals ([1,5)+[5,10)) merge too, not just overlapping ones.
     if (!merged.empty() && interval.start <= merged.back().end) {
       merged.back().end = std::max(merged.back().end, interval.end);
     } else {
@@ -100,8 +98,7 @@ bool GtidSet::AddFromText(std::string_view text, std::string &error) {
   error.clear();
   std::size_t pos = 0;
   while (pos < text.size()) {
-    // Mirrors add_gtid_text(): only skips whitespace right after a comma,
-    // which also swallows ToText()'s trailing newline.
+    // As add_gtid_text(): whitespace is skipped only right after a comma.
     while (pos < text.size() && text[pos] == ',') {
       ++pos;
       while (pos < text.size() &&
@@ -122,8 +119,8 @@ bool GtidSet::AddFromText(std::string_view text, std::string &error) {
     }
     pos += UUID_TEXT_LENGTH;
 
-    // A tag token may reappear within one UUID's chain, re-selecting the
-    // source for the interval tokens that follow (matches add_gtid_text()).
+    // A tag may reappear within one UUID's chain and re-selects the source for
+    // the intervals that follow.
     std::string tag;
     while (pos < text.size() && text[pos] == ':') {
       ++pos;
@@ -170,8 +167,6 @@ bool GtidSet::AddFromText(std::string_view text, std::string &error) {
 std::string GtidSet::ToText() const {
   std::string text;
   bool firstGroup = true;
-  // Relies on m_bySource ordering by uuid first, so each uuid's sources
-  // form one run here.
   const Uuid *previousUuid = nullptr;
   for (const auto &[source, intervals] : m_bySource) {
     if (intervals.empty()) continue;
@@ -239,8 +234,8 @@ std::vector<std::uint8_t> GtidSet::Encode(bool skipTaggedGtids) const {
     ++sourceCount;
     for (const std::uint8_t b : source.uuid.bytes) out[pos++] = b;
     if (tagged) {
-      // Server's general varint (value << 1 in one byte), not protocol
-      // lenenc - safe since GTID_TAG_MAX_LENGTH (32) fits in one byte.
+      // Server's varint form (value << 1 in one byte), not lenenc;
+      // GTID_TAG_MAX_LENGTH (32) fits in one byte.
       out[pos++] = static_cast<std::uint8_t>(source.tag.size() << 1);
       for (const char c : source.tag) out[pos++] = static_cast<std::uint8_t>(c);
     }
@@ -253,9 +248,8 @@ std::vector<std::uint8_t> GtidSet::Encode(bool skipTaggedGtids) const {
       pos += 8;
     }
   }
-  // Matches encode_nsids_format(): untagged uses only the top byte
-  // (indistinguishable from plain LE sourceCount); tagged repeats the
-  // format byte in the low byte too.
+  // As encode_nsids_format(): untagged uses only the top byte; tagged repeats
+  // the format byte in the low byte too.
   const std::uint64_t header =
       tagged
           ? ((std::uint64_t{1} << 56) | (sourceCount << 8) | std::uint64_t{1})
@@ -276,8 +270,8 @@ bool GtidSet::AddFromEncoding(std::span<const std::uint8_t> encoded,
     return false;
   }
 
-  // Mirrors decode_nsids_format(): tagged repeats the format byte in the
-  // low byte too - mask both out, or they shift into sourceCount's high bits.
+  // A tagged set repeats the format byte in the low byte; mask both out before
+  // reading sourceCount.
   const std::uint64_t header = ReadUint64LE(encoded, 0);
   const auto formatByte = static_cast<std::uint8_t>(header >> 56);
   constexpr std::uint64_t TOP_BYTE_MASK = std::uint64_t{0xFF} << 56;
@@ -312,8 +306,8 @@ bool GtidSet::AddFromEncoding(std::span<const std::uint8_t> encoded,
         error = "GTID set encoding is truncated at a tag length";
         return false;
       }
-      // A set low bit is the multi-byte varint form, which this relay
-      // neither produces nor expects from a real source.
+      // A set low bit marks the multi-byte varint form, which a source never
+      // sends here.
       const std::uint8_t lengthByte = encoded[pos];
       if ((lengthByte & 1) != 0) {
         error = "GTID tag length prefix is not a single-byte encoding";
@@ -325,9 +319,8 @@ bool GtidSet::AddFromEncoding(std::span<const std::uint8_t> encoded,
         error = "GTID set encoding is truncated inside a tag";
         return false;
       }
-      // A zero length is an untagged source stored in an otherwise tagged
-      // set (Encode() does this for every source once any is tagged); handled
-      // directly since TagText::Parse rejects empty text.
+      // A zero length is an untagged source in an otherwise tagged set
+      // (Encode() writes it so); TagText::Parse rejects empty text.
       if (tagLength > 0) {
         std::string tagError;
         const std::string_view rawTag(
@@ -360,9 +353,8 @@ bool GtidSet::AddFromEncoding(std::span<const std::uint8_t> encoded,
       pos += INTEGER_LENGTH;
       const auto end = static_cast<std::int64_t>(ReadUint64LE(encoded, pos));
       pos += INTEGER_LENGTH;
-      // Matches add_gtid_encoding(): intervals must arrive strictly
-      // increasing and already merged - AddInterval() can't tell corrupt
-      // data from mergeable input.
+      // As add_gtid_encoding(): intervals must arrive increasing and already
+      // merged; AddInterval() cannot tell corrupt data from mergeable input.
       if (start <= previousEnd || !AddInterval(source, start, end)) {
         error = "GTID set encoding has an out-of-order or malformed interval";
         return false;
@@ -386,18 +378,14 @@ bool GtidSet::IsEmpty() const {
 bool GtidSet::IsSubsetOf(const GtidSet &other) const {
   for (const auto &[source, intervals] : m_bySource) {
     if (intervals.empty()) continue;
-    // Direct lookup, without the copy GetIntervals() would make.
     const auto otherIt = other.m_bySource.find(source);
     if (otherIt == other.m_bySource.end()) return false;
     const std::vector<GtidInterval> &otherIntervals = otherIt->second;
-    // Both lists are ascending, so the cursor only moves forward.
     std::size_t otherIndex = 0;
     for (const auto &interval : intervals) {
-      // Skip intervals that end before this one starts (half-open ends).
       while (otherIndex < otherIntervals.size() &&
              interval.start > otherIntervals[otherIndex].end)
         ++otherIndex;
-      // Merged intervals: only this one can cover the whole interval.
       if (otherIndex >= otherIntervals.size()) return false;
       if (interval.start < otherIntervals[otherIndex].start ||
           interval.end > otherIntervals[otherIndex].end)
@@ -410,8 +398,6 @@ bool GtidSet::IsSubsetOf(const GtidSet &other) const {
 bool GtidSet::Contains(const GtidSource &source, std::int64_t gno) const {
   const auto it = m_bySource.find(source);
   if (it == m_bySource.end()) return false;
-  // Merged and ascending: the only candidate is the last interval starting
-  // at or before gno.
   const auto &intervals = it->second;
   const auto after =
       std::upper_bound(intervals.begin(), intervals.end(), gno,

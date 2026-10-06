@@ -26,9 +26,9 @@
 namespace binlog_streamer {
 
 enum class QueryResponseKind {
-  Ok,     // an OK packet: a statement with no result set
-  Row,    // a result set of one column and one row
-  Error,  // an ERR packet
+  Ok,
+  Row,
+  Error,
 };
 
 }  // namespace binlog_streamer

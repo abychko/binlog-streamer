@@ -31,14 +31,12 @@
 
 namespace binlog_streamer {
 
-// Never gtid_executed for the start set - it can overclaim beyond what
-// the source's current file actually covers.
+// Never gtid_executed: it can claim more than the source's current file covers.
 class StartSetResolver {
  public:
   explicit StartSetResolver(BinlogProbe &probe) : m_probe(probe) {}
 
-  // nullopt means success (resolution is filled in) - an unusual
-  // convention, not failure.
+  // nullopt means success (resolution is filled in).
   std::optional<SessionResult> Resolve(const std::string &gtidExecutedText,
                                        const std::string &gtidPurgedText,
                                        StartSetResolution &resolution);

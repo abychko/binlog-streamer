@@ -55,7 +55,6 @@ TEST(ComQueryCommandTest, ParseReadsBackWhatEncodeWrote) {
 }
 
 TEST(ComQueryCommandTest, ParsesEmptySqlAndKeepsEmbeddedNul) {
-  // sql views into the payload, so both payloads outlive the checks.
   const std::vector<std::uint8_t> commandByteOnly = {0x03};
   const std::vector<std::uint8_t> withEmbeddedNul = {0x03, 'a', 0x00, 'b'};
   std::string_view sql = "stale";

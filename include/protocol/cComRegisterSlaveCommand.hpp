@@ -34,9 +34,8 @@ namespace binlog_streamer {
 class ComRegisterSlaveCommand {
  public:
   static std::vector<std::uint8_t> Encode(const RegisterSlaveCommand &value);
-  // Includes the command byte. The three strings carry a single raw
-  // length byte (<251), not a full length-encoded integer; the two
-  // trailing 4-byte fields must be present but are discarded.
+  // The three strings carry a single length byte (<251), not a length-encoded
+  // integer; the two trailing 4-byte fields must be present but are discarded.
   static bool Parse(std::span<const std::uint8_t> payload,
                     RegisterSlaveCommand &value, std::string &error);
 };

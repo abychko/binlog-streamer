@@ -25,8 +25,6 @@
 
 namespace binlog_streamer {
 
-// None of these are retried by the reader itself; deciding whether/how
-// to reconnect is the caller's job.
 enum class StreamEndReason {
   SourceError,
   EndOfStream,
@@ -34,8 +32,6 @@ enum class StreamEndReason {
   ConnectionClosed,
   Stopped,
   StoppedBySink,
-  // A heartbeat named a file or position behind what this reader
-  // already has, matching heartbeat_queue_event's own check.
   HeartbeatFailure,
   MalformedStream,
 };

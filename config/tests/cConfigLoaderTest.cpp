@@ -90,8 +90,7 @@ TEST(ConfigLoaderTest, MissingDataDirGetsDefault) {
              std::string("  data_dir: /var/lib/binlog-streamer\n").size());
   const auto result = ConfigLoader::Parse(text, "settings.yml");
   ASSERT_TRUE(result.value) << ::testing::PrintToString(result.errors);
-  EXPECT_EQ(result.value->storage.dataDir,
-            "/var/lib/binlog-streamer");  // hConfigDefaults.hpp
+  EXPECT_EQ(result.value->storage.dataDir, "/var/lib/binlog-streamer");
 }
 
 TEST(ConfigLoaderTest, MaxConnectionsIsOptionalAndBounded) {
@@ -100,7 +99,6 @@ TEST(ConfigLoaderTest, MaxConnectionsIsOptionalAndBounded) {
   const auto at = text.find(line);
   ASSERT_NE(at, std::string::npos);
 
-  // Absent: the packaged default (hConfigDefaults.hpp).
   std::string without = text;
   without.erase(at, line.size());
   auto result = ConfigLoader::Parse(without, "settings.yml");
@@ -113,8 +111,6 @@ TEST(ConfigLoaderTest, MaxConnectionsIsOptionalAndBounded) {
   ASSERT_TRUE(result.value) << ::testing::PrintToString(result.errors);
   EXPECT_EQ(result.value->server.maxConnections, 8u);
 
-  // A relay that accepts no one is a configuration mistake, not a way to
-  // turn the listener off; above the ceiling is one too.
   for (const std::string &value :
        {std::string("0"), std::string("100001"), std::string("")}) {
     std::string broken = text;
@@ -163,8 +159,6 @@ TEST(ConfigLoaderTest, MonitoringHttpIsOptionalWithDefaults) {
   EXPECT_EQ(http.listenPort, 8080u);
   EXPECT_EQ(http.htmlDir, "/etc/binlog-streamer/html");
 
-  // Unfilled keys mean the defaults, as in replica.yml; so does a section
-  // with nothing under it.
   for (const std::string &tail :
        {std::string("monitoring:\n"), std::string("monitoring:\n  http:\n"),
         std::string("monitoring:\n  http:\n    listen_address:\n"
@@ -215,15 +209,14 @@ TEST(ConfigLoaderTest, UnknownKeyReportsPositionAndPath) {
   EXPECT_FALSE(result.value);
   ASSERT_EQ(result.errors.size(), 1u);
   EXPECT_EQ(result.errors[0].message, "unknown key");
-  EXPECT_EQ(result.errors[0].keyPath, "cache");  // path of the parent map
+  EXPECT_EQ(result.errors[0].keyPath, "cache");
   EXPECT_EQ(result.errors[0].line, 19);
   EXPECT_EQ(result.errors[0].column, 3);
 }
 
 TEST(ConfigLoaderTest, MissingRequiredKeyIsError) {
-  // "policy: age" is left in place so storage.retention stays a non-null map
-  // (removing the section's only key would make it Null, exercising the
-  // "expected a mapping" path instead of "required key is missing").
+  // Keeping 'policy: age' leaves storage.retention a mapping; removing its only
+  // key would make it Null.
   std::string text = FULL_SETTINGS;
   const auto line = text.find("    period: 7d\n");
   ASSERT_NE(line, std::string::npos);
@@ -325,8 +318,7 @@ TEST(ConfigLoaderTest, DuplicateKeyErrorAtSecondPosition) {
   ASSERT_EQ(result.errors.size(), 1u);
   EXPECT_EQ(result.errors[0].message, "duplicate key");
   EXPECT_EQ(result.errors[0].keyPath, "server");
-  EXPECT_EQ(result.errors[0].line,
-            19);  // the repeated "server:" key, not the first
+  EXPECT_EQ(result.errors[0].line, 19);
 }
 
 TEST(ConfigLoaderTest, RedirectsSourceSectionWithoutLeakingNestedValues) {
@@ -361,9 +353,8 @@ TEST(ConfigLoaderTest, RedirectsListenAddressAndListenPortUnderServer) {
     EXPECT_EQ(error.message, "belongs to replica.yml");
 }
 
-// yaml-cpp's single-document YAML::Load silently drops everything after the
-// first "---", turning a typo into a silent fallback to defaults.
-// YAML::LoadAll rejects it instead.
+// yaml-cpp's YAML::Load drops everything after the first '---'; LoadAll rejects
+// it.
 TEST(ConfigLoaderTest, MultipleDocumentsIsExactlyOneError) {
   const auto result = ConfigLoader::Parse("a: 1\n---\nb: 2\n", "settings.yml");
   EXPECT_FALSE(result.value);

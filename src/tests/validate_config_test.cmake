@@ -20,15 +20,12 @@ ENDIF()
 
 EXECUTE_PROCESS(COMMAND mktemp -d OUTPUT_VARIABLE WORK_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-# Collected instead of calling MESSAGE(FATAL_ERROR) directly, so WORK_DIR is
-# always removed below even when a check fails (script mode has no
-# try/finally; FATAL_ERROR would otherwise abort before the cleanup line).
+# Collected instead of calling MESSAGE(FATAL_ERROR), so WORK_DIR is always
+# removed below.
 SET(FAILURE_MESSAGE "")
 
 IF(SCENARIO STREQUAL "owner")
     FILE(COPY "${PACKAGING_DIR}/settings.yml" DESTINATION "${WORK_DIR}")
-    # Filled from the current (non-root) user's own values; the files end up
-    # owned by that user, which violates the "owner must be root" contract.
     FILE(WRITE "${WORK_DIR}/source.yml" "host: 127.0.0.1\nuser: repl\npassword: Secr3tPass\n")
     FILE(WRITE "${WORK_DIR}/replica.yml" "listen_port: 3307\n")
     EXECUTE_PROCESS(COMMAND chmod 0640 "${WORK_DIR}/source.yml" "${WORK_DIR}/replica.yml")
@@ -37,14 +34,11 @@ IF(SCENARIO STREQUAL "owner")
     IF(NOT EXIT_CODE EQUAL 1)
         SET(FAILURE_MESSAGE "expected exit code 1, got ${EXIT_CODE}; stdout: ${STDOUT_TEXT}; stderr: ${STDERR_TEXT}")
     ELSEIF(NOT STDERR_TEXT MATCHES "wrong directory owner")
-        # WORK_DIR itself isn't owned by root, so the directory-ownership
-        # check fails first; file ownership is covered by SecretFileCheckTest.
         SET(FAILURE_MESSAGE "expected 'wrong directory owner' in stderr, got: ${STDERR_TEXT}")
     ENDIF()
 ELSEIF(SCENARIO STREQUAL "developer")
-    # Only meaningful in a DEVELOPER_MODE=ON build: the same not-root-owned
-    # files the "owner" scenario rejects must be accepted here instead, with
-    # the relaxation visible on stderr.
+    # Only meaningful in a DEVELOPER_MODE=ON build: the files the "owner"
+    # scenario rejects must be accepted here.
     FILE(COPY "${PACKAGING_DIR}/settings.yml" DESTINATION "${WORK_DIR}")
     FILE(WRITE "${WORK_DIR}/source.yml" "host: 127.0.0.1\nuser: repl\npassword: Secr3tPass\n")
     FILE(WRITE "${WORK_DIR}/replica.yml" "listen_port: 3307\n")
@@ -56,7 +50,7 @@ ELSEIF(SCENARIO STREQUAL "developer")
     ELSEIF(NOT STDERR_TEXT MATCHES "developer mode")
         SET(FAILURE_MESSAGE "expected a developer-mode banner in stderr, got: ${STDERR_TEXT}")
     ENDIF()
-ELSE() # broken
+ELSE()
     FILE(WRITE "${WORK_DIR}/settings.yml" "server:\n  server_id: not-a-number\n")
     EXECUTE_PROCESS(COMMAND "${BINARY}" --validate-config --config "${WORK_DIR}/settings.yml"
         RESULT_VARIABLE EXIT_CODE OUTPUT_VARIABLE STDOUT_TEXT ERROR_VARIABLE STDERR_TEXT)

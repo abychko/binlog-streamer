@@ -28,8 +28,7 @@
 
 namespace binlog_streamer {
 
-// [start, end) half-open; the text form "start-end" is inclusive on both
-// ends, so text<->interval conversion always adjusts end by one.
+// [start, end) is half-open; the text form is inclusive on both ends.
 struct GtidInterval {
   std::int64_t start = 0;
   std::int64_t end = 0;

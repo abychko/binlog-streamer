@@ -57,7 +57,7 @@ std::size_t ReadUpTo(int fd, off_t offset, std::span<std::uint8_t> out,
       error = std::strerror(errno);
       return done;
     }
-    if (count == 0) break;  // EOF
+    if (count == 0) break;
     done += static_cast<std::size_t>(count);
   }
   return done;
@@ -91,8 +91,6 @@ bool BinlogTailScanner::Scan(const std::filesystem::path &path,
   }
 
   TransactionBoundaryTracker tracker;
-  // Captured at GroupStart, applied at GroupEnd - meaningful only while
-  // tracker.InGroup() is true.
   GtidSource pendingSource;
   std::int64_t pendingGno = 0;
   bool pendingIsAnonymous = false;
@@ -108,15 +106,14 @@ bool BinlogTailScanner::Scan(const std::filesystem::path &path,
       close(fd);
       return false;
     }
-    if (headerRead < headerBytes.size())
-      break;  // a short or missing header - the crash-truncated tail
+    if (headerRead < headerBytes.size()) break;
 
     EventHeader header;
-    std::string headerParseError;  // fixed-size header: Parse() cannot fail
+    std::string headerParseError;
     EventHeaderCodec::Parse(headerBytes, header, headerParseError);
 
-    // Not an error: a length shorter than the header itself is another
-    // shape an unfinished write leaves, same as a header cut short outright.
+    // A length shorter than the header is another shape an unfinished write
+    // leaves: trimmed, not an error.
     if (header.eventLength < EVENT_HEADER_LENGTH) break;
 
     const GtidEvent *gtidEventPtr = nullptr;
@@ -138,8 +135,7 @@ bool BinlogTailScanner::Scan(const std::filesystem::path &path,
       return false;
     }
 
-    if (position + header.eventLength > fileSize)
-      break;  // a full header, but its body cut short by the crash
+    if (position + header.eventLength > fileSize) break;
 
     if (isGtid) {
       std::vector<std::uint8_t> body(header.eventLength - EVENT_HEADER_LENGTH);
@@ -152,23 +148,21 @@ bool BinlogTailScanner::Scan(const std::filesystem::path &path,
         close(fd);
         return false;
       }
-      if (bodyRead < body.size())
-        break;  // header complete, GTID body cut short - still the crash tail
+      if (bodyRead < body.size()) break;
       std::string gtidError;
       const bool decoded = isTaggedGtid
                                ? GtidEventCodec::ParseTagged(
                                      body, checksumLength, gtidEvent, gtidError)
                                : GtidEventCodec::Parse(body, checksumLength,
                                                        gtidEvent, gtidError);
-      if (!decoded) break;  // not an error - see above
+      if (!decoded) break;
       gtidEventPtr = &gtidEvent;
     }
 
     std::string trackError;
     const BoundaryOutcome outcome =
         tracker.OnEvent(header, position, gtidEventPtr, trackError);
-    if (outcome == BoundaryOutcome::Malformed)
-      break;  // not an error - a rejected boundary is trimmed too
+    if (outcome == BoundaryOutcome::Malformed) break;
     if (outcome == BoundaryOutcome::GroupStart) {
       pendingSource = GtidSource{gtidEvent.uuid, gtidEvent.tag};
       pendingGno = gtidEvent.gno;
@@ -181,12 +175,8 @@ bool BinlogTailScanner::Scan(const std::filesystem::path &path,
     if (outcome == BoundaryOutcome::GroupEnd ||
         outcome == BoundaryOutcome::Standalone) {
       result.lastBoundary = position;
-      // Always set here on GroupEnd: TransactionBoundaryTracker never
-      // returns GroupEnd without a matching GroupStart first, and this
-      // scan never calls Reset() mid-loop.
       if (outcome == BoundaryOutcome::GroupEnd && !pendingIsAnonymous) {
-        // pendingGno, pendingGno+1: GtidInterval holds actual GTID
-        // numbers, not a zero-based index - the interval is
+        // GtidInterval holds actual GTID numbers: the interval is
         // [pendingGno, pendingGno+1).
         result.completedGroups.AddInterval(pendingSource, pendingGno,
                                            pendingGno + 1);

@@ -79,7 +79,7 @@ std::vector<std::uint8_t> Lenenc(std::uint64_t value) {
 
 struct WireEvent {
   EventHeader header;
-  std::vector<std::uint8_t> bytes;  // as one OnEventBytes() call would carry it
+  std::vector<std::uint8_t> bytes;
 };
 
 WireEvent MakeEvent(std::uint8_t type, std::span<const std::uint8_t> body,
@@ -141,7 +141,7 @@ std::vector<std::uint8_t> SampleFde() {
   for (std::size_t i = 0; i < version.size(); ++i)
     body[2 + i] = static_cast<std::uint8_t>(version[i]);
   body[56] = 19;
-  body.push_back(0x01);  // BINLOG_CHECKSUM_ALG_CRC32
+  body.push_back(0x01);
   body.insert(body.end(), 4, 0x00);
   return body;
 }
@@ -654,8 +654,6 @@ TEST(StorageEventSinkCacheTest,
     }
     return value;
   };
-  // Open every cursor before accepting new bytes, at distinct historical
-  // positions. Each reader owns its cursor and counters on its own thread.
   std::vector<std::unique_ptr<StorageReader>> readers;
   std::vector<std::unique_ptr<FileCursor>> cursors;
   for (std::size_t i = 0; i < 8; ++i) {

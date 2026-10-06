@@ -34,18 +34,17 @@ namespace binlog_streamer {
 
 struct QueryColumn {
   std::string name;
-  std::optional<std::string> value;  // empty means SQL NULL
+  std::optional<std::string> value;
 };
 
-// What QueryResponder decided to answer; ReplicaConnection turns it into
-// packets. No query the relay answers returns more than one row, so one
-// row is all a result set needs to carry.
+// No answered query returns more than one row, so a result set carries only
+// one.
 struct QueryResponse {
   QueryResponseKind kind = QueryResponseKind::Ok;
-  std::vector<QueryColumn> columns;  // Row
-  std::uint16_t errorCode = 0;       // Error
-  std::string sqlState;              // Error
-  std::string message;               // Error
+  std::vector<QueryColumn> columns;
+  std::uint16_t errorCode = 0;
+  std::string sqlState;
+  std::string message;
 };
 
 }  // namespace binlog_streamer

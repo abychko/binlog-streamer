@@ -32,15 +32,11 @@ namespace {
 constexpr char RELAY_UUID[] = "8a94f357-aab4-11df-86ab-c80aa9429562";
 constexpr char SOURCE_UUID[] = "3e11fa47-71ca-11e1-9e33-c80aa9429562";
 
-// Scripts the storage: which file FindStartFile() names on each call and
-// whether Open() succeeds. A default-constructed cursor stands for an open
-// file; nothing here reads through it.
 class ScriptedReader : public BinlogStorageReader {
  public:
   std::string publishedFile = "binlog.000003";
-  std::vector<std::optional<std::string>>
-      startFiles;        // one per FindStartFile() call, the last one repeating
-  int failingOpens = 0;  // how many Open() calls fail before one succeeds
+  std::vector<std::optional<std::string>> startFiles;
+  int failingOpens = 0;
   mutable int findCalls = 0;
   int openCalls = 0;
   mutable GtidSet lastReplicaSet;

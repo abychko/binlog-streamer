@@ -72,8 +72,6 @@ bool TlsContext::LoadMaterial(const TlsMaterial &material, std::string &error) {
       error = OpenSslError("ssl_cert");
       return false;
     }
-    // Any further certificates in the same file are the chain up to the
-    // CA, in the order a PEM bundle carries them.
     for (;;) {
       X509Ptr link(PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr),
                    &X509_free);
@@ -83,7 +81,7 @@ bool TlsContext::LoadMaterial(const TlsMaterial &material, std::string &error) {
         return false;
       }
     }
-    ERR_clear_error();  // the read past the last certificate leaves one
+    ERR_clear_error();
   }
   if (!material.keyPem.empty()) {
     const BioPtr bio = MemoryBio(material.keyPem);
@@ -93,7 +91,6 @@ bool TlsContext::LoadMaterial(const TlsMaterial &material, std::string &error) {
       error = OpenSslError("ssl_key: not a PEM private key");
       return false;
     }
-    // With a certificate already set, OpenSSL checks the pair here.
     if (SSL_CTX_use_PrivateKey(m_context, key.get()) != 1 ||
         SSL_CTX_check_private_key(m_context) != 1) {
       if (ERR_GET_REASON(ERR_peek_last_error()) == X509_R_KEY_VALUES_MISMATCH) {
@@ -151,7 +148,7 @@ bool TlsContext::LoadServer(const TlsMaterial &material, std::string &error) {
     error = OpenSslError("creating the TLS context");
     return false;
   }
-  // TLSv1.2 and up, what a MySQL 8.4 server accepts (tls_version).
+  // TLSv1.2 and up, as a MySQL 8.4 server accepts (tls_version).
   SSL_CTX_set_min_proto_version(m_context, TLS1_2_VERSION);
   SSL_CTX_set_options(m_context, SSL_OP_NO_COMPRESSION);
   SSL_CTX_set_session_cache_mode(m_context, SSL_SESS_CACHE_OFF);

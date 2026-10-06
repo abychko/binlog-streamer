@@ -45,11 +45,10 @@ SourceSettings MakeSource() {
   return source;
 }
 
-// Continued with the post-registration reads StartupSequence itself makes.
 test::ScriptedSourceBuilder OneAttemptScript() {
   test::ScriptedSourceBuilder script =
       test::ScriptedSourceBuilder::ThroughReplicaUuid("999");
-  script.AppendCommandOk();  // COM_REGISTER_SLAVE
+  script.AppendCommandOk();
   script.AppendSingleColumnRow("@@GLOBAL.gtid_executed", EXECUTED_TEXT);
   script.AppendSingleColumnRow("@@GLOBAL.gtid_purged", "");
   return script;
@@ -63,7 +62,6 @@ void ScriptCurrentFile(test::FakeBinlogProbe &probe) {
   currentFile.ok = true;
   currentFile.fileName = "binlog.000050";
   probe.responsesByRequestedSetText[executedSet.ToText()] = currentFile;
-  // Also needed: the resolver reads the selected file's own Previous_gtids.
   probe.previousGtidsTextByFileName["binlog.000050"] = EXECUTED_TEXT;
 }
 
@@ -103,7 +101,7 @@ const std::string PURGED_TEXT = "22222222-2222-2222-2222-222222222222:1-5";
 test::ScriptedSourceBuilder ResumeAttemptScript() {
   test::ScriptedSourceBuilder script =
       test::ScriptedSourceBuilder::ThroughReplicaUuid("999");
-  script.AppendCommandOk();  // COM_REGISTER_SLAVE
+  script.AppendCommandOk();
   script.AppendSingleColumnRow("@@GLOBAL.gtid_purged", PURGED_TEXT);
   return script;
 }
@@ -161,7 +159,7 @@ TEST(StartupSequenceTest,
   test::FakeTransport transport;
   const auto script = ResumeAttemptScript().Bytes();
   transport.incomingByConnection = {script, script};
-  test::FakeBinlogProbe probe;  // unscripted file: a transient failure
+  test::FakeBinlogProbe probe;
   const StartupOutcome outcome = RunResume(transport, probe, 2);
 
   EXPECT_EQ(outcome.result.outcome, SessionOutcome::PermanentFailure);
@@ -171,21 +169,18 @@ TEST(StartupSequenceTest,
 
 TEST(StartupSequenceTest, RetriesAfterATransientProbeFailureThenSucceeds) {
   test::FakeTransport transport;
-  // Two copies: every attempt is a fresh connection.
   const auto script = OneAttemptScript().Bytes();
   transport.incomingByConnection = {script, script};
 
   test::FakeBinlogProbe delegateProbe;
   ScriptCurrentFile(delegateProbe);
-  // Attempt 1's one probe call fails; attempt 2's succeeds.
   FlakyProbe probe(delegateProbe, /*failCount=*/1);
 
   ServerSettings server;
   server.serverId = 42;
   RetryOptions options;
   options.attempts = 3;
-  options.sleep = [](std::chrono::seconds) {
-  };  // no real waiting in a unit test
+  options.sleep = [](std::chrono::seconds) {};
   unsigned retryCallbacks = 0;
   options.onRetry = [&](unsigned, unsigned, const std::string &) {
     ++retryCallbacks;
@@ -199,10 +194,9 @@ TEST(StartupSequenceTest, RetriesAfterATransientProbeFailureThenSucceeds) {
   EXPECT_EQ(outcome.result.outcome, SessionOutcome::Registered);
   ASSERT_NE(outcome.session, nullptr);
   EXPECT_EQ(outcome.resolution.selectedFileName, "binlog.000050");
-  // A probe failure forces a full fresh reconnect for the next attempt.
   EXPECT_EQ(transport.connectCallCount, 2u);
   EXPECT_EQ(retryCallbacks, 1u);
-  EXPECT_EQ(probe.calls(), 2u);  // attempt 1's failure + attempt 2's success
+  EXPECT_EQ(probe.calls(), 2u);
 }
 
 TEST(StartupSequenceTest,
@@ -213,7 +207,6 @@ TEST(StartupSequenceTest,
 
   test::FakeBinlogProbe delegateProbe;
   ScriptCurrentFile(delegateProbe);
-  // Every attempt's probe call fails, so it never reaches the delegate.
   FlakyProbe probe(delegateProbe, /*failCount=*/3);
 
   ServerSettings server;
@@ -236,7 +229,7 @@ TEST(StartupSequenceTest,
       << outcome.result.message;
   EXPECT_EQ(outcome.session, nullptr);
   EXPECT_EQ(transport.connectCallCount, 3u);
-  EXPECT_EQ(retryCallbacks, 3u);  // every attempt failed, including the last
+  EXPECT_EQ(retryCallbacks, 3u);
 }
 
 TEST(StartupSequenceTest,
@@ -244,7 +237,6 @@ TEST(StartupSequenceTest,
   test::FakeTransport transport;
   transport.connectAlwaysFails = true;
 
-  // Never reached: every attempt fails before registering.
   test::FakeBinlogProbe probe;
 
   ServerSettings server;
@@ -265,17 +257,14 @@ TEST(StartupSequenceTest,
   EXPECT_NE(outcome.result.message.find("exhausted"), std::string::npos)
       << outcome.result.message;
   EXPECT_EQ(transport.connectCallCount, 3u);
-  EXPECT_EQ(retryCallbacks, 3u);  // every attempt failed, including the last
+  EXPECT_EQ(retryCallbacks, 3u);
   EXPECT_EQ(outcome.session, nullptr);
 }
 
 TEST(StartupSequenceTest, RegistersAndResolvesAfterATransientConnectFailure) {
   const auto script = OneAttemptScript().Bytes();
   test::FakeTransport transport;
-  // First attempt fails to connect, second succeeds.
   transport.connectFailuresRemaining = 1;
-  // Only one script needed: a failed Connect() never reaches
-  // incomingByConnection's per-connection switch.
   transport.incomingByConnection = {script};
 
   test::FakeBinlogProbe probe;
@@ -316,8 +305,6 @@ TEST(StartupSequenceTest,
   options.attempts = 5;
   options.sleep = [](std::chrono::seconds) {};
   unsigned retryCallbacks = 0;
-  // Set from inside onRetry, standing in for a signal handler setting it
-  // asynchronously between attempts.
   std::atomic<bool> stopRequested{false};
   options.onRetry = [&](unsigned, unsigned, const std::string &) {
     ++retryCallbacks;
@@ -331,10 +318,8 @@ TEST(StartupSequenceTest,
 
   EXPECT_EQ(outcome.result.outcome, SessionOutcome::Stopped);
   EXPECT_EQ(outcome.session, nullptr);
-  EXPECT_EQ(retryCallbacks,
-            1u);  // only the first attempt's failure ever calls onRetry
-  EXPECT_EQ(transport.connectCallCount,
-            1u);  // stopped before a second connection was ever attempted
+  EXPECT_EQ(retryCallbacks, 1u);
+  EXPECT_EQ(transport.connectCallCount, 1u);
 }
 
 }  // namespace

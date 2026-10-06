@@ -27,9 +27,8 @@
 
 namespace binlog_streamer {
 
-// Percona Server libs/mysql/gtid/gtid_constants.h and uuid.h: a tag is at
-// most 32 characters, and the canonical UUID text form (with dashes) is
-// always exactly 36 characters.
+// A tag is at most 32 characters; the canonical UUID text is exactly 36
+// (libs/mysql/gtid).
 inline constexpr std::size_t GTID_TAG_MAX_LENGTH = 32;
 inline constexpr std::size_t UUID_TEXT_LENGTH = 36;
 

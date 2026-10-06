@@ -39,9 +39,6 @@
 
 namespace binlog_streamer {
 namespace {
-// Duplicated from cDiskProtectedFileReader.cpp: the two checks differ (this
-// one skips group ownership), so a shared header would only serve these two
-// call sites.
 std::string ShellQuote(const std::string &text) {
   std::string quoted = "'";
   for (char character : text)
@@ -79,9 +76,6 @@ ProtectedFileStatus PublicKeyFileReader::Read(const std::string &path,
     if (errno == ENOENT) return ProtectedFileStatus::Absent;
     return fail(std::strerror(errno));
   }
-  // expectedOwner_ was already validated while reading source.yml, so a
-  // missing account here means it was deleted mid-run; reported plainly
-  // rather than folded into the combined mode-violation message below.
   const auto *owner = getpwnam(expectedOwner_.c_str());
   if (owner == nullptr)
     return fail("owner " + expectedOwner_ + " does not exist");
@@ -94,9 +88,8 @@ ProtectedFileStatus PublicKeyFileReader::Read(const std::string &path,
     return fail(Join(directoryErrors) + "; fix: chown " +
                 ShellQuote(expectedOwner_) + " " + ShellQuote(directory) +
                 " && chmod go-w " + ShellQuote(directory));
-  // O_NOFOLLOW: a symlink here could point anywhere the process can read,
-  // defeating the checks below. O_NONBLOCK: keeps a FIFO at this path from
-  // hanging the read below.
+  // O_NOFOLLOW refuses a symlink; O_NONBLOCK keeps a FIFO at this path from
+  // blocking the open.
   const FileDescriptor file(
       openat(dir.Get(), filePath.filename().c_str(),
              O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK));
@@ -106,8 +99,8 @@ ProtectedFileStatus PublicKeyFileReader::Read(const std::string &path,
       return fail("is a symbolic link; replace it with a regular file");
     return fail(std::strerror(errno));
   }
-  // fstat on the open descriptor, not stat() on the path: the permission
-  // check must agree with what is actually read, not with the path (TOCTOU).
+  // fstat on the open descriptor, not stat() on the path, so the check matches
+  // what is read (TOCTOU).
   struct stat status{};
   if (fstat(file.Get(), &status) != 0) return fail(std::strerror(errno));
   auto violations = PublicKeyFileCheck::CheckFile(status, uid);

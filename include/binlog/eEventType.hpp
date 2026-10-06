@@ -27,8 +27,6 @@
 
 namespace binlog_streamer {
 
-// Only the types this relay branches on - every other type still flows
-// through unmodified.
 enum class EventType : std::uint8_t {
   Rotate = 4,
   FormatDescription = 15,

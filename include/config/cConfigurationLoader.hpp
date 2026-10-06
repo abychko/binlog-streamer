@@ -33,9 +33,8 @@ namespace binlog_streamer {
 
 class ConfigurationLoader {
  public:
-  // expectedOwner is reused by SourceConfigLoader as the required owner
-  // of source_public_key_path's file and directory, not just of
-  // source.yml.
+  // expectedOwner is also the required owner of source_public_key_path's file
+  // and directory.
   ConfigurationLoader(ProtectedFileReader &reader, std::string expectedOwner)
       : reader_(reader), expectedOwner_(std::move(expectedOwner)) {}
   LoadResult<Configuration> Load(const std::string &settingsPath);

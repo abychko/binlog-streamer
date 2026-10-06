@@ -31,8 +31,8 @@ namespace binlog_streamer {
 
 class BinlogFileHeaderReader {
  public:
-  // fileName supplies basename/number; path is only used for I/O. Fails,
-  // leaving record untouched, on a malformed header.
+  // fileName supplies the basename and number; path is only used for I/O.
+  // record is untouched on failure.
   static bool Read(const std::filesystem::path &path,
                    const std::string &fileName, StoredFileRecord &record,
                    std::string &error);

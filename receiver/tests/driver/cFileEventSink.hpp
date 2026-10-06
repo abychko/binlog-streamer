@@ -23,9 +23,8 @@
 
 #pragma once
 
-// Excludes artificial events, heartbeats, and each dump's FDE/PREVIOUS_GTIDS
-// preamble, so the written bytes compare byte-for-byte against the source's
-// own binlog.
+// Excludes artificial events, heartbeats and each dump's FDE/PREVIOUS_GTIDS
+// preamble, so the output compares byte for byte with the source's binlog.
 
 #include "receiver/iEventSink.hpp"
 
@@ -37,8 +36,8 @@ namespace binlog_streamer::test {
 
 class FileEventSink : public EventSink {
  public:
-  // 0 means no target, checked before each new event starts; a 0/0 pair
-  // never stops on its own, leaving --max-seconds as the backstop.
+  // 0 means no target; a 0/0 pair never stops on its own, leaving --max-seconds
+  // as the backstop.
   FileEventSink(std::ostream &sinkStream, std::uint64_t stopAfterGtidEvents,
                 std::uint64_t waitHeartbeats);
 
@@ -59,8 +58,6 @@ class FileEventSink : public EventSink {
   std::uint64_t GtidEventCount() const { return m_gtidEventCount; }
   std::uint64_t HeartbeatCount() const { return m_heartbeatCount; }
 
-  // True only when OnEventBegin() refused an event over met targets, not
-  // when the stream ended for any other reason.
   bool ReachedTargets() const { return m_reachedTargets; }
 
  private:

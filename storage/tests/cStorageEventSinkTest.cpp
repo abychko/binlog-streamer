@@ -35,7 +35,7 @@
 #include "storage/hStorageDefaults.hpp"
 
 #include <gtest/gtest.h>
-#include <unistd.h>  // ::truncate() - simulates a file already holding several GiB without writing that much
+#include <unistd.h>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -60,8 +60,6 @@ class NullSink : public EventSink {
   bool OnEventEnd() override { return true; }
 };
 
-// Counts calls to check that StorageEventSink forwards every event to
-// `next`, the same shape EventCounterSink relies on in main.cpp.
 class CountingSink : public EventSink {
  public:
   unsigned beginCalls = 0;
@@ -93,8 +91,6 @@ std::uint64_t FileSize(const std::filesystem::path &path) {
   return error ? 0 : static_cast<std::uint64_t>(size);
 }
 
-// Reads only `length` bytes at `offset`, so the past-4-GiB tests below can
-// check a few bytes of a multi-GiB sparse file without a same-sized buffer.
 std::vector<std::uint8_t> ReadFileAt(const std::filesystem::path &path,
                                      std::uint64_t offset, std::size_t length) {
   std::ifstream input(path, std::ios::binary);
@@ -111,8 +107,6 @@ void AppendLittleEndian(std::vector<std::uint8_t> &out, std::uint64_t value,
     out.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
 }
 
-// Local lenenc encoder, kept separate so this test does not depend on
-// bs-protocol.
 std::vector<std::uint8_t> Lenenc(std::uint64_t value) {
   std::vector<std::uint8_t> out;
   if (value < 251) {
@@ -127,10 +121,9 @@ std::vector<std::uint8_t> Lenenc(std::uint64_t value) {
   return out;
 }
 
-// One raw wire event, handed to a sink directly, bypassing wire parsing.
 struct WireEvent {
   EventHeader header;
-  std::vector<std::uint8_t> bytes;  // as one OnEventBytes() call would carry it
+  std::vector<std::uint8_t> bytes;
 };
 
 WireEvent MakeEvent(std::uint8_t type, std::span<const std::uint8_t> body,
@@ -185,9 +178,7 @@ std::vector<std::uint8_t> GtidBody(std::int64_t gno,
   return body;
 }
 
-// A valid FDE body: EndPreviousGtids() parses it with
-// FormatDescriptionEventCodec to build its StoredFileRecord. Server version
-// 8.4.11 implies a checksum trailer (CRC32 descriptor + 4-byte room).
+// Server 8.4.11 implies a checksum trailer (CRC32 descriptor + 4 bytes).
 std::vector<std::uint8_t> SampleFde() {
   std::vector<std::uint8_t> body(57, 0x00);
   body[0] = 4;
@@ -195,21 +186,17 @@ std::vector<std::uint8_t> SampleFde() {
   for (std::size_t i = 0; i < version.size(); ++i)
     body[2 + i] = static_cast<std::uint8_t>(version[i]);
   body[56] = 19;
-  body.push_back(0x01);  // BINLOG_CHECKSUM_ALG_CRC32
+  body.push_back(0x01);
   body.insert(body.end(), 4, 0x00);
   return body;
 }
 
-// A valid, strictly-decodable PGE body: AddFromEncoding() requires the
-// whole buffer consumed, so a CRC32 trailer is appended to match SampleFde().
 std::vector<std::uint8_t> SamplePreviousGtids() {
   std::vector<std::uint8_t> body = GtidSet().Encode(/*skipTaggedGtids=*/false);
   body.insert(body.end(), 4, 0x00);
   return body;
 }
 
-// SampleFde() with `created` (offset 52) set to a caller-chosen value, for
-// resume tests needing two FDEs differing only in this field.
 std::vector<std::uint8_t> SampleFdeWithCreated(std::uint32_t created) {
   auto body = SampleFde();
   for (int i = 0; i < 4; ++i)
@@ -220,9 +207,8 @@ std::vector<std::uint8_t> SampleFdeWithCreated(std::uint32_t created) {
 
 struct FreshFileHeader {
   std::uint32_t afterPge = 0;
-  // Whole wire event bytes, so a test can build a byte-exact disk
-  // expectation. IN_USE_FLAG_OFFSET (21) is byte 17 of fdeEventBytes;
-  // Create() forces its bit 0 to 1.
+  // IN_USE_FLAG_OFFSET (21) is byte 17 of fdeEventBytes; Create() forces its
+  // bit 0 to 1.
   std::vector<std::uint8_t> fdeEventBytes;
   std::vector<std::uint8_t> pgeEventBytes;
 };
@@ -261,17 +247,12 @@ struct DrivenGroup {
   WireEvent xid;
 };
 
-// start is 64-bit, unlike the wire's own 32-bit nextPosition, so a caller
-// can place a group past 4 GiB.
 DrivenGroup MakeGroup(std::uint64_t start, std::int64_t gno = 1) {
   DrivenGroup group;
   group.gtid = MakeEvent(static_cast<std::uint8_t>(EventType::Gtid),
                          GtidBody(gno, GROUP_TRANSACTION_LENGTH),
                          static_cast<std::uint32_t>(start + 69));
-  group.query = MakeEvent(2 /* a Query event - no EventType enumerator of its
-                               own, eEventType.hpp */
-                          ,
-                          std::vector<std::uint8_t>(10, 0xAB),
+  group.query = MakeEvent(2 /* Query */, std::vector<std::uint8_t>(10, 0xAB),
                           static_cast<std::uint32_t>(start + 69 + 29));
   group.xid = MakeEvent(16 /* Xid event */, std::vector<std::uint8_t>(8, 0xCD),
                         static_cast<std::uint32_t>(start + 69 + 29 + 27));
@@ -298,12 +279,9 @@ TEST(StorageEventSinkTest,
   const DrivenGroup group = MakeGroup(start);
   ASSERT_TRUE(DriveGroup(sink, group, start));
 
-  std::vector<std::uint8_t> expected = {0xfe, 0x62, 0x69,
-                                        0x6e};  // BINLOG_MAGIC
+  std::vector<std::uint8_t> expected = {0xfe, 0x62, 0x69, 0x6e};
   auto fdeOnDisk = header.fdeEventBytes;
-  fdeOnDisk[IN_USE_FLAG_OFFSET - 4] |=
-      0x01;  // "file in use" bit forced to 1 on creation
-             // (BinlogFileWriter::Create)
+  fdeOnDisk[IN_USE_FLAG_OFFSET - 4] |= 0x01;
   expected.insert(expected.end(), fdeOnDisk.begin(), fdeOnDisk.end());
   expected.insert(expected.end(), header.pgeEventBytes.begin(),
                   header.pgeEventBytes.end());
@@ -317,8 +295,7 @@ TEST(StorageEventSinkTest,
   fixture.Drain();
   const auto onDisk = ReadFile(fixture.Path("binlog.000001"));
   EXPECT_EQ(onDisk, expected);
-  EXPECT_EQ(onDisk[IN_USE_FLAG_OFFSET],
-            0x01);  // still open - no ROTATE has closed it yet
+  EXPECT_EQ(onDisk[IN_USE_FLAG_OFFSET], 0x01);
 }
 
 TEST(StorageEventSinkTest, ClosesTheFileOnAGenuineRotateClearingTheInUseBit) {
@@ -331,20 +308,18 @@ TEST(StorageEventSinkTest, ClosesTheFileOnAGenuineRotateClearingTheInUseBit) {
   ASSERT_TRUE(DriveGroup(sink, group, start));
 
   const std::uint32_t groupEnd = start + 125;
-  const auto rotate = MakeEvent(static_cast<std::uint8_t>(EventType::Rotate),
-                                RotateBody(4, "binlog.000002"), groupEnd + 30 /* nextPosition is not read for Rotate events; any placeholder is fine */);
+  const auto rotate =
+      MakeEvent(static_cast<std::uint8_t>(EventType::Rotate),
+                RotateBody(4, "binlog.000002"),
+                groupEnd + 30 /* placeholder: ignored for Rotate */);
   ASSERT_TRUE(Drive(sink, rotate, StreamPosition{"binlog.000001", groupEnd}));
 
   fixture.Drain();
   const auto onDisk = ReadFile(fixture.Path("binlog.000001"));
   EXPECT_EQ(onDisk.size(), groupEnd + rotate.bytes.size());
-  EXPECT_EQ(onDisk[IN_USE_FLAG_OFFSET],
-            0x00);  // bit cleared, rest of the byte untouched
-                    // (BinlogFileWriter::MarkClosed)
+  EXPECT_EQ(onDisk[IN_USE_FLAG_OFFSET], 0x00);
 }
 
-// A source stopped or crashed without a genuine ROTATE; the next thing on
-// the wire is the next file's announcement.
 TEST(StorageEventSinkTest,
      ClosesTheFileTheSourceEndedWithoutARotateAndGoesOnToTheNextOne) {
   StorageSinkFixture fixture;
@@ -412,8 +387,6 @@ TEST(StorageEventSinkTest, RefusesASecondAnnouncementOfTheFileAlreadyOpen) {
       << sink.LastError().message;
 }
 
-// Checks both the on-disk index and the in-RAM catalog against the same
-// fixture, not against each other, so they can't merely agree with each other.
 TEST(StorageEventSinkTest, RecordsTheNewFileInTheIndexAndTheCatalogOnCreate) {
   StorageSinkFixture fixture;
   NullSink next;
@@ -478,8 +451,6 @@ TEST(StorageEventSinkTest, DrainAndSyncWritesTheOpenGroupWithoutPublishingIt) {
   EXPECT_EQ(fixture.Published().Current().position, start);
 }
 
-// These file names are reachable as a path component (m_dataDir / fileName)
-// without a dedicated check - not merely hypothetical inputs.
 TEST(StorageEventSinkTest, RefusesAnEmptyFileNameInRotate) {
   StorageSinkFixture fixture;
   NullSink next;
@@ -504,8 +475,7 @@ TEST(StorageEventSinkTest, RefusesAFileNameContainingAPathSeparatorInRotate) {
   ASSERT_TRUE(sink.HasFailed());
   EXPECT_EQ(sink.LastError().failure, StorageFailure::Malformed);
   fixture.Drain();
-  EXPECT_FALSE(std::filesystem::exists(
-      fixture.Directory() / "sub"));  // no escape from data_dir happened
+  EXPECT_FALSE(std::filesystem::exists(fixture.Directory() / "sub"));
 }
 
 TEST(StorageEventSinkTest,
@@ -522,7 +492,7 @@ TEST(StorageEventSinkTest,
   EXPECT_EQ(sink.LastError().failure, StorageFailure::Malformed);
   fixture.Drain();
   EXPECT_FALSE(std::filesystem::exists(fixture.Directory().parent_path() /
-                                       "binlog.000001"));  // no escape happened
+                                       "binlog.000001"));
 }
 
 TEST(StorageEventSinkTest,
@@ -539,9 +509,8 @@ TEST(StorageEventSinkTest,
   EXPECT_EQ(sink.LastError().failure, StorageFailure::Malformed);
 }
 
-// One of four identical MAX_BUFFERED_EVENT_SIZE checks against
-// header.eventLength; the check runs in OnEventBegin() before any body byte
-// is requested, so this drives it directly with no body at all.
+// One of four MAX_BUFFERED_EVENT_SIZE checks; it runs in OnEventBegin(),
+// before any body byte is requested, so no body is needed.
 TEST(StorageEventSinkTest,
      RefusesAnArtificialRotateEventDeclaringMoreThanTheBufferLimit) {
   StorageSinkFixture fixture;
@@ -589,8 +558,6 @@ TEST(StorageEventSinkTest,
       MakeEvent(static_cast<std::uint8_t>(EventType::Rotate),
                 RotateBody(4, "binlog.000005"), 0, EVENT_FLAG_ARTIFICIAL);
   EXPECT_FALSE(Drive(sink, rotate, StreamPosition{"binlog.000005", 0}));
-  // The failure is only discovered once the whole event is in hand (from
-  // OnEventEnd()), so `next` must have already seen all three calls by then.
   EXPECT_EQ(next.beginCalls, 1u);
   EXPECT_EQ(next.bytesCalls, 1u);
   EXPECT_EQ(next.endCalls, 1u);
@@ -604,13 +571,9 @@ TEST(StorageEventSinkTest, RefusesAnEventPositionedPastWhatHasBeenWritten) {
 
   const auto query =
       MakeEvent(2, std::vector<std::uint8_t>(5, 0xAB), start + 10 + 19 + 5);
-  EXPECT_FALSE(Drive(
-      sink, query,
-      StreamPosition{"binlog.000001", start + 10}));  // a 10-byte gap before it
+  EXPECT_FALSE(Drive(sink, query, StreamPosition{"binlog.000001", start + 10}));
   ASSERT_TRUE(sink.HasFailed());
   EXPECT_EQ(sink.LastError().failure, StorageFailure::GapDetected);
-  // Same StorageFailure::GapDetected as the heartbeat branch below, checked
-  // by text so a future collapse of the two checks would still be caught.
   EXPECT_NE(sink.LastError().message.find("event position is past"),
             std::string::npos);
 }
@@ -628,9 +591,6 @@ TEST(StorageEventSinkTest, RefusesAnEventPositionedBehindWhatHasBeenWritten) {
   EXPECT_EQ(sink.LastError().failure, StorageFailure::Malformed);
 }
 
-// A replay lying entirely inside bytes already written reaches the resume
-// comparison, which reads the file back - but a file this run created was
-// never opened for reading. Refused by name instead.
 TEST(StorageEventSinkTest, RefusesAReplayOfBytesThisRunWroteItself) {
   StorageSinkFixture fixture;
   NullSink next;
@@ -639,8 +599,6 @@ TEST(StorageEventSinkTest, RefusesAReplayOfBytesThisRunWroteItself) {
   const DrivenGroup group = MakeGroup(start);
   ASSERT_TRUE(DriveGroup(sink, group, start));
 
-  // The same Query event again, at the position it was written at: its end
-  // stays within what has been appended, so no gap check catches it.
   EXPECT_FALSE(
       Drive(sink, group.query, StreamPosition{"binlog.000001", start + 69}));
   ASSERT_TRUE(sink.HasFailed());
@@ -661,8 +619,7 @@ TEST(StorageEventSinkTest, IgnoresAHeartbeatAtTheWrittenPosition) {
   EXPECT_TRUE(Drive(sink, heartbeat, StreamPosition{"binlog.000001", start}));
   EXPECT_FALSE(sink.HasFailed());
   fixture.Drain();
-  EXPECT_EQ(ReadFile(fixture.Path("binlog.000001")).size(),
-            start);  // nothing written for the heartbeat itself
+  EXPECT_EQ(ReadFile(fixture.Path("binlog.000001")).size(), start);
 }
 
 TEST(StorageEventSinkTest, RefusesAHeartbeatPastTheWrittenPosition) {
@@ -671,8 +628,6 @@ TEST(StorageEventSinkTest, RefusesAHeartbeatPastTheWrittenPosition) {
   auto &sink = fixture.OpenSink(next);
   const std::uint32_t start = OpenFreshFile(sink, "binlog.000001").afterPge;
 
-  // Checks `position` (EventStreamReader's accumulated count), not
-  // header.nextPosition.
   const auto heartbeat =
       MakeEvent(static_cast<std::uint8_t>(EventType::Heartbeat),
                 std::vector<std::uint8_t>{'b', 'i', 'n'}, start + 500);
@@ -696,8 +651,6 @@ const std::vector<std::uint8_t> REAL_TAGGED_GTID_BODY{
     0x10, 0x45, 0x05, 0x12, 0xdb, 0xd0, 0x09};
 constexpr std::uint64_t REAL_TAGGED_TRANSACTION_LENGTH = 337;
 
-// A tagged GTID opens a group like an untagged one and closes at its own
-// transaction_length, proven by the next group's GTID being accepted there.
 TEST(StorageEventSinkTest,
      AcceptsATaggedGtidGroupAndClosesItByItsTransactionLength) {
   StorageSinkFixture fixture;
@@ -748,10 +701,7 @@ TEST(StorageEventSinkTest, RefusesAGenuineRotateInsideAnOpenTransactionGroup) {
   const std::uint32_t start = OpenFreshFile(sink, "binlog.000001").afterPge;
 
   const DrivenGroup group = MakeGroup(start);
-  ASSERT_TRUE(
-      Drive(sink, group.gtid,
-            StreamPosition{"binlog.000001",
-                           start}));  // opens the group, does not close it
+  ASSERT_TRUE(Drive(sink, group.gtid, StreamPosition{"binlog.000001", start}));
 
   const auto rotate =
       MakeEvent(static_cast<std::uint8_t>(EventType::Rotate),
@@ -762,8 +712,6 @@ TEST(StorageEventSinkTest, RefusesAGenuineRotateInsideAnOpenTransactionGroup) {
   EXPECT_EQ(sink.LastError().failure, StorageFailure::Malformed);
 }
 
-// Mirror of OpenFreshFile() for a file the catalog's last record still shows
-// "in use"; returns the offset right after the Previous_gtids_event.
 std::uint32_t ResumeExistingFile(EventSink &sink, const std::string &fileName,
                                  std::span<const std::uint8_t> fde) {
   const auto rotate =
@@ -787,9 +735,6 @@ std::uint32_t ResumeExistingFile(EventSink &sink, const std::string &fileName,
   return afterPge;
 }
 
-// A file left "in use" by a crash mid-run is reopened for appending; the
-// source's resend of its header and groups is verified byte for byte, not
-// rewritten.
 TEST(StorageEventSinkTest,
      ResumesAnExistingLastFileAndSkipsByteForByteMatchingReplayEvents) {
   StorageSinkFixture fixture;
@@ -802,9 +747,6 @@ TEST(StorageEventSinkTest,
     start = OpenFreshFile(sink, "binlog.000001").afterPge;
     group1 = MakeGroup(start);
     ASSERT_TRUE(DriveGroup(sink, group1, start));
-    // sink goes out of scope without a real ROTATE - the same "still in
-    // use" state a crash leaves; group1 is whole, so reusing catalog
-    // directly here is equivalent to running StorageRecovery first.
     fixture.CloseSink();
     std::string recoveredError;
     fixture.Drain();
@@ -819,17 +761,13 @@ TEST(StorageEventSinkTest,
 
   auto &resumed = fixture.OpenSink(next);
   ResumeExistingFile(resumed, "binlog.000001", SampleFde());
-  ASSERT_TRUE(DriveGroup(resumed, group1,
-                         start));  // resent byte for byte - already on disk
+  ASSERT_TRUE(DriveGroup(resumed, group1, start));
   EXPECT_FALSE(resumed.HasFailed());
 
   const std::uint32_t groupEnd = start + 125;
   fixture.Drain();
-  EXPECT_EQ(ReadFile(fixture.Path("binlog.000001")).size(),
-            groupEnd);  // unchanged - nothing duplicated
+  EXPECT_EQ(ReadFile(fixture.Path("binlog.000001")).size(), groupEnd);
 
-  // A genuinely new group lands exactly at the true end of file, once
-  // replay has caught up to it, and is appended normally.
   const DrivenGroup group2 = MakeGroup(groupEnd, /*gno=*/2);
   ASSERT_TRUE(DriveGroup(resumed, group2, groupEnd));
   fixture.Drain();
@@ -862,8 +800,6 @@ TEST(StorageEventSinkTest,
       ResumeExistingFile(resumed, "binlog.000001", SampleFde());
   ASSERT_EQ(afterPge, start);
 
-  // A different GNO than what is actually on disk at this same offset -
-  // storage does not match source history.
   const DrivenGroup mismatched = MakeGroup(start, /*gno=*/99);
   EXPECT_FALSE(
       Drive(resumed, mismatched.gtid, StreamPosition{"binlog.000001", start}));
@@ -879,12 +815,8 @@ TEST(StorageEventSinkTest,
   NullSink next;
 
   {
-    // Built with a non-zero `created`; EndRotateAnnouncement() finds an
-    // empty catalog here, so this is still the ordinary create path.
     auto &sink = fixture.OpenSink(next);
-    ResumeExistingFile(
-        sink, "binlog.000001",
-        SampleFdeWithCreated(1700000000));  // as if written at server startup
+    ResumeExistingFile(sink, "binlog.000001", SampleFdeWithCreated(1700000000));
     fixture.CloseSink();
     std::string recoveredError;
     fixture.Drain();
@@ -897,7 +829,6 @@ TEST(StorageEventSinkTest,
   ASSERT_TRUE(fixture.Catalog().At(0).inUse);
 
   auto &resumed = fixture.OpenSink(next);
-  // Resent with created zeroed - exactly the field EqualForResume() ignores.
   ResumeExistingFile(resumed, "binlog.000001", SampleFdeWithCreated(0));
   EXPECT_FALSE(resumed.HasFailed());
 }
@@ -914,8 +845,6 @@ TEST(StorageEventSinkTest,
   {
     auto &sink = fixture.OpenSink(next);
     afterPge = OpenFreshFile(sink, "binlog.000001").afterPge;
-    // sink goes out of scope without a real ROTATE - the same "still in
-    // use" state a crash leaves, same as every other resume test above.
     fixture.CloseSink();
     std::string recoveredError;
     fixture.Drain();
@@ -940,8 +869,6 @@ TEST(StorageEventSinkTest,
   auto &resumed = fixture.OpenSink(next);
   ResumeExistingFile(resumed, "binlog.000001", SampleFde());
 
-  // A heartbeat right after resume, still behind writtenLength - proves it
-  // is not mistaken for a gap before the stream catches up.
   const auto heartbeat =
       MakeEvent(static_cast<std::uint8_t>(EventType::Heartbeat),
                 std::vector<std::uint8_t>{'b', 'i', 'n'},
@@ -950,8 +877,6 @@ TEST(StorageEventSinkTest,
       Drive(resumed, heartbeat, StreamPosition{"binlog.000001", afterPge}));
   ASSERT_FALSE(resumed.HasFailed());
 
-  // The stream has now caught up to writtenLength; a group starting there
-  // straddles the 4 GiB boundary.
   const DrivenGroup group1 = MakeGroup(writtenLength, /*gno=*/1);
   ASSERT_TRUE(DriveGroup(resumed, group1, writtenLength));
   EXPECT_FALSE(resumed.HasFailed());
@@ -969,8 +894,6 @@ TEST(StorageEventSinkTest,
   EXPECT_EQ(onDisk, group1.gtid.bytes);
 }
 
-// A heartbeat replaying a position behind what's written must not be
-// mistaken for a gap just because its wire header's low 32 bits are larger.
 TEST(StorageEventSinkTest,
      ToleratesAReplayHeartbeatBehindTheWrittenLengthWhoseLow32BitsAreLarger) {
   StorageSinkFixture fixture;
@@ -1007,7 +930,6 @@ TEST(StorageEventSinkTest,
     group = MakeGroup(writtenLength, /*gno=*/1);
     ASSERT_TRUE(DriveGroup(sink, group, writtenLength));
     ASSERT_FALSE(sink.HasFailed());
-    // sink goes out of scope without a real ROTATE - still "in use".
     fixture.CloseSink();
     std::string recoveredError;
     fixture.Drain();
@@ -1037,8 +959,6 @@ TEST(StorageEventSinkTest,
                     StreamPosition{"binlog.000001", writtenLength}));
   ASSERT_FALSE(resumed.HasFailed());
 
-  // The source resends the same group on reconnect: identical bytes
-  // compare against stored history instead of appending again.
   ASSERT_TRUE(DriveGroup(resumed, group, writtenLength));
   EXPECT_FALSE(resumed.HasFailed());
   fixture.Drain();
@@ -1057,9 +977,6 @@ TEST(StorageEventSinkTest,
   EXPECT_EQ(onDisk, group2.gtid.bytes);
 }
 
-// Both gap checks must compare full 64-bit position, not the low 32 bits
-// (via a cast or header.nextPosition) - a bug there hides under 4 GiB, so
-// both branches are tested past it.
 TEST(StorageEventSinkTest,
      RefusesAnOrdinaryEventPastTheWrittenLengthPastFourGiB) {
   StorageSinkFixture fixture;
@@ -1092,8 +1009,6 @@ TEST(StorageEventSinkTest,
   auto &resumed = fixture.OpenSink(next);
   ResumeExistingFile(resumed, "binlog.000001", SampleFde());
 
-  // claimedPosition is past writtenLength in true 64-bit terms, but would
-  // look far behind if compared by low 32 bits alone.
   const std::uint64_t claimedPosition = FOUR_GIB + 10;
   const auto gtid = MakeEvent(static_cast<std::uint8_t>(EventType::Gtid),
                               GtidBody(1, GROUP_TRANSACTION_LENGTH),
@@ -1137,8 +1052,6 @@ TEST(StorageEventSinkTest, RefusesAHeartbeatPastTheWrittenLengthPastFourGiB) {
   auto &resumed = fixture.OpenSink(next);
   ResumeExistingFile(resumed, "binlog.000001", SampleFde());
 
-  // header.nextPosition itself carries only 10; reading that field instead
-  // of the position would compare 10 with writtenLength and miss the gap.
   const std::uint64_t claimedPosition = FOUR_GIB + 10;
   const auto heartbeat =
       MakeEvent(static_cast<std::uint8_t>(EventType::Heartbeat),
@@ -1152,9 +1065,6 @@ TEST(StorageEventSinkTest, RefusesAHeartbeatPastTheWrittenLengthPastFourGiB) {
             std::string::npos);
 }
 
-// A rerun after the source moves on must not leave the catalog's last
-// record permanently "in use", or the next restart would find two open
-// records and refuse to start.
 TEST(StorageEventSinkTest,
      ClosesTheAbandonedInUseFileWhenTheSourceMovesToADifferentOne) {
   StorageSinkFixture fixture;
@@ -1165,7 +1075,6 @@ TEST(StorageEventSinkTest,
     const std::uint32_t start = OpenFreshFile(sink, "binlog.000001").afterPge;
     const DrivenGroup group = MakeGroup(start);
     ASSERT_TRUE(DriveGroup(sink, group, start));
-    // No real ROTATE - the same "still in use" state a crash leaves.
     fixture.CloseSink();
     std::string recoveredError;
     fixture.Drain();
@@ -1179,8 +1088,6 @@ TEST(StorageEventSinkTest,
   fixture.Drain();
   const auto sizeBeforeResume = ReadFile(fixture.Path("binlog.000001")).size();
 
-  // The callback lets main.cpp report the closure immediately rather than
-  // only once the whole stream ends; checked here alongside the accessor.
   std::string callbackName;
   std::uint64_t callbackSize = 0;
   unsigned callbackCalls = 0;
@@ -1195,21 +1102,16 @@ TEST(StorageEventSinkTest,
                 RotateBody(4, "binlog.000002"), 0, EVENT_FLAG_ARTIFICIAL);
   ASSERT_TRUE(Drive(resumed, rotate, StreamPosition{"binlog.000002", 0}));
 
-  ASSERT_EQ(
-      fixture.Catalog().Size(),
-      1u);  // binlog.000002 is not indexed yet - only once its own header lands
-  EXPECT_FALSE(
-      fixture.Catalog().At(0).inUse);  // binlog.000001 closed, without ever
-                                       // seeing a real ROTATE of its own
+  ASSERT_EQ(fixture.Catalog().Size(), 1u);
+  EXPECT_FALSE(fixture.Catalog().At(0).inUse);
   fixture.Drain();
   const auto onDisk = ReadFile(fixture.Path("binlog.000001"));
-  EXPECT_EQ(onDisk.size(), sizeBeforeResume);   // no bytes added or removed
-  EXPECT_EQ(onDisk[IN_USE_FLAG_OFFSET], 0x00);  // bit cleared
+  EXPECT_EQ(onDisk.size(), sizeBeforeResume);
+  EXPECT_EQ(onDisk[IN_USE_FLAG_OFFSET], 0x00);
   EXPECT_EQ(callbackCalls, 1u);
   EXPECT_EQ(callbackName, "binlog.000001");
   EXPECT_EQ(callbackSize, sizeBeforeResume);
 
-  // The new sink now proceeds to build binlog.000002 normally.
   const auto fde = SampleFde();
   const std::uint32_t afterFde =
       4 + static_cast<std::uint32_t>(EVENT_HEADER_LENGTH + fde.size());
@@ -1219,9 +1121,6 @@ TEST(StorageEventSinkTest,
   EXPECT_FALSE(resumed.HasFailed());
 }
 
-// File numbering within one base name only ever goes forward; an earlier
-// number is evidence the source was replaced, refused before storage's last
-// file is touched.
 TEST(StorageEventSinkTest,
      RefusesAnArtificialRotateNamingAnEarlierNumberedFileOfTheSameBase) {
   StorageSinkFixture fixture;
@@ -1232,7 +1131,6 @@ TEST(StorageEventSinkTest,
     const std::uint32_t start = OpenFreshFile(sink, "binlog.000005").afterPge;
     const DrivenGroup group = MakeGroup(start);
     ASSERT_TRUE(DriveGroup(sink, group, start));
-    // No real ROTATE - the same "still in use" state a crash leaves.
     fixture.CloseSink();
     std::string recoveredError;
     fixture.Drain();
@@ -1254,7 +1152,6 @@ TEST(StorageEventSinkTest,
   ASSERT_TRUE(resumed.HasFailed());
   EXPECT_EQ(resumed.LastError().failure, StorageFailure::Malformed);
 
-  // Storage's last file is untouched, and the named file was never created.
   ASSERT_EQ(fixture.Catalog().Size(), 1u);
   EXPECT_TRUE(fixture.Catalog().At(0).inUse);
   fixture.Drain();
@@ -1265,9 +1162,6 @@ TEST(StorageEventSinkTest,
   EXPECT_FALSE(std::filesystem::exists(fixture.Path("binlog.000003")));
 }
 
-// The same refusal while this run holds the file open: the checks run
-// before the file is closed, so a refused rotation leaves it in use and the
-// next run resumes it instead of meeting "already exists".
 TEST(StorageEventSinkTest,
      LeavesTheOpenFileInUseWhenItRefusesAnEarlierNumberedRotate) {
   StorageSinkFixture fixture;
@@ -1297,8 +1191,6 @@ TEST(StorageEventSinkTest,
   EXPECT_FALSE(std::filesystem::exists(fixture.Path("binlog.000003")));
 }
 
-// A different base name is a legitimate new sequence, not compared against
-// storage's last file number; it takes the ordinary "source moved on" path.
 TEST(StorageEventSinkTest,
      AllowsAnArtificialRotateNamingADifferentBaseEvenWithALowerApparentNumber) {
   StorageSinkFixture fixture;
@@ -1326,36 +1218,28 @@ TEST(StorageEventSinkTest,
                 RotateBody(4, "mysql-bin.000001"), 0, EVENT_FLAG_ARTIFICIAL);
   EXPECT_TRUE(Drive(resumed, rotate, StreamPosition{"mysql-bin.000001", 0}));
   EXPECT_FALSE(resumed.HasFailed());
-  EXPECT_FALSE(fixture.Catalog().At(0).inUse);  // binlog.000005 closed as
-                                                // abandoned, the ordinary path
+  EXPECT_FALSE(fixture.Catalog().At(0).inUse);
 }
 
-// Same Gtid/Query/Xid shape as MakeGroup(), but as protocol-framed wire
-// bytes via ScriptedStreamBuilder, driving EventStreamReader itself.
 void PushScriptedGroup(test::ScriptedStreamBuilder &builder,
                        std::uint64_t start, std::int64_t gno) {
   builder.PushEvent(static_cast<std::uint8_t>(EventType::Gtid),
                     GtidBody(gno, GROUP_TRANSACTION_LENGTH), 0,
                     static_cast<std::uint32_t>(start + 69));
-  builder.PushEvent(
-      2 /* Query - no EventType enumerator of its own, eEventType.hpp */,
-      std::vector<std::uint8_t>(10, 0xAB), 0,
-      static_cast<std::uint32_t>(start + 69 + 29));
+  builder.PushEvent(2 /* Query */, std::vector<std::uint8_t>(10, 0xAB), 0,
+                    static_cast<std::uint32_t>(start + 69 + 29));
   builder.PushEvent(16 /* Xid */, std::vector<std::uint8_t>(8, 0xCD), 0,
                     static_cast<std::uint32_t>(start + 69 + 29 + 27));
 }
 
-// The resume preamble every scenario below scripts identically, built
-// against the file OpenFreshFile() already created on disk.
 void PushScriptedResumePreamble(test::ScriptedStreamBuilder &builder,
                                 const std::string &fileName) {
   builder.PushRotate(4, fileName, /*artificial=*/true, /*checksumLength=*/0);
   const auto fde = SampleFde();
   const std::uint32_t afterFde =
       4 + static_cast<std::uint32_t>(EVENT_HEADER_LENGTH + fde.size());
-  // timestamp=1700000000 matches MakeEvent()'s default: the resume
-  // comparison checks every Common-Header byte except flags/created, so
-  // this must agree byte for byte, not just its body.
+  // timestamp matches MakeEvent()'s default: the resume comparison checks
+  // every Common-Header byte except flags/created.
   builder.PushEvent(static_cast<std::uint8_t>(EventType::FormatDescription),
                     fde, /*checksumLength=*/0, afterFde,
                     /*flags=*/0, /*serverId=*/1, /*timestamp=*/1700000000);
@@ -1367,8 +1251,6 @@ void PushScriptedResumePreamble(test::ScriptedStreamBuilder &builder,
                     /*flags=*/0, /*serverId=*/1, /*timestamp=*/1700000000);
 }
 
-// End-to-end: EventStreamReader's low-32-bit header check must agree with
-// the 64-bit positions StorageEventSink trusts, past 4 GiB.
 TEST(StorageEventSinkTest,
      ReaderAndStorageResumePastFourGiBAcrossAGroupBoundary) {
   StorageSinkFixture fixture;
@@ -1376,7 +1258,6 @@ TEST(StorageEventSinkTest,
     NullSink next;
     auto &seed = fixture.OpenSink(next);
     OpenFreshFile(seed, "binlog.000001");
-    // seed goes out of scope without a real ROTATE - still "in use".
     fixture.CloseSink();
     std::string recoveredError;
     fixture.Drain();
@@ -1413,8 +1294,6 @@ TEST(StorageEventSinkTest,
   auto &sink = fixture.OpenSink(next);
   StreamReaderOptions options;
   options.checksumLength = 0;
-  // The starting position is overwritten by the scripted artificial
-  // ROTATE's own body before any check runs; its value is never observed.
   EventStreamReader reader(transport, sink, StreamPosition{"binlog.000001", 0},
                            options);
   const StreamResult result = reader.Run();
@@ -1426,10 +1305,8 @@ TEST(StorageEventSinkTest,
   EXPECT_EQ(FileSize(fixture.Path("binlog.000001")), writtenLength + 250);
 }
 
-// The mirror scenario with no truncate: a heartbeat claiming a position near
-// 4 GiB is a real gap, but StorageEventSink only sees it via the position
-// before the *next* event, so the gap only reaches storage on the second
-// heartbeat.
+// A heartbeat claiming a position near 4 GiB is a real gap, but storage only
+// sees it via the position before the next event: on the second heartbeat.
 TEST(StorageEventSinkTest,
      ReaderAndStorageDetectAGapAfterAHeartbeatPastTheWrittenLength) {
   StorageSinkFixture fixture;
@@ -1477,9 +1354,6 @@ TEST(StorageEventSinkTest,
             std::string::npos);
 }
 
-// Polls continuously for the whole run, not only once after each group, so
-// a briefly mid-group published position would not go unnoticed. Every
-// group has the same fixed length, so any non-multiple offset means mid-group.
 TEST(StorageEventSinkTest, PublishedPositionNeverPointsInsideAnOpenGroup) {
   StorageSinkFixture fixture;
   NullSink next;
@@ -1517,9 +1391,8 @@ TEST(StorageEventSinkTest, PublishedPositionNeverPointsInsideAnOpenGroup) {
   EXPECT_EQ(fixture.Published().Current().position, cursor);
 }
 
-// The waiter's target is groupEnd; closing the file appends the ROTATE
-// bytes before publishing the final size, so it ends up strictly past the
-// target, still waking the waiter.
+// Closing appends the ROTATE bytes before publishing the final size, so it
+// ends strictly past the waiter's target (groupEnd) and still wakes it.
 TEST(StorageEventSinkTest,
      ClosingTheFileWakesAWaiterHoldingItsLastGroupBoundaryAsTarget) {
   StorageSinkFixture fixture;
@@ -1551,9 +1424,6 @@ TEST(StorageEventSinkTest,
   EXPECT_EQ(outcome, WaitOutcome::Advanced);
 }
 
-// A waiter on the closed file's final position must wake once the next
-// file's header becomes durable, not only once its first group completes -
-// this scenario never writes a group into binlog.000002 before the wake.
 TEST(StorageEventSinkTest,
      WritingTheNextFilesHeaderWakesAWaiterAtThePreviousFilesClosedEnd) {
   StorageSinkFixture fixture;
@@ -1580,17 +1450,13 @@ TEST(StorageEventSinkTest,
   while (!started.load(std::memory_order_acquire)) {
   }
 
-  OpenFreshFile(sink, "binlog.000002");  // no group written into it - the
-                                         // header alone has to wake the waiter
+  OpenFreshFile(sink, "binlog.000002");
   waiter.join();
 
   EXPECT_EQ(outcome, WaitOutcome::Advanced);
   EXPECT_EQ(fixture.Published().Current().fileName, "binlog.000002");
 }
 
-// The bytes a file holds once the whole header and `groups` groups of
-// MakeGroup() shape have reached it - what every restart test below
-// expects to find on disk, each event exactly once.
 std::vector<std::uint8_t> ExpectedFile(const FreshFileHeader &header,
                                        const std::vector<DrivenGroup> &groups) {
   std::vector<std::uint8_t> expected = {0xfe, 0x62, 0x69, 0x6e};
@@ -1610,9 +1476,6 @@ std::vector<std::uint8_t> ExpectedFile(const FreshFileHeader &header,
   return expected;
 }
 
-// A stream can end anywhere; the one that replaces it always starts over
-// at the beginning of the file it resumes, so the events already stored
-// arrive a second time and are compared, not written again.
 TEST(StorageEventSinkTest, ANewStreamGoesOnWithTheFileTheLostOneLeftOpen) {
   StorageSinkFixture fixture;
   NullSink next;
@@ -1622,7 +1485,7 @@ TEST(StorageEventSinkTest, ANewStreamGoesOnWithTheFileTheLostOneLeftOpen) {
   const std::uint32_t start = header.afterPge;
   const DrivenGroup first = MakeGroup(start, /*gno=*/1);
   ASSERT_TRUE(DriveGroup(sink, first, start));
-  fixture.Drain();  // what the lost stream leaves behind on disk
+  fixture.Drain();
 
   sink.RestartStream();
 
@@ -1642,8 +1505,6 @@ TEST(StorageEventSinkTest, ANewStreamGoesOnWithTheFileTheLostOneLeftOpen) {
             secondStart + GROUP_TRANSACTION_LENGTH);
 }
 
-// The transaction the lost stream was in the middle of is still open, and
-// the source sends it again from its own first event.
 TEST(StorageEventSinkTest, ATransactionCutInHalfIsFinishedByTheNewStream) {
   StorageSinkFixture fixture;
   NullSink next;
@@ -1655,7 +1516,6 @@ TEST(StorageEventSinkTest, ATransactionCutInHalfIsFinishedByTheNewStream) {
   ASSERT_TRUE(Drive(sink, group.gtid, StreamPosition{"unused", start}));
   ASSERT_TRUE(Drive(sink, group.query, StreamPosition{"unused", start + 69}));
   fixture.Drain();
-  // Nothing of an unfinished transaction is handed to a replica.
   ASSERT_EQ(fixture.Published().Current().position, start);
 
   sink.RestartStream();
@@ -1671,8 +1531,6 @@ TEST(StorageEventSinkTest, ATransactionCutInHalfIsFinishedByTheNewStream) {
             start + GROUP_TRANSACTION_LENGTH);
 }
 
-// The bytes of one event can be cut in half as easily as a transaction:
-// the first of them are stored, and the event arrives again whole.
 TEST(StorageEventSinkTest, AnEventCutInHalfIsFinishedWhereItStopped) {
   StorageSinkFixture fixture;
   NullSink next;
@@ -1700,9 +1558,6 @@ TEST(StorageEventSinkTest, AnEventCutInHalfIsFinishedWhereItStopped) {
             ExpectedFile(header, {group}));
 }
 
-// Whatever the new stream sends, storage compares it against what it
-// holds: a source that answers with something else is refused here as it
-// is on a resume after a restart.
 TEST(StorageEventSinkTest, ANewStreamSendingOtherBytesIsRefused) {
   StorageSinkFixture fixture;
   NullSink next;
@@ -1719,9 +1574,6 @@ TEST(StorageEventSinkTest, ANewStreamSendingOtherBytesIsRefused) {
   EXPECT_TRUE(sink.HasFailed());
 }
 
-// A new stream beginning at another file means the source moved past the
-// one storage holds - which it cannot have done with a transaction of it
-// left unfinished.
 TEST(StorageEventSinkTest,
      ANewStreamBeginningPastAnUnfinishedTransactionIsRefused) {
   StorageSinkFixture fixture;
@@ -1742,8 +1594,6 @@ TEST(StorageEventSinkTest,
   EXPECT_TRUE(sink.HasFailed());
 }
 
-// With no file open there is nothing to resume: the new stream opens the
-// file it announces, exactly as a first stream would.
 TEST(StorageEventSinkTest, ANewStreamAfterARotationOpensTheFileItAnnounces) {
   StorageSinkFixture fixture;
   NullSink next;
@@ -1771,11 +1621,8 @@ TEST(StorageEventSinkTest, ANewStreamAfterARotationOpensTheFileItAnnounces) {
   EXPECT_EQ(fixture.Catalog().Size(), 2u);
 }
 
-// The same event, but arriving in several chunks the way a large one
-// does off the wire: once its remainder starts being appended, the
-// chunks after it must go on being appended. Comparing them again would
-// read back bytes this very event has just written, which the writer has
-// not necessarily put on disk yet.
+// Once the event's remainder starts being appended, the later chunks must
+// keep being appended: comparing them would read back bytes just written.
 TEST(StorageEventSinkTest, AnEventCutInHalfGoesOnBeingAppendedChunkByChunk) {
   StorageSinkFixture fixture;
   NullSink next;
@@ -1784,8 +1631,6 @@ TEST(StorageEventSinkTest, AnEventCutInHalfGoesOnBeingAppendedChunkByChunk) {
   const FreshFileHeader header = OpenFreshFile(sink, "binlog.000001");
   const std::uint32_t start = header.afterPge;
   DrivenGroup group = MakeGroup(start, /*gno=*/1);
-  // Distinct body bytes, so a chunk compared at the wrong offset cannot
-  // match by accident.
   std::vector<std::uint8_t> body(10);
   for (std::size_t i = 0; i < body.size(); ++i)
     body[i] = static_cast<std::uint8_t>(0x40 + i);

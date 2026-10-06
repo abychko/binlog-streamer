@@ -57,7 +57,7 @@ SourceSettings MakeSource() {
 TEST(ReplicaSessionTest, SuccessfulSessionRegisters) {
   test::ScriptedSourceBuilder script =
       test::ScriptedSourceBuilder::ThroughReplicaUuid("999");
-  script.AppendCommandOk();  // COM_REGISTER_SLAVE accepted
+  script.AppendCommandOk();
   test::FakeTransport transport;
   transport.incoming = script.Bytes();
 
@@ -83,8 +83,6 @@ TEST(ReplicaSessionTest, SuccessfulSessionRegisters) {
   EXPECT_EQ(result.identity.serverUuid, "11111111-1111-1111-1111-111111111111");
 }
 
-// Capabilities live in the first four bytes of HandshakeResponse41,
-// after the 4-byte packet header the channel put in front of it.
 std::uint32_t RequestedCapabilities(const std::vector<std::uint8_t> &write) {
   return static_cast<std::uint32_t>(write[4]) |
          (static_cast<std::uint32_t>(write[5]) << 8) |
@@ -127,21 +125,17 @@ TEST(ReplicaSessionTest, ConfiguredZstdIsAskedForWithItsLevel) {
   ReplicaSession session(transport, source, server,
                          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "name",
                          "0.1.0-test");
-  // The script stops at the login OK, so the first pre-dump query fails;
-  // what this checks is everything up to and including that OK.
   EXPECT_EQ(session.Run().outcome, SessionOutcome::TransientFailure);
 
   ASSERT_GE(transport.writes.size(), 2u);
   const auto &response = transport.writes.front();
   EXPECT_NE(RequestedCapabilities(response) & CLIENT_ZSTD_COMPRESSION_ALGORITHM,
             0u);
-  EXPECT_EQ(response.back(), 7);  // the level, last byte of the packet
+  EXPECT_EQ(response.back(), 7);
   EXPECT_TRUE(session.compressed());
 
-  // The OK itself arrived uncompressed; the query after it goes out as a
-  // compressed frame. Under MIN_COMPRESS_LENGTH it is stored as is, so
-  // the header's length-before-compression is 0 and the packet follows
-  // verbatim.
+  // Under MIN_COMPRESS_LENGTH a frame stores the payload as is:
+  // length-before-compression is 0.
   const auto &query = transport.writes[1];
   ASSERT_GT(query.size(), COMPRESSED_HEADER_SIZE);
   const std::size_t compressedLength =
@@ -149,11 +143,11 @@ TEST(ReplicaSessionTest, ConfiguredZstdIsAskedForWithItsLevel) {
       (static_cast<std::size_t>(query[1]) << 8) |
       (static_cast<std::size_t>(query[2]) << 16);
   EXPECT_EQ(compressedLength, query.size() - COMPRESSED_HEADER_SIZE);
-  EXPECT_EQ(query[3], 0);  // frame counter, first frame of the connection
+  EXPECT_EQ(query[3], 0);
   EXPECT_EQ(query[4], 0);
   EXPECT_EQ(query[5], 0);
-  EXPECT_EQ(query[6], 0);                              // stored as is
-  EXPECT_EQ(query[COMPRESSED_HEADER_SIZE + 4], 0x03);  // COM_QUERY
+  EXPECT_EQ(query[6], 0);
+  EXPECT_EQ(query[COMPRESSED_HEADER_SIZE + 4], 0x03);
 }
 
 TEST(ReplicaSessionTest, SourceThatDoesNotOfferZstdIsAPermanentFailure) {
@@ -175,8 +169,8 @@ TEST(ReplicaSessionTest, SourceThatDoesNotOfferZstdIsAPermanentFailure) {
   EXPECT_NE(result.message.find("does not offer zstd compression"),
             std::string::npos)
       << result.message;
-  // Nothing was sent: a handshake response asking for a capability the
-  // source did not offer is what the reference client refuses to write.
+  // A response asking for a capability the source did not offer is never
+  // written (the reference client refuses likewise).
   EXPECT_TRUE(transport.writes.empty());
 }
 
@@ -188,8 +182,7 @@ TEST(ReplicaSessionTest, ConfiguredZlibIsAskedForWithoutALevel) {
 
   SourceSettings source = MakeSource();
   source.compression = CompressionAlgorithm::Zlib;
-  // Set, and deliberately not honoured: the key belongs to zstd, and
-  // CLIENT_COMPRESS carries no level on the wire at all.
+  // CLIENT_COMPRESS carries no level on the wire; the key belongs to zstd.
   source.zstdCompressionLevel = 7;
   ServerSettings server;
   server.serverId = 42;
@@ -205,8 +198,6 @@ TEST(ReplicaSessionTest, ConfiguredZlibIsAskedForWithoutALevel) {
             0u);
   EXPECT_TRUE(session.compressed());
 
-  // Same frame layout as zstd: the login OK is uncompressed, the query
-  // after it is a frame, and below MIN_COMPRESS_LENGTH it goes as is.
   const auto &query = transport.writes[1];
   ASSERT_GT(query.size(), COMPRESSED_HEADER_SIZE);
   const std::size_t compressedLength =
@@ -217,8 +208,8 @@ TEST(ReplicaSessionTest, ConfiguredZlibIsAskedForWithoutALevel) {
   EXPECT_EQ(query[3], 0);
   EXPECT_EQ(query[4], 0);
   EXPECT_EQ(query[5], 0);
-  EXPECT_EQ(query[6], 0);                              // stored as is
-  EXPECT_EQ(query[COMPRESSED_HEADER_SIZE + 4], 0x03);  // COM_QUERY
+  EXPECT_EQ(query[6], 0);
+  EXPECT_EQ(query[COMPRESSED_HEADER_SIZE + 4], 0x03);
 }
 
 TEST(ReplicaSessionTest, SourceThatDoesNotOfferZlibIsAPermanentFailure) {
@@ -257,8 +248,6 @@ TEST(ReplicaSessionTest, AZstdOnlySourceDoesNotSatisfyARequestForZlib) {
   ReplicaSession session(transport, source, server,
                          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "name",
                          "0.1.0-test");
-  // A source that compresses, just not the way this one was told to:
-  // the named algorithm is the request, and nothing substitutes for it.
   const SessionResult result = session.Run();
   EXPECT_EQ(result.outcome, SessionOutcome::PermanentFailure);
   EXPECT_NE(result.message.find("does not offer zlib compression"),
@@ -270,14 +259,12 @@ TEST(ReplicaSessionTest, AZstdOnlySourceDoesNotSatisfyARequestForZlib) {
 TEST(ReplicaSessionTest, ConnectionAttributesReportRelayIdentity) {
   test::ScriptedSourceBuilder script =
       test::ScriptedSourceBuilder::ThroughReplicaUuid("999");
-  script.AppendCommandOk();  // COM_REGISTER_SLAVE accepted
+  script.AppendCommandOk();
   test::FakeTransport transport;
   transport.incoming = script.Bytes();
 
   ServerSettings server;
   server.serverId = 42;
-  // Distinct from the real build's default name, proving it's threaded
-  // through as a parameter.
   ReplicaSession session(transport, MakeSource(), server,
                          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                          "test-relay-name", "0.0.1");
@@ -285,8 +272,7 @@ TEST(ReplicaSessionTest, ConnectionAttributesReportRelayIdentity) {
   ASSERT_EQ(result.outcome, SessionOutcome::Registered);
 
   ASSERT_FALSE(transport.writes.empty());
-  const auto &handshakeResponse =
-      transport.writes.front();  // the first packet the client sends
+  const auto &handshakeResponse = transport.writes.front();
 
   const auto expectAttribute = [&](const std::string &key,
                                    const std::string &value) {
@@ -304,7 +290,6 @@ TEST(ReplicaSessionTest, ConnectionAttributesReportRelayIdentity) {
   expectAttribute("_client_version", "0.0.1");
 }
 
-// A real replica retries after an auth ERR, so a lone attempt is Transient.
 TEST(ReplicaSessionTest, AuthenticationErrorIsTransient) {
   test::ScriptedSourceBuilder script;
   script.Push(test::ScriptedSourcePayloads::Greeting(
@@ -328,7 +313,6 @@ TEST(ReplicaSessionTest, AuthenticationErrorIsTransient) {
       << result.message;
 }
 
-// MakeSource()'s password, NUL-terminated per the caching_sha2 wire format.
 const std::vector<std::uint8_t> EXPECTED_FULL_AUTH_PLAINTEXT{'s', 'e', 'c', 'r',
                                                              'e', 't', 0};
 
@@ -341,13 +325,12 @@ TEST(ReplicaSessionTest,
   test::ScriptedSourceBuilder script;
   script.Push(test::ScriptedSourcePayloads::Greeting(
       "8.4.11", CACHING_SHA2_PASSWORD_PLUGIN_NAME, nonce));
-  script.SkipClientPacket();  // HandshakeResponse41 (fast-path scramble)
-  script.Push(test::ScriptedSourcePayloads::AuthMoreData(
-      0x04));  // perform_full_authentication
+  script.SkipClientPacket();
+  script.Push(test::ScriptedSourcePayloads::AuthMoreData(0x04));
   script.AppendFullAuthenticationExchange(/*requestsPublicKey=*/false);
   script.AppendPreDumpQueries("999", "ON",
                               "11111111-1111-1111-1111-111111111111");
-  script.AppendCommandOk();  // COM_REGISTER_SLAVE
+  script.AppendCommandOk();
   test::FakeTransport transport;
   transport.incoming = script.Bytes();
 
@@ -364,9 +347,6 @@ TEST(ReplicaSessionTest,
 
   ASSERT_EQ(result.outcome, SessionOutcome::Registered) << result.message;
 
-  // writes[1] must be the ciphertext straight away (RSA key size, not a
-  // lone 0x02 byte) - a mutant requesting the key anyway would shrink it to 5
-  // bytes.
   ASSERT_GE(transport.writes.size(), 2u);
   const auto &authResponse = transport.writes[1];
   const auto expectedCipherLength =
@@ -411,9 +391,6 @@ TEST(ReplicaSessionTest,
 
   ASSERT_EQ(result.outcome, SessionOutcome::Registered) << result.message;
 
-  // writes[1] is the 0x02 request (exactly one payload byte - a mutant
-  // skipping straight to the ciphertext would make this the larger ciphertext
-  // instead).
   ASSERT_GE(transport.writes.size(), 3u);
   const auto &keyRequest = transport.writes[1];
   ASSERT_EQ(keyRequest.size(), PACKET_HEADER_SIZE + 1);
@@ -428,7 +405,6 @@ TEST(ReplicaSessionTest,
   EXPECT_EQ(plain, EXPECTED_FULL_AUTH_PLAINTEXT);
 }
 
-// Refuses with the reference client's own message text, verbatim.
 TEST(
     ReplicaSessionTest,
     FullAuthenticationWithoutAnyKeySourceIsTransientWithSecureConnectionMessage) {
@@ -490,9 +466,7 @@ TEST(ReplicaSessionTest,
   const auto &authResponse = transport.writes[1];
   const auto expectedCipherLength =
       static_cast<std::size_t>(EVP_PKEY_get_size(keyPair.privateKey.get()));
-  ASSERT_EQ(
-      authResponse.size(),
-      PACKET_HEADER_SIZE + expectedCipherLength);  // not the lone 0x02 request
+  ASSERT_EQ(authResponse.size(), PACKET_HEADER_SIZE + expectedCipherLength);
   const std::vector<std::uint8_t> ciphertext(
       authResponse.begin() + PACKET_HEADER_SIZE, authResponse.end());
   const auto plain =
@@ -514,10 +488,10 @@ TEST(ReplicaSessionTest,
   script.Push(test::ScriptedSourcePayloads::Greeting(
       "8.4.11", "mysql_native_password",
       test::ScriptedSourcePayloads::Scramble()));
-  script.SkipClientPacket();  // HandshakeResponse41 with an empty auth response
+  script.SkipClientPacket();
   script.Push(test::ScriptedSourcePayloads::AuthSwitchRequest(
       CACHING_SHA2_PASSWORD_PLUGIN_NAME, switchNonce));
-  script.SkipClientPacket();  // the scramble computed from switchNonce
+  script.SkipClientPacket();
   script.Push(test::ScriptedSourcePayloads::AuthMoreData(0x04));
   script.AppendFullAuthenticationExchange(/*requestsPublicKey=*/false);
   script.AppendPreDumpQueries("999", "ON",
@@ -539,7 +513,6 @@ TEST(ReplicaSessionTest,
 
   ASSERT_EQ(result.outcome, SessionOutcome::Registered) << result.message;
 
-  // writes: [0]=HandshakeResponse41, [1]=switchNonce scramble, [2]=ciphertext.
   ASSERT_GE(transport.writes.size(), 3u);
   const auto &authResponse = transport.writes[2];
   const std::vector<std::uint8_t> ciphertext(
@@ -558,7 +531,7 @@ TEST(ReplicaSessionTest,
       test::ScriptedSourcePayloads::Scramble()));
   script.SkipClientPacket();
   script.Push(test::ScriptedSourcePayloads::AuthMoreData(0x04));
-  script.SkipClientPacket();  // the 0x02 public key request
+  script.SkipClientPacket();
   const std::vector<std::uint8_t> garbage{'n', 'o', 't', ' ', 'a',
                                           ' ', 'k', 'e', 'y'};
   script.Push(test::ScriptedSourcePayloads::AuthMoreData(
@@ -580,7 +553,6 @@ TEST(ReplicaSessionTest,
       << result.message;
 }
 
-// An empty configured password must never reach Encrypt().
 TEST(ReplicaSessionTest,
      FullAuthenticationWithEmptyPasswordIsTransientWithoutEncrypting) {
   test::ScriptedSourceBuilder script;
@@ -594,8 +566,7 @@ TEST(ReplicaSessionTest,
 
   SourceSettings source = MakeSource();
   source.password.clear();
-  source.getSourcePublicKey =
-      true;  // a key source being available must not matter here
+  source.getSourcePublicKey = true;
 
   ServerSettings server;
   server.serverId = 1;
@@ -614,7 +585,7 @@ TEST(ReplicaSessionTest, UnsupportedAuthPluginIsTransient) {
   script.Push(test::ScriptedSourcePayloads::Greeting(
       "8.4.11", "mysql_native_password",
       test::ScriptedSourcePayloads::Scramble()));
-  script.SkipClientPacket();  // HandshakeResponse41 with an empty auth response
+  script.SkipClientPacket();
   script.Push(test::ScriptedSourcePayloads::AuthSwitchRequest(
       "sha256_password", test::ScriptedSourcePayloads::Scramble()));
   test::FakeTransport transport;
@@ -641,13 +612,11 @@ TEST(ReplicaSessionTest, AuthSwitchRequestToCachingSha2Succeeds) {
   script.Push(test::ScriptedSourcePayloads::Greeting(
       "8.4.11", "mysql_native_password",
       test::ScriptedSourcePayloads::Scramble()));
-  script.SkipClientPacket();  // HandshakeResponse41 with an empty auth response
+  script.SkipClientPacket();
   script.Push(test::ScriptedSourcePayloads::AuthSwitchRequest(
       CACHING_SHA2_PASSWORD_PLUGIN_NAME, switchNonce));
-  script.SkipClientPacket();  // the scramble this relay computes from
-                              // switchNonce and sends back
-  script.Push(
-      test::ScriptedSourcePayloads::AuthMoreData(0x03));  // fast_auth_success
+  script.SkipClientPacket();
+  script.Push(test::ScriptedSourcePayloads::AuthMoreData(0x03));
   script.Push(test::ScriptedSourcePayloads::Ok(false));
   script.AppendSingleColumnRow("UNIX_TIMESTAMP()", "1700000000");
   script.AppendSingleColumnRow("@@GLOBAL.SERVER_ID", "999");
@@ -697,7 +666,7 @@ TEST(ReplicaSessionTest, ServerIdCollisionIsPermanent) {
   transport.incoming = script.Bytes();
 
   ServerSettings server;
-  server.serverId = 42;  // same as the scripted source's @@GLOBAL.SERVER_ID
+  server.serverId = 42;
   ReplicaSession session(transport, MakeSource(), server, "uuid", "name",
                          "ver");
 
@@ -708,7 +677,6 @@ TEST(ReplicaSessionTest, ServerIdCollisionIsPermanent) {
       << result.message;
 }
 
-// register_slave_on_master()'s ERR path also rejoins connect-retry.
 TEST(ReplicaSessionTest, RegistrationErrorIsTransient) {
   test::ScriptedSourceBuilder script =
       test::ScriptedSourceBuilder::ThroughReplicaUuid("999");
@@ -728,8 +696,8 @@ TEST(ReplicaSessionTest, RegistrationErrorIsTransient) {
       << result.message;
 }
 
-// An empty-string column value is a single 0x00 byte (same as a plain OK
-// header) - must not be mistaken for the DEPRECATE_EOF terminator (0xFE).
+// An empty-string column is a single 0x00 byte, same as an OK header; it must
+// not be taken for the DEPRECATE_EOF terminator (0xFE).
 TEST(ReplicaSessionTest, EmptyStringRowValueIsNotMistakenForRowTerminator) {
   test::ScriptedSourceBuilder script;
   script.AppendGreetingAndFastAuthSuccess("8.4.11");
@@ -787,7 +755,6 @@ TEST(ReplicaSessionTest, ClockQueryErrorLeavesSourceClockUnknown) {
   EXPECT_FALSE(SourceClock::FromIdentity(result.identity).Known());
 }
 
-// Matches a real replica's behavior for this same error.
 TEST(ReplicaSessionTest, ServerIdUnknownVariableSkipsEqualityCheck) {
   test::ScriptedSourceBuilder script;
   script.AppendGreetingAndFastAuthSuccess("8.4.11");
@@ -812,10 +779,9 @@ TEST(ReplicaSessionTest, ServerIdUnknownVariableSkipsEqualityCheck) {
   const SessionResult result = session.Run();
 
   EXPECT_EQ(result.outcome, SessionOutcome::Registered);
-  EXPECT_EQ(result.identity.serverId, 0u);  // never learned, not merely unequal
+  EXPECT_EQ(result.identity.serverId, 0u);
 }
 
-// This error means the source predates binlog_checksum entirely.
 TEST(ReplicaSessionTest, ChecksumUnknownVariableDefaultsToOff) {
   test::ScriptedSourceBuilder script;
   script.AppendGreetingAndFastAuthSuccess("8.4.11");
@@ -842,8 +808,6 @@ TEST(ReplicaSessionTest, ChecksumUnknownVariableDefaultsToOff) {
   EXPECT_EQ(result.identity.checksumAlgorithm, "OFF");
 }
 
-// Unlike the other pre-dump SELECTs, this one is fatal: the source
-// predates GTID support outright.
 TEST(ReplicaSessionTest, GtidModeUnknownVariableIsPermanent) {
   test::ScriptedSourceBuilder script;
   script.AppendGreetingAndFastAuthSuccess("8.4.11");
@@ -868,7 +832,6 @@ TEST(ReplicaSessionTest, GtidModeUnknownVariableIsPermanent) {
       << result.message;
 }
 
-// This error means the source predates SERVER_UUID entirely.
 TEST(ReplicaSessionTest, ServerUuidUnknownVariableSkipsCheck) {
   test::ScriptedSourceBuilder script;
   script.AppendGreetingAndFastAuthSuccess("8.4.11");
@@ -892,7 +855,7 @@ TEST(ReplicaSessionTest, ServerUuidUnknownVariableSkipsCheck) {
   const SessionResult result = session.Run();
 
   EXPECT_EQ(result.outcome, SessionOutcome::Registered);
-  EXPECT_EQ(result.identity.serverUuid, "");  // never learned
+  EXPECT_EQ(result.identity.serverUuid, "");
 }
 
 TEST(ReplicaSessionTest,
@@ -900,7 +863,7 @@ TEST(ReplicaSessionTest,
   test::ScriptedSourceBuilder script =
       test::ScriptedSourceBuilder::ThroughReplicaUuid(
           "999", "ON", "11111111-1111-1111-1111-111111111111", "8.0.46");
-  script.AppendCommandOk();  // COM_REGISTER_SLAVE
+  script.AppendCommandOk();
   test::FakeTransport transport;
   transport.incoming = script.Bytes();
 
@@ -910,20 +873,17 @@ TEST(ReplicaSessionTest,
                          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "name", "ver");
   ASSERT_EQ(session.Run().outcome, SessionOutcome::Registered);
 
-  // Arbitrary bytes suffice: StartDump()'s flag choice depends only on
-  // versionNumber, not the source's own identity.
   const Uuid sourceUuid{{0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
                          0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11}};
   GtidSet gtidSet;
-  // A tagged source - must be left out below 8.3.
   ASSERT_TRUE(gtidSet.AddInterval(GtidSource{sourceUuid, "primary"}, 1, 6));
 
   const auto dumpResult = session.StartDump(gtidSet);
-  EXPECT_FALSE(dumpResult.has_value());  // nullopt: sent, no transport failure
+  EXPECT_FALSE(dumpResult.has_value());
 
   ASSERT_FALSE(transport.writes.empty());
   const auto &sentPacket = transport.writes.back();
-  ASSERT_GE(sentPacket.size(), 5u);  // header + at least the command byte
+  ASSERT_GE(sentPacket.size(), 5u);
   const std::vector<std::uint8_t> sentPayload(sentPacket.begin() + 4,
                                               sentPacket.end());
 
@@ -933,8 +893,6 @@ TEST(ReplicaSessionTest,
   expected.serverId = server.serverId;
   expected.gtidSetEncoded = gtidSet.Encode(/*skipTaggedGtids=*/true);
   EXPECT_EQ(sentPayload, ComBinlogDumpGtidCommand::Encode(expected));
-  // The tagged source must not be encoded at all below 8.3 - the empty-header
-  // length is 8 bytes.
   EXPECT_EQ(gtidSet.GetEncodedLength(/*skipTaggedGtids=*/true), 8u);
 }
 
@@ -965,18 +923,14 @@ TEST(ReplicaSessionTest, StartDumpKeepsTaggedGtidsFromVersion830Onward) {
                                               sentPacket.end());
 
   BinlogDumpGtidCommand expected;
-  expected.flags = BINLOG_DUMP_USE_HEARTBEAT_EVENT_V2;  // no SKIP_TAGGED_GTIDS
-                                                        // from 8.3 onward
+  expected.flags = BINLOG_DUMP_USE_HEARTBEAT_EVENT_V2;
   expected.serverId = server.serverId;
   expected.gtidSetEncoded = gtidSet.Encode(/*skipTaggedGtids=*/false);
   EXPECT_EQ(sentPayload, ComBinlogDumpGtidCommand::Encode(expected));
-  EXPECT_GT(gtidSet.GetEncodedLength(/*skipTaggedGtids=*/false),
-            8u);  // the tagged source is actually encoded here
+  EXPECT_GT(gtidSet.GetEncodedLength(/*skipTaggedGtids=*/false), 8u);
 }
 
 TEST(ReplicaSessionTest, StartDumpKeepsTaggedGtidsAtExactlyVersion830) {
-  // The boundary itself (versionNumber == 80300): a threshold off by one
-  // point release would only show up at this exact value.
   test::ScriptedSourceBuilder script =
       test::ScriptedSourceBuilder::ThroughReplicaUuid(
           "999", "ON", "11111111-1111-1111-1111-111111111111", "8.3.0");
@@ -1003,9 +957,7 @@ TEST(ReplicaSessionTest, StartDumpKeepsTaggedGtidsAtExactlyVersion830) {
                                               sentPacket.end());
 
   BinlogDumpGtidCommand expected;
-  expected.flags =
-      BINLOG_DUMP_USE_HEARTBEAT_EVENT_V2;  // 80300 is not < 80300 - no
-                                           // SKIP_TAGGED_GTIDS
+  expected.flags = BINLOG_DUMP_USE_HEARTBEAT_EVENT_V2;
   expected.serverId = server.serverId;
   expected.gtidSetEncoded = gtidSet.Encode(/*skipTaggedGtids=*/false);
   EXPECT_EQ(sentPayload, ComBinlogDumpGtidCommand::Encode(expected));
@@ -1084,11 +1036,8 @@ TEST(ReplicaSessionTest, RequiredSendsTheSslRequestBeforeAnythingElse) {
   ReplicaSession session(transport, source, server,
                          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "name",
                          "0.1.0-test");
-  // The scripted source has no TLS to answer with: the handshake fails
-  // on the exhausted script, and that is transient like any lost link.
   EXPECT_EQ(session.Run().outcome, SessionOutcome::TransientFailure);
   ASSERT_FALSE(transport.writes.empty());
-  // 4-byte packet header plus the 32-byte fixed header, no user name.
   EXPECT_EQ(transport.writes.front().size(), 36u);
   EXPECT_NE(RequestedCapabilities(transport.writes.front()) & CLIENT_SSL, 0u);
 }

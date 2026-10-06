@@ -28,9 +28,6 @@
 
 namespace binlog_streamer {
 
-// Reads a public key file under PublicKeyFileCheck's rules (world-readable
-// is fine). Not ProtectedFileReader: a bad key file is a violation of one
-// value inside source.yml, not of source.yml itself.
 class PublicKeyFileReader {
  public:
   explicit PublicKeyFileReader(std::string expectedOwner);

@@ -2,6 +2,14 @@
 
 Changes by minor version; each entry includes its patch releases.
 
+## 0.42 — 2026-09-28
+
+### Changed
+
+- On x86-64 the relay is built for x86-64-v3 processors (AVX2, BMI2, FMA)
+  and does not run on older ones; `-DX86_64_LEVEL=` builds for another
+  level.
+
 ## 0.41 — 2026-09-28
 
 ### Changed

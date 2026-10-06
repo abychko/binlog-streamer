@@ -59,9 +59,7 @@ TEST(DumpSessionRegistryTest,
   DumpSessionRegistry registry;
   const auto first = registry.Claim("replica-a");
   const auto second = registry.Claim("replica-a");
-  registry.Release(
-      "replica-a",
-      first);  // the ended one finishing up after its successor started
+  registry.Release("replica-a", first);
   const auto third = registry.Claim("replica-a");
   EXPECT_TRUE(second->load());
   EXPECT_FALSE(third->load());

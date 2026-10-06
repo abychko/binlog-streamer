@@ -41,8 +41,6 @@ class TempDirectoryFixture {
                             .string();
     std::vector<char> buffer(templatePath.begin(), templatePath.end());
     buffer.push_back('\0');
-    // mkdtemp() returns nullptr on failure; constructing a path from that
-    // would be undefined behavior.
     const char *created = mkdtemp(buffer.data());
     if (created == nullptr)
       throw std::runtime_error(std::string("mkdtemp failed: ") +

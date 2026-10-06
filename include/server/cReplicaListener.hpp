@@ -47,18 +47,13 @@ class RelayStatusTracker;
 
 class ListenSocket;
 
-// main.cpp's only touchpoint with server/.
 class ReplicaListener {
  public:
   using LogFunction = std::function<void(const std::string &line)>;
 
-  // settings is not copied; the caller (Configuration, owned by main()
-  // for the whole run) must keep it alive. Neither stopRequested nor
-  // wakeupPipe is owned here. maxConnections is settings.yml's
-  // server.max_connections: the connection past it gets ERR 1040. With no
-  // state, or with one that knows no source version yet, every connection
-  // gets ERR 3168 instead of a greeting. sendLinger is settings.yml's
-  // server.send_linger, given to every dump.
+  // settings is not copied and must outlive the listener; stopRequested and
+  // wakeupPipe are not owned. With no state, or none that knows a source
+  // version yet, every connection gets ERR 3168 instead of a greeting.
   ReplicaListener(const ReplicaSettings &settings, unsigned maxConnections,
                   const std::atomic<bool> *stopRequested,
                   const WakeupPipe *wakeupPipe, LogFunction log = {},
@@ -72,12 +67,8 @@ class ReplicaListener {
   ReplicaListener(const ReplicaListener &) = delete;
   ReplicaListener &operator=(const ReplicaListener &) = delete;
 
-  // False (error set) only if binding fails - an empty clients list is
-  // not a failure, just every connection getting ERR 1130.
   bool Start(std::string &error);
 
-  // Safe to call when Start() was never called, more than once, or not
-  // at all - also runs from the destructor.
   void Stop();
 
   ReplicaClientList &Clients() { return m_clients; }
@@ -95,9 +86,8 @@ class ReplicaListener {
   ReplicaClientList m_clients;
   unsigned m_maxConnections;
   const std::atomic<bool> *m_stopRequested;
-  // What a dump loop polls instead of *m_stopRequested: also set by
-  // Stop() itself, so a dump idly waiting for events does not make
-  // Stop() join it forever.
+  // Also set by Stop() itself, so an idle dump does not make Stop() join
+  // forever.
   std::atomic<bool> m_stopping{false};
   const WakeupPipe *m_wakeupPipe;
   LogFunction m_log;
@@ -105,13 +95,8 @@ class ReplicaListener {
   std::unique_ptr<DumpSessionRegistry> m_dumpSessions;
   BinlogStorageReader *m_storageReader;
   ServerIdentity m_identity;
-  // Asked once per accepted connection for the source's version: the
-  // greeting names it, and its absence refuses the connection.
   const ServerState *m_state;
-  // The relay's certificate, offered to every connection; null offers
-  // none.
   const TlsContext *m_tls;
-  // Every logged-in replica is registered here; null registers none.
   RelayStatusTracker *m_status;
   std::chrono::microseconds m_sendLinger;
 

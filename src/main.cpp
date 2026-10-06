@@ -84,18 +84,13 @@
 namespace binlog_streamer {
 namespace {
 
-// Must be lock-free: sigaction() below writes it from a signal handler,
-// where a non-lock-free atomic could deadlock against the interrupted
-// thread if it uses a mutex internally.
+// Must be lock-free: it is written from a signal handler.
 std::atomic<bool> g_stopRequested{false};
 static_assert(std::atomic<bool>::is_always_lock_free);
 
-// Declared before InstallStopSignalHandlers() so the handler below never
-// fires before this exists.
 WakeupPipe g_wakeupPipe;
 
-// Both calls are async-signal-safe (an atomic store, a write() on an
-// already-open non-blocking fd), as required in a signal handler.
+// Both calls are async-signal-safe, as a signal handler requires.
 void HandleStopSignal(int) {
   g_stopRequested.store(true);
   g_wakeupPipe.Wake();
@@ -105,8 +100,8 @@ void InstallStopSignalHandlers() {
   struct sigaction action{};
   action.sa_handler = HandleStopSignal;
   sigemptyset(&action.sa_mask);
-  action.sa_flags = 0;  // deliberately no SA_RESTART, so a blocking read gets
-                        // EINTR instead of restarting silently
+  action.sa_flags =
+      0;  // deliberately no SA_RESTART, so a blocking read gets EINTR
   sigaction(SIGTERM, &action, nullptr);
   sigaction(SIGINT, &action, nullptr);
 }
@@ -133,10 +128,8 @@ void PrintIdentity(const SourceIdentity &identity, const std::string &tls) {
             << ")" << (tls.empty() ? "" : " over " + tls) << '\n';
 }
 
-// A server_id mismatch against the last stored file only warns, never
-// refuses: server_id is a setting an operator can change deliberately, and
-// an actual source swap is caught separately (history checks elsewhere, or
-// source error 1236).
+// A server_id mismatch only warns: operators may change it deliberately, and a
+// real source swap is caught by history checks or error 1236.
 std::optional<std::string> DescribeStorageIdentityChange(
     const StorageCatalog &catalog, const SourceIdentity &identity) {
   if (IsRelayServerVersion(identity.versionString, BINLOG_STREAMER_NAME))
@@ -151,9 +144,7 @@ std::optional<std::string> DescribeStorageIdentityChange(
          "deliberately";
 }
 
-// std::chrono::milliseconds::rep can exceed poll()'s int timeout range;
-// clamping is cheap insurance against wraparound, not an assumption that
-// the caller stays within it.
+// milliseconds::rep can exceed poll()'s int timeout range: clamp.
 int ClampToPollTimeout(std::chrono::milliseconds timeout) {
   const auto count = timeout.count();
   if (count < 0) return 0;
@@ -162,9 +153,8 @@ int ClampToPollTimeout(std::chrono::milliseconds timeout) {
   return static_cast<int>(count);
 }
 
-// Waits on g_wakeupPipe rather than napping and re-checking g_stopRequested:
-// Wake() makes poll() return immediately regardless of timing, whereas
-// repeated naps could miss a signal handled fully between two checks.
+// Wake() returns poll() at once; napping and re-checking could miss a signal
+// handled between two checks.
 void InterruptibleSleep(std::chrono::seconds duration) {
   const auto deadline = std::chrono::steady_clock::now() + duration;
   while (!g_stopRequested.load()) {
@@ -176,15 +166,15 @@ void InterruptibleSleep(std::chrono::seconds duration) {
     const int pollResult = poll(&pfd, 1, pollTimeout);
     if (pollResult > 0 && (pfd.revents & POLLIN) != 0) {
       // Not drained: g_wakeupPipe is shared with every connection's
-      // TcpTransport, and draining here could delay another thread's
-      // poll() from noticing the stop request - safe since it's final.
+      // TcpTransport, and draining could delay another thread noticing the
+      // stop.
       break;
     }
   }
 }
 
 // ClassifyStreamEnd() maps StoppedBySink to Success; main() overrides it to
-// StorageError when that's actually why the stream stopped.
+// StorageError when that is why the stream stopped.
 struct StreamOutcome {
   ExitCode exitCode = ExitCode::SourceError;
   std::string line;
@@ -208,21 +198,16 @@ StreamOutcome ClassifyStreamEnd(const StreamResult &result) {
     case StreamEndReason::EndOfStream:
       return {ExitCode::SourceStreamLost, "stream lost: " + result.message};
   }
-  return {ExitCode::SourceError,
-          "unrecognized stream end reason"};  // unreachable - every enumerator
-                                              // handled above
+  return {ExitCode::SourceError, "unrecognized stream end reason"};
 }
 
-// The source refusing the dump itself: the history the relay asks to
-// continue from is not on the source any more, and asking again from the
-// same position is refused the same way.
+// The history the relay asks to continue from is gone from the source; asking
+// again is refused the same way.
 constexpr std::uint16_t ER_SOURCE_FATAL_ERROR_READING_BINLOG = 1236;
 
-// Which ends of a stream another stream can take over from, in this same
-// process, with storage and every replica session left as they are. What
-// is left out ends the run: a storage failure, a stream that did not
-// parse, a heartbeat naming a position behind the one already read - and
-// 1236, the one source error repeating the request cannot get past.
+// Stream ends another stream can take over from, with storage and replica
+// sessions untouched. The rest ends the run: storage failure, unparsable
+// stream, heartbeat behind the position already read, and error 1236.
 bool CanReconnect(const StreamResult &result) {
   switch (result.reason) {
     case StreamEndReason::Timeout:
@@ -240,9 +225,8 @@ bool CanReconnect(const StreamResult &result) {
   return false;
 }
 
-// Built once per run, from the first registration: the source's clock is
-// the one the relay ages stored files by, and it keeps its own time
-// whether or not the connection that set it survives.
+// Built once per run from the first registration: the source's clock is the one
+// stored files are aged by.
 StorageExpiry MakeExpiry(const StorageSettings &settings,
                          const SourceIdentity &identity) {
   const SourceClock sourceClock = SourceClock::FromIdentity(identity);
@@ -368,8 +352,8 @@ int main(int argc, char *argv[]) {
     ConfigErrorPrinter::Print(std::cerr, configuration.errors);
     return static_cast<int>(ExitCode::ConfigurationError);
   }
-  // Reservation is lazy, so warn before pages are touched instead of refusing
-  // to start. This compares host RAM, without considering cgroup limits.
+  // Reservation is lazy, so warn instead of refusing to start. Compares host
+  // RAM, ignoring cgroup limits.
   if (const auto text = CacheSizeWarning::Describe(
           configuration.value->settings.cache.maxSize,
           HostMemory::PhysicalBytes())) {
@@ -377,9 +361,8 @@ int main(int argc, char *argv[]) {
   }
   if (command.value->validateOnly) return static_cast<int>(ExitCode::Success);
 
-  // A missing or permission-denied data_dir is a configuration problem
-  // (exit code 1), not a storage one (exit code 4); storageOpenFailure
-  // classifies which one it is.
+  // A missing or permission-denied data_dir is a configuration problem (exit
+  // code 1), not a storage one (4).
   const auto &dataDir = configuration.value->settings.storage.dataDir;
   BinlogStorage storage;
   StorageOpenFailure storageOpenFailure = StorageOpenFailure::StorageProblem;
@@ -407,9 +390,8 @@ int main(int argc, char *argv[]) {
               << " byte(s) past its last complete transaction (an earlier run "
                  "stopped mid-write)\n";
   }
-  // pipe() failing means resource exhaustion, not a bad setting; classified
-  // SourceError, the closest existing code for a pre-dump unrecoverable
-  // problem.
+  // pipe() failing is resource exhaustion, not a bad setting: classified
+  // SourceError, the closest code.
   std::string wakeupPipeError;
   if (!g_wakeupPipe.Open(wakeupPipeError)) {
     std::cerr << BINLOG_STREAMER_NAME ": opening the stop-signal wakeup pipe: "
@@ -430,9 +412,8 @@ int main(int argc, char *argv[]) {
               << serverUuidError << '\n';
     return static_cast<int>(ExitCode::StorageError);
   }
-  // Offered to every replica, required of none unless replica.yml says
-  // so; the relay's own certificate is generated next to auto.cnf when
-  // none is configured.
+  // Offered to every replica, required of none unless replica.yml says so;
+  // without a configured certificate the relay generates one next to auto.cnf.
   static_assert(std::count(TLS_FILE_NAMES.begin(), TLS_FILE_NAMES.end(),
                            ServerCertificateFiles::CA_FILE_NAME) == 1 &&
                     std::count(TLS_FILE_NAMES.begin(), TLS_FILE_NAMES.end(),
@@ -478,9 +459,8 @@ int main(int argc, char *argv[]) {
       configuration.value->source.host + ":" +
       std::to_string(configuration.value->source.port));
 
-  // Started before the connect-retry loop below, so replicas can already
-  // connect and wait while this run is still trying to reach the source.
-  // The same stop signal also ends every accepted replica connection.
+  // Started before the connect-retry loop so replicas can connect and wait
+  // while the source is still unreachable.
   ReplicaListener replicaListener(
       configuration.value->replica,
       configuration.value->settings.server.maxConnections, &g_stopRequested,
@@ -494,8 +474,8 @@ int main(int argc, char *argv[]) {
   if (!replicaListener.Start(replicaListenerError)) {
     std::cerr << BINLOG_STREAMER_NAME ": starting the replica listener: "
               << replicaListenerError << '\n';
-    // Classified ConfigurationError, not SourceError: a bind failure here
-    // is usually a bad listen_address/listen_port, not resource exhaustion.
+    // ConfigurationError: a bind failure is usually a bad
+    // listen_address/listen_port.
     return static_cast<int>(ExitCode::ConfigurationError);
   }
   Configuration running = *configuration.value;
@@ -522,8 +502,7 @@ int main(int argc, char *argv[]) {
   });
   reloadSignalThread.Start();
 
-  // /status.json is the relay as it stands at the request; every other
-  // path is a file of the status page, read from html_dir as asked.
+  // /status.json is the live status; any other path is a file of html_dir.
   const HtmlDirectory htmlDirectory(
       configuration.value->settings.monitoring.http.htmlDir);
   HttpListener httpListener(
@@ -551,8 +530,8 @@ int main(int argc, char *argv[]) {
               << httpListenerError << '\n';
     return static_cast<int>(ExitCode::ConfigurationError);
   }
-  // Ready once both listeners are up, not once the source answers: that
-  // may take the whole retry budget, and replicas are served meanwhile.
+  // Ready once both listeners are up, not once the source answers: that may
+  // take the whole retry budget.
   if (const auto notifyError = SystemdNotify::Send("READY=1"))
     std::cerr << BINLOG_STREAMER_NAME
               << ": warning: telling systemd the relay is ready: "
@@ -560,15 +539,12 @@ int main(int argc, char *argv[]) {
 
   TcpTransport transport(&g_stopRequested, &g_wakeupPipe);
   const std::string replicaUuid = SessionUuid::Generate();
-  // Reuses the run's own replicaUuid (probes never register, so there is no
-  // identity-collision risk). Same stop flag/wakeup pipe as the main
-  // transport, so a stop request isn't missed while a probe is in flight.
+  // Reuses the run's replicaUuid (probes never register). Same stop flag and
+  // wakeup pipe as the main transport, so a stop is not missed mid-probe.
   DumpProbe probe(configuration.value->source,
                   configuration.value->settings.server, replicaUuid,
                   BINLOG_STREAMER_NAME, BINLOG_STREAMER_VERSION,
                   &g_stopRequested, &g_wakeupPipe);
-  // One budget covers reaching the source at start-up and reaching it
-  // again after a stream is lost; only the word in the line differs.
   std::string attemptLabel = "start-up";
   RetryOptions options;
   options.sleep = InterruptibleSleep;
@@ -580,10 +556,8 @@ int main(int argc, char *argv[]) {
               << attempt << "/" << maxAttempts << " failed: " << reason << '\n';
   };
 
-  // storageSink wraps counterSink, not the reverse: counting is diagnostic
-  // and must not gate what reaches disk, while storage's own refusal must
-  // stop the stream. Both outlive every stream this run reads - a lost
-  // connection leaves storage holding what it holds, open file included.
+  // storageSink wraps counterSink, not the reverse: counting must not gate what
+  // reaches disk, while storage's refusal must stop the stream.
   EventCounterSink counterSink;
   std::optional<StorageWriter> writer;
   std::optional<StorageEventSink> storageSink;
@@ -598,9 +572,6 @@ int main(int argc, char *argv[]) {
   bool dumpStarted = false;
 
   for (;;) {
-    // Connects through registration, then resolves the GTID set to dump from -
-    // one retried unit, so a network/transient failure anywhere in it is
-    // handled the same way a connect failure already is.
     StartupSequence startup(transport, configuration.value->source,
                             configuration.value->settings.server, replicaUuid,
                             BINLOG_STREAMER_NAME, BINLOG_STREAMER_VERSION,
@@ -614,10 +585,9 @@ int main(int argc, char *argv[]) {
       if (result.outcome == SessionOutcome::Stopped) {
         outcome = {ExitCode::Success, std::string()};
       } else {
-        // Once a dump has run, not reaching the source again is that lost
-        // stream, not a source this relay cannot work with: exit code 3
-        // has systemd start the run over (code 2 is what stops it), and
-        // the new run resumes from the same stored position.
+        // After a dump has run, an unreachable source is a lost stream: exit
+        // code 3 makes systemd restart (code 2 would stop it), and the new run
+        // resumes from the stored position.
         outcome = {
             dumpStarted ? ExitCode::SourceStreamLost : ExitCode::SourceError,
             std::string()};
@@ -636,15 +606,12 @@ int main(int argc, char *argv[]) {
 
     if (const auto identityWarning =
             DescribeStorageIdentityChange(storage.Catalog(), result.identity)) {
-      // "warning: ", not the "storage: " prefix used above: that one means
-      // the run stopped (exit code 4), and this one doesn't.
+      // "warning: ", not "storage: ": that prefix means the run stopped (exit
+      // code 4).
       std::cerr << BINLOG_STREAMER_NAME ": warning: " << *identityWarning
                 << '\n';
     }
 
-    // Built from the first registration and kept: what the source reports
-    // about itself is the same source a reconnect finds again, and the
-    // files storage has open are the ones it goes on writing.
     if (!writer) {
       checksumLength =
           result.identity.checksumAlgorithm == "CRC32" ? CHECKSUM_LENGTH : 0;
@@ -699,15 +666,15 @@ int main(int argc, char *argv[]) {
     readerOptions.checksumLength = checksumLength;
     readerOptions.verifySequence = !session.compressed();
     readerOptions.progress = &statusTracker.Source();
-    // session.transport(), not transport: a compressed connection carries
-    // the dump inside the same frames, on the same frame counter.
+    // session.transport(), not transport: a compressed connection carries the
+    // dump in the same frames, on the same frame counter.
     EventStreamReader eventReader(
         session.transport(), *storageSink,
         StreamPosition{resolution.selectedFileName, 0}, readerOptions);
     const StreamResult streamResult = eventReader.Run();
     outcome = ClassifyStreamEnd(streamResult);
-    // storageSink is the only sink in this chain that can fail today, so
-    // its HasFailed() distinguishes a storage refusal from any other stop.
+    // storageSink is the only sink here that can fail, so HasFailed() tells a
+    // storage refusal from any other stop.
     bool storageFailed = false;
     if (streamResult.reason == StreamEndReason::StoppedBySink &&
         storageSink->HasFailed()) {
@@ -723,12 +690,11 @@ int main(int argc, char *argv[]) {
     PrintStreamSummary(streamResult, outcome.line);
     if (storageFailed || !CanReconnect(streamResult)) break;
 
-    // The stream is gone, what it filled is not: the replicas reading
-    // storage are never told anything ended, and the events already
-    // stored stay readable while the source is looked for again.
+    // The stream is gone, what it filled is not: replicas reading storage are
+    // not told anything ended.
     transport.Close();
-    // Every byte has to be on disk before the position is read back from
-    // it - and the only producer, the reader above, has already stopped.
+    // Every byte must be on disk before the position is read back; the reader
+    // above, the only producer, has stopped.
     if (!writer->DrainAndSync()) {
       std::cerr << BINLOG_STREAMER_NAME ": storage: " << writer->LastError()
                 << '\n';
@@ -756,9 +722,8 @@ int main(int argc, char *argv[]) {
     std::cerr << '\n';
   }
 
-  // Even malformed input can follow accepted bytes of an unfinished group.
-  // Preserve those bytes; recovery truncates the incomplete group on restart.
-  // A failed writer cannot drain. Its destructor still joins on every exit.
+  // Malformed input can follow accepted bytes of an unfinished group: those
+  // bytes are kept, and recovery truncates the incomplete group on restart.
   if (writer && !writer->Failed() && !writer->DrainAndSync())
     std::cerr << BINLOG_STREAMER_NAME ": failed to flush storage on shutdown: "
               << writer->LastError() << '\n';

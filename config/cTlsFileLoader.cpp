@@ -42,8 +42,6 @@ ConfigError At(const std::string &fileName,
           std::move(message)};
 }
 
-// TlsContext names the key it failed on ("ssl_key does not match
-// ssl_cert"); a message that names none is about the certificate.
 std::string_view KeyOf(const std::string &message) {
   for (const auto key : KEYS)
     if (message.rfind(key, 0) == 0) return key;
@@ -77,8 +75,6 @@ bool TlsFileLoader::Read(const std::string &fileName,
   readPublic("ssl_ca", caPath, read.caPem);
   readPublic("ssl_cert", certPath, read.certPem);
   if (!keyPath.empty()) {
-    // The reader reports against the key file itself; here the violation
-    // is of one value inside the yml, so it is moved to that key.
     std::vector<ConfigError> fileErrors;
     const auto status = reader_.Read(keyPath, read.keyPem, fileErrors);
     if (status != ProtectedFileStatus::Ok) {

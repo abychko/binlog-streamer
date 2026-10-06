@@ -77,7 +77,7 @@ TEST(HeartbeatEventCodecTest, ParsesV2FileNameAndPositionFields) {
 }
 
 TEST(HeartbeatEventCodecTest, ParsesV2WithOnlyTheEndMarker) {
-  const std::vector<std::uint8_t> body{0};  // just OTW_HB_HEADER_END_MARK
+  const std::vector<std::uint8_t> body{0};
   HeartbeatEvent value;
   std::string error;
   ASSERT_TRUE(HeartbeatEventCodec::ParseV2(body, 0, value, error)) << error;
@@ -87,10 +87,10 @@ TEST(HeartbeatEventCodecTest, ParsesV2WithOnlyTheEndMarker) {
 
 TEST(HeartbeatEventCodecTest, V2SkipsAnUnrecognizedFieldByItsDeclaredLength) {
   std::vector<std::uint8_t> body;
-  body.push_back(99);  // unrecognized field type
+  body.push_back(99);
   body.push_back(3);
   body.insert(body.end(), {'x', 'y', 'z'});
-  body.push_back(1);  // filename still parses after the skipped field
+  body.push_back(1);
   const std::string name = "binlog.000005";
   body.push_back(static_cast<std::uint8_t>(name.size()));
   body.insert(body.end(), name.begin(), name.end());
@@ -103,8 +103,7 @@ TEST(HeartbeatEventCodecTest, V2SkipsAnUnrecognizedFieldByItsDeclaredLength) {
 }
 
 TEST(HeartbeatEventCodecTest, V2RejectsAFieldLengthRunningPastTheBody) {
-  std::vector<std::uint8_t> body{1, 200, 'a',
-                                 'b'};  // declares 200 bytes of name, has 2
+  std::vector<std::uint8_t> body{1, 200, 'a', 'b'};
   HeartbeatEvent value;
   std::string error;
   EXPECT_FALSE(HeartbeatEventCodec::ParseV2(body, 0, value, error));
@@ -112,8 +111,7 @@ TEST(HeartbeatEventCodecTest, V2RejectsAFieldLengthRunningPastTheBody) {
 }
 
 TEST(HeartbeatEventCodecTest, V2StripsTrailingChecksumBeforeParsingFields) {
-  std::vector<std::uint8_t> body{0, 0xDE, 0xAD, 0xBE,
-                                 0xEF};  // end marker, then checksum bytes
+  std::vector<std::uint8_t> body{0, 0xDE, 0xAD, 0xBE, 0xEF};
   HeartbeatEvent value;
   std::string error;
   ASSERT_TRUE(HeartbeatEventCodec::ParseV2(body, 4, value, error)) << error;

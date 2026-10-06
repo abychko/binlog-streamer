@@ -42,24 +42,18 @@ TEST(ComBinlogDumpGtidCommandTest, EncodesFieldsInOrder) {
   const auto payload = ComBinlogDumpGtidCommand::Encode(value);
 
   std::size_t pos = 0;
-  EXPECT_EQ(payload[pos++], 30);  // command byte
-  // flags, little-endian
-  EXPECT_EQ(payload[pos++], 0x06);  // 0x02 | 0x04
+  EXPECT_EQ(payload[pos++], 30);
+  EXPECT_EQ(payload[pos++], 0x06);
   EXPECT_EQ(payload[pos++], 0x00);
-  // server_id, little-endian
   EXPECT_EQ(payload[pos++], 0x0D);
   EXPECT_EQ(payload[pos++], 0x0C);
   EXPECT_EQ(payload[pos++], 0x0B);
   EXPECT_EQ(payload[pos++], 0x0A);
-  // filename_length: always 0 in GTID mode
   for (int i = 0; i < 4; ++i) EXPECT_EQ(payload[pos++], 0);
-  // start_position: fixed at 4
   EXPECT_EQ(payload[pos++], 4);
   for (int i = 0; i < 7; ++i) EXPECT_EQ(payload[pos++], 0);
-  // gtid set length, little-endian
   EXPECT_EQ(payload[pos++], 3);
   for (int i = 0; i < 3; ++i) EXPECT_EQ(payload[pos++], 0);
-  // gtid set bytes
   EXPECT_EQ(payload[pos++], 0xAA);
   EXPECT_EQ(payload[pos++], 0xBB);
   EXPECT_EQ(payload[pos++], 0xCC);
@@ -89,13 +83,10 @@ TEST(ComBinlogDumpGtidCommandTest, EncodesAndParsesFileNameAndPosition) {
   BinlogDumpGtidCommand original;
   original.serverId = 1;
   original.fileName = "binlog.000042";
-  original.position = 0x0102030405060708ULL;  // every byte distinct: a 32-bit
-                                              // read would lose the upper half
+  original.position = 0x0102030405060708ULL;
   const std::vector<std::uint8_t> wire =
       ComBinlogDumpGtidCommand::Encode(original);
 
-  // command(1) + flags(2) + server_id(4), then the length-prefixed name and the
-  // position.
   ASSERT_GE(wire.size(), 7u + 4u + 13u + 8u);
   EXPECT_EQ(wire[7], 13);
   EXPECT_EQ(std::string(wire.begin() + 11, wire.begin() + 24), "binlog.000042");
@@ -142,7 +133,7 @@ TEST(ComBinlogDumpGtidCommandTest, ParseRejectsEveryTruncation) {
 TEST(ComBinlogDumpGtidCommandTest, ParseRejectsOtherCommands) {
   std::vector<std::uint8_t> wire =
       ComBinlogDumpGtidCommand::Encode(BinlogDumpGtidCommand{});
-  wire[0] = 0x12;  // COM_BINLOG_DUMP, the file/position form
+  wire[0] = 0x12;
   BinlogDumpGtidCommand parsed;
   std::string error;
   EXPECT_FALSE(ComBinlogDumpGtidCommand::Parse(wire, parsed, error));

@@ -35,7 +35,6 @@ class ReadOnlyBinlogFile {
   bool Open(const std::string &path, std::string &error);
   bool ReadAt(std::uint64_t offset, std::span<std::uint8_t> out,
               std::string &error) const;
-  // Must fill out entirely; EOF inside it is an error.
   static bool ReadAt(int fd, std::uint64_t offset, std::span<std::uint8_t> out,
                      std::string &error);
 

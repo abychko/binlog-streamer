@@ -80,8 +80,8 @@ void HttpListener::Stop() {
 void HttpListener::AcceptLoop() {
   for (;;) {
     ReapFinishedConnections();
-    // The process's stop flag is polled here, not by the listen socket:
-    // the socket watches m_stopping, which Stop() sets from either.
+    // The process's stop flag is polled here, not by the listen socket: the
+    // socket watches m_stopping, which Stop() sets from either.
     if (m_stopRequested != nullptr && m_stopRequested->load())
       m_stopping.store(true);
     if (m_stopping.load()) break;
@@ -135,7 +135,7 @@ void HttpListener::Serve(TcpTransport &transport, const std::string &peer) {
       response.body = "request timeout\n";
       break;
     }
-    if (outcome != ReadOutcome::Data) return;  // gone, or the relay stops
+    if (outcome != ReadOutcome::Data) return;
     head.append(reinterpret_cast<const char *>(chunk), bytesRead);
     const auto end = head.find("\r\n\r\n");
     if (end == std::string::npos) {

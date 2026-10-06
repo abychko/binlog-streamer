@@ -23,9 +23,6 @@
 
 #pragma once
 
-// This relay only parses these packets, so production has no encoders for
-// them; tests build the raw wire bytes by hand instead.
-
 #include "protocol/cLengthEncodedInteger.hpp"
 #include "protocol/cLengthEncodedString.hpp"
 #include "protocol/hCapabilityFlags.hpp"
@@ -49,11 +46,8 @@ class ScriptedSourcePayloads {
     return scramble;
   }
 
-  // Layout per cHandshakeV10Codec.cpp. auth_plugin_data_len is fixed at
-  // 21 (8 + 13), matching a real 8.4.11 server's trailing zero byte past
-  // the scramble.
-  // extraCapabilities: bits a plain source does not advertise here, such
-  // as CLIENT_ZSTD_COMPRESSION_ALGORITHM.
+  // auth_plugin_data_len is fixed at 21 (8 + 13), as a real 8.4.11 server sends
+  // it: a trailing zero byte past the scramble.
   static std::vector<std::uint8_t> Greeting(
       const std::string &serverVersion, const std::string &authPluginName,
       std::span<const std::uint8_t, SCRAMBLE_LENGTH> scramble,
@@ -62,8 +56,7 @@ class ScriptedSourcePayloads {
     payload.push_back(PROTOCOL_VERSION);
     payload.insert(payload.end(), serverVersion.begin(), serverVersion.end());
     payload.push_back(0);
-    payload.insert(payload.end(),
-                   {0x01, 0x00, 0x00, 0x00});  // thread id, arbitrary
+    payload.insert(payload.end(), {0x01, 0x00, 0x00, 0x00});
     payload.insert(payload.end(), scramble.begin(),
                    scramble.begin() + AUTH_PLUGIN_DATA_PART_1_LENGTH);
     payload.push_back(0);
@@ -74,18 +67,17 @@ class ScriptedSourcePayloads {
         CLIENT_DEPRECATE_EOF | CLIENT_CONNECT_ATTRS | extraCapabilities;
     payload.push_back(static_cast<std::uint8_t>(capabilities));
     payload.push_back(static_cast<std::uint8_t>(capabilities >> 8));
-    payload.push_back(0x21);  // charset, arbitrary (utf8_general_ci)
+    payload.push_back(0x21);
     payload.insert(payload.end(), {0, 0});
     payload.push_back(static_cast<std::uint8_t>(capabilities >> 16));
     payload.push_back(static_cast<std::uint8_t>(capabilities >> 24));
-    payload.push_back(21);  // auth_plugin_data_len: 8 + 13
+    payload.push_back(21);
     payload.insert(payload.end(), 10, std::uint8_t{0});
 
     payload.insert(payload.end(),
                    scramble.begin() + AUTH_PLUGIN_DATA_PART_1_LENGTH,
                    scramble.end());
-    payload.push_back(
-        0);  // 13th byte of part 2, matching the real server's trailing NUL
+    payload.push_back(0);
 
     payload.insert(payload.end(), authPluginName.begin(), authPluginName.end());
     payload.push_back(0);
@@ -97,8 +89,7 @@ class ScriptedSourcePayloads {
     payload.push_back(eofHeader ? std::uint8_t{0xFE} : std::uint8_t{0x00});
     LengthEncodedInteger::Encode(0, payload);
     LengthEncodedInteger::Encode(0, payload);
-    payload.insert(payload.end(),
-                   {0x02, 0x00});  // SERVER_STATUS_AUTOCOMMIT, arbitrary
+    payload.insert(payload.end(), {0x02, 0x00});
     payload.insert(payload.end(), {0, 0});
     return payload;
   }
@@ -120,8 +111,6 @@ class ScriptedSourcePayloads {
     return {0x01, signalByte};
   }
 
-  // Never a single signal byte, so this can't be mistaken for
-  // FastAuthSuccess/PerformFullAuthentication.
   static std::vector<std::uint8_t> AuthMoreData(
       std::span<const std::uint8_t> data) {
     std::vector<std::uint8_t> payload{0x01};
@@ -145,8 +134,6 @@ class ScriptedSourcePayloads {
     return payload;
   }
 
-  // Schema/table names left empty: ColumnDefinition41Codec::Parse does not
-  // require them, and nothing downstream validates the column name either.
   static std::vector<std::uint8_t> ColumnDefinition(const std::string &name) {
     std::vector<std::uint8_t> payload;
     LengthEncodedString::Encode("def", payload);

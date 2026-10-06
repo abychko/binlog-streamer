@@ -47,7 +47,6 @@ void AppendLittleEndian(std::vector<std::uint8_t> &out, std::uint64_t value,
     out.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
 }
 
-// Local lenenc encoder, kept self-contained rather than shared.
 std::vector<std::uint8_t> Lenenc(std::uint64_t value) {
   std::vector<std::uint8_t> out;
   if (value < 251) {
@@ -62,8 +61,6 @@ std::vector<std::uint8_t> Lenenc(std::uint64_t value) {
   return out;
 }
 
-// No header/Previous_gtids prefix: Scan() runs directly against bytes
-// built here, not a real file.
 void AppendEvent(std::vector<std::uint8_t> &file, std::uint8_t type,
                  std::span<const std::uint8_t> body,
                  std::uint32_t nextPosition) {
@@ -135,9 +132,8 @@ TEST(BinlogTailScannerTest,
       static_cast<std::uint32_t>(file.size());
   ASSERT_EQ(secondGroupStart, 125u);
   AppendFullGroup(file, secondGroupStart,
-                  /*gno=*/2);  // the whole second group ...
-  file.resize(secondGroupStart + 69 +
-              10);  // ... then cut to just past its GTID event, mid-Query
+                  /*gno=*/2);
+  file.resize(secondGroupStart + 69 + 10);
   const auto path = WriteFile(fixture, "binlog.000001", file);
 
   TailScanResult result;
@@ -148,7 +144,7 @@ TEST(BinlogTailScannerTest,
   EXPECT_EQ(result.lastBoundary, 125u);
   EXPECT_EQ(result.truncatedBytes, file.size() - 125u);
 
-  const Uuid zeroUuid{};  // GtidBody() above zeroes the SID field
+  const Uuid zeroUuid{};
   const auto intervals =
       result.completedGroups.GetIntervals(GtidSource{zeroUuid, ""});
   ASSERT_EQ(intervals.size(), 1u);
@@ -179,8 +175,8 @@ TEST(BinlogTailScannerTest, CountsATaggedGroupUnderItsTaggedSource) {
               81 + 219);
   AppendEvent(file, 16 /* Xid */, std::vector<std::uint8_t>(18, 0xCD), 337);
   AppendFullGroup(file, 337,
-                  /*gno=*/7);  // an untagged group after it, its own source
-  file.resize(337 + 69 + 10);  // cut mid-Query of that second group
+                  /*gno=*/7);
+  file.resize(337 + 69 + 10);
   const auto path = WriteFile(fixture, "binlog.000001", file);
 
   TailScanResult result;
@@ -202,10 +198,10 @@ TEST(BinlogTailScannerTest, CountsATaggedGroupUnderItsTaggedSource) {
   ASSERT_EQ(tagged.size(), 1u);
   EXPECT_EQ(tagged.front().start, 1);
   EXPECT_EQ(tagged.front().end, 2);
-  EXPECT_TRUE(result.completedGroups.GetIntervals(GtidSource{realUuid, ""})
-                  .empty());  // not under the untagged source
-  EXPECT_TRUE(result.completedGroups.GetIntervals(GtidSource{Uuid{}, ""})
-                  .empty());  // the cut group never completed
+  EXPECT_TRUE(
+      result.completedGroups.GetIntervals(GtidSource{realUuid, ""}).empty());
+  EXPECT_TRUE(
+      result.completedGroups.GetIntervals(GtidSource{Uuid{}, ""}).empty());
 }
 
 TEST(BinlogTailScannerTest,
@@ -223,19 +219,16 @@ TEST(BinlogTailScannerTest,
   EXPECT_TRUE(result.completedGroups.IsEmpty());
 }
 
-// Not an error: a declared length shorter than the header itself is just
-// another unfinished-write shape, trimmed the same as a short header.
 TEST(BinlogTailScannerTest,
      StopsCleanlyAtAnEventDeclaringALengthShorterThanItsOwnHeader) {
   TempDirectoryFixture fixture;
   std::vector<std::uint8_t> file;
   AppendFullGroup(file, 0,
-                  /*gno=*/1);  // one clean boundary to truncate back to
+                  /*gno=*/1);
   AppendLittleEndian(file, 1700000000, 4);
   file.push_back(2);
   AppendLittleEndian(file, 1, 4);
-  AppendLittleEndian(file, 5,
-                     4);  // event_length: shorter than EVENT_HEADER_LENGTH (19)
+  AppendLittleEndian(file, 5, 4);
   AppendLittleEndian(file, 5, 4);
   AppendLittleEndian(file, 0, 2);
   const auto path = WriteFile(fixture, "binlog.000001", file);
@@ -249,19 +242,16 @@ TEST(BinlogTailScannerTest,
   EXPECT_EQ(result.truncatedBytes, file.size() - 125u);
 }
 
-// A GTID event header is the one shape Scan() allocates a buffer for; a
-// complete header with a cut-short body must stop cleanly too.
 TEST(BinlogTailScannerTest, StopsCleanlyWhenAGtidEventsOwnBodyIsCutShort) {
   TempDirectoryFixture fixture;
   std::vector<std::uint8_t> file;
   AppendFullGroup(file, 0,
-                  /*gno=*/1);  // one clean boundary to truncate back to
+                  /*gno=*/1);
   const auto gtidBody = GtidBody(/*gno=*/2, 125);
   AppendEvent(file, static_cast<std::uint8_t>(EventType::Gtid), gtidBody,
               125 + 69);
   ASSERT_EQ(file.size(), 125u + 19u + gtidBody.size());
-  file.resize(file.size() -
-              10);  // the GTID event's own header is intact, its body is not
+  file.resize(file.size() - 10);
   const auto path = WriteFile(fixture, "binlog.000001", file);
 
   TailScanResult result;
@@ -271,8 +261,6 @@ TEST(BinlogTailScannerTest, StopsCleanlyWhenAGtidEventsOwnBodyIsCutShort) {
       << error;
   EXPECT_EQ(result.lastBoundary, 125u);
   EXPECT_EQ(result.truncatedBytes, file.size() - 125u);
-  // Only gno=1 is confirmed; the cut-short gno=2 event never reaches
-  // completedGroups.
   const auto intervals =
       result.completedGroups.GetIntervals(GtidSource{Uuid{}, ""});
   ASSERT_EQ(intervals.size(), 1u);
@@ -280,7 +268,6 @@ TEST(BinlogTailScannerTest, StopsCleanlyWhenAGtidEventsOwnBodyIsCutShort) {
   EXPECT_EQ(intervals.front().end, 2);
 }
 
-// The one case Scan() refuses outright rather than trim.
 TEST(BinlogTailScannerTest,
      RejectsAGtidEventDeclaringABodyLargerThanTheBufferLimit) {
   TempDirectoryFixture fixture;
@@ -290,11 +277,9 @@ TEST(BinlogTailScannerTest,
   AppendLittleEndian(file, 1, 4);
   const auto eventLength = static_cast<std::uint32_t>(EVENT_HEADER_LENGTH) +
                            MAX_BUFFERED_EVENT_SIZE + 1;
-  AppendLittleEndian(file, eventLength,
-                     4);  // declares a body one byte over the limit
+  AppendLittleEndian(file, eventLength, 4);
   AppendLittleEndian(file, 0, 4);
   AppendLittleEndian(file, 0, 2);
-  // No actual body bytes follow; Scan() must reject from the header alone.
   const auto path = WriteFile(fixture, "binlog.000001", file);
 
   TailScanResult result;
@@ -304,13 +289,11 @@ TEST(BinlogTailScannerTest,
   EXPECT_FALSE(error.empty());
 }
 
-// TransactionBoundaryTracker rejecting an otherwise complete event is not an
-// error either - reached only when the event is fully on disk, not cut short.
 TEST(BinlogTailScannerTest, StopsCleanlyWhenAnEventCrossesTheEndOfItsGroup) {
   TempDirectoryFixture fixture;
   std::vector<std::uint8_t> file;
   AppendFullGroup(file, 0,
-                  /*gno=*/1);  // one clean boundary to truncate back to
+                  /*gno=*/1);
   const std::uint32_t secondGroupStart =
       static_cast<std::uint32_t>(file.size());
   ASSERT_EQ(secondGroupStart, 125u);
@@ -332,19 +315,16 @@ TEST(BinlogTailScannerTest, StopsCleanlyWhenAnEventCrossesTheEndOfItsGroup) {
   EXPECT_EQ(result.truncatedBytes, file.size() - 125u);
   const auto intervals =
       result.completedGroups.GetIntervals(GtidSource{Uuid{}, ""});
-  ASSERT_EQ(intervals.size(),
-            1u);  // only gno=1 - gno=2's own group never closed
+  ASSERT_EQ(intervals.size(), 1u);
   EXPECT_EQ(intervals.front().start, 1);
   EXPECT_EQ(intervals.front().end, 2);
 }
 
-// A GTID event arriving while the previous group is still open, both fully on
-// disk.
 TEST(BinlogTailScannerTest, StopsCleanlyWhenAGtidEventInterruptsAnOpenGroup) {
   TempDirectoryFixture fixture;
   std::vector<std::uint8_t> file;
   AppendFullGroup(file, 0,
-                  /*gno=*/1);  // one clean boundary to truncate back to
+                  /*gno=*/1);
   const std::uint32_t secondGroupStart =
       static_cast<std::uint32_t>(file.size());
   AppendEvent(file, static_cast<std::uint8_t>(EventType::Gtid),
@@ -362,13 +342,11 @@ TEST(BinlogTailScannerTest, StopsCleanlyWhenAGtidEventInterruptsAnOpenGroup) {
   EXPECT_EQ(result.truncatedBytes, file.size() - 125u);
 }
 
-// A fully-decodable GTID event whose hasTransactionLength is false (a source
-// too old for the optional tail); the tracker refuses it as a group opener.
 TEST(BinlogTailScannerTest, StopsCleanlyWhenAGtidEventHasNoTransactionLength) {
   TempDirectoryFixture fixture;
   std::vector<std::uint8_t> file;
   AppendFullGroup(file, 0,
-                  /*gno=*/1);  // one clean boundary to truncate back to
+                  /*gno=*/1);
   const auto shortBody = GtidBodyWithoutTransactionLength(/*gno=*/2);
   AppendEvent(file, static_cast<std::uint8_t>(EventType::Gtid), shortBody, 0);
   const auto path = WriteFile(fixture, "binlog.000001", file);
@@ -382,13 +360,11 @@ TEST(BinlogTailScannerTest, StopsCleanlyWhenAGtidEventHasNoTransactionLength) {
   EXPECT_EQ(result.truncatedBytes, file.size() - 125u);
 }
 
-// A body entirely on disk but too short to decode (by construction) is not
-// an error either.
 TEST(BinlogTailScannerTest, StopsCleanlyWhenAGtidEventsBodyFailsToDecode) {
   TempDirectoryFixture fixture;
   std::vector<std::uint8_t> file;
   AppendFullGroup(file, 0,
-                  /*gno=*/1);  // one clean boundary to truncate back to
+                  /*gno=*/1);
   AppendEvent(file, static_cast<std::uint8_t>(EventType::Gtid),
               std::vector<std::uint8_t>(10, 0x00), 0);
   const auto path = WriteFile(fixture, "binlog.000001", file);

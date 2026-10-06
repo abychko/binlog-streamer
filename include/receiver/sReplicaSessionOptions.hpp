@@ -29,13 +29,9 @@
 namespace binlog_streamer {
 
 struct ReplicaSessionOptions {
-  // Overridable so the stream driver can ask for a short period instead
-  // of waiting HEARTBEAT_PERIOD for the first witness.
   std::chrono::seconds heartbeatPeriod = HEARTBEAT_PERIOD;
 
-  // False for a probe connection: registering would list it in SHOW
-  // REPLICAS, risking collision with the real replica's identity -
-  // matches mysqlbinlog's own registration-free connection.
+  // False for a probe: registering would list it in SHOW REPLICAS.
   bool registerAsReplica = true;
 };
 

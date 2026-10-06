@@ -48,24 +48,14 @@ namespace binlog_streamer {
 
 struct QueryResponse;
 
-// One instance per connection, run on its own thread.
 class ReplicaConnection {
  public:
-  // A callback rather than writing to std::cerr directly.
   using LogFunction = std::function<void(const std::string &line)>;
 
-  // The 21-byte shape HandshakeV10Codec/AuthSwitchRequestCodec expect:
-  // SCRAMBLE_LENGTH random bytes plus a trailing 0x00.
   using NonceGenerator =
       std::function<std::array<std::uint8_t, SCRAMBLE_LENGTH + 1>()>;
 
-  // refusal: set when the listener already decided this session is over
-  // before it starts; Run() still needs a channel/peer address to send
-  // the ERR packet properly.
-
-  // nonceGenerator: unset uses a real CSPRNG. Tests inject a fixed one,
-  // since a login exchange's every later wire byte depends on the nonce
-  // a scripted-transport test could not otherwise match.
+  // nonceGenerator: unset uses a CSPRNG; tests inject a fixed one.
   ReplicaConnection(Transport &transport, IpAddress peerAddress,
                     ReplicaClientList::Snapshot clients,
                     std::string serverVersion, LogFunction log,
@@ -81,8 +71,8 @@ class ReplicaConnection {
   const ReplicaClient *FindClient(const std::string &username) const;
   bool Login(std::string &username);
   void CommandLoop(const std::string &username);
-  // True when the connection stays usable for another command, false when
-  // it is finished or can no longer be written to.
+  // True when the connection stays usable for another command, false when it is
+  // finished or can no longer be written to.
   bool HandleDump(PacketChannel &channel,
                   const std::vector<std::uint8_t> &payload,
                   const std::string &username);
@@ -97,9 +87,9 @@ class ReplicaConnection {
            std::string_view detail);
 
   Transport &m_transport;
-  // Both phases share these: the TLS state, the frame counter and the
-  // compression state outlive Login()'s channel, which the command phase
-  // replaces. TLS sits under compression, as it does in a server.
+  // Shared by both phases: the TLS state, the frame counter and the compression
+  // state outlive Login()'s channel; TLS sits under compression, as in a
+  // server.
   TlsTransport m_tls;
   CompressedTransport m_compressed;
   IpAddress m_peerAddress;
@@ -110,11 +100,9 @@ class ReplicaConnection {
   ConnectionRefusal m_refusal;
   NonceGenerator m_nonceGenerator;
   ConnectionServices m_services;
-  std::uint32_t m_registeredServerId =
-      0;  // from COM_REGISTER_SLAVE, 0 until then
+  std::uint32_t m_registeredServerId = 0;
   std::uint32_t m_clientCapabilities = 0;
   SessionVariables m_sessionVariables;
-  // From a successful login to the end of Run(); null without a tracker.
   std::shared_ptr<ReplicaRegistration> m_registration;
 };
 

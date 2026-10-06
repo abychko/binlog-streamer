@@ -28,8 +28,7 @@
 
 namespace binlog_streamer {
 
-// Must be zlib's crc32() (IEEE 802.3 poly), the exact variant
-// binlog_checksum=CRC32 uses, not just any CRC-32.
+// zlib's crc32(): the variant binlog_checksum=CRC32 uses.
 class Crc32 {
  public:
   static std::uint32_t Compute(std::span<const std::uint8_t> data);

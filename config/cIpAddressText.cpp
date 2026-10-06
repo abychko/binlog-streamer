@@ -30,8 +30,8 @@ namespace binlog_streamer {
 std::string IpAddressText::Format(const IpAddress &address) {
   char buffer[INET6_ADDRSTRLEN] = {};
   const int family = address.family == AddressFamily::Ipv6 ? AF_INET6 : AF_INET;
-  // bytes.data() is struct in_addr/in6_addr layout; an IPv4 address
-  // occupies only the first 4 of the 16 bytes there.
+  // bytes.data() holds in_addr/in6_addr; an IPv4 address uses only its first 4
+  // bytes.
   if (inet_ntop(family, address.bytes.data(), buffer, sizeof(buffer)) ==
       nullptr)
     return {};

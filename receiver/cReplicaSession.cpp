@@ -56,10 +56,9 @@ namespace {
 struct SingleColumnOutcome {
   enum class Kind { Row, ServerError, Failed } kind = Kind::Failed;
   std::optional<std::string>
-      value;  // Kind::Row; nullopt covers both SQL NULL and an empty result set
-  ErrPacket err;               // Kind::ServerError
-  std::string failureMessage;  // Kind::Failed: a transport/framing failure,
-                               // always retryable
+      value;  // nullopt covers both SQL NULL and an empty result set
+  ErrPacket err;
+  std::string failureMessage;
 };
 
 SingleColumnOutcome QuerySingleColumn(PacketChannel &channel,
@@ -106,9 +105,8 @@ SingleColumnOutcome QuerySingleColumn(PacketChannel &channel,
         "reading row for '" + std::string(sql) + "': " + error;
     return outcome;
   }
-  // Checked directly, not via OkPacketCodec::IsOkPacket (0x00 header also
-  // matches a row whose first column is empty). 0xFE is unambiguous here:
-  // a real lenenc-0xFE value needs >= 9 bytes, more than these rows carry.
+  // 0x00 alone also matches a row whose first column is empty; 0xFE is
+  // unambiguous because a real lenenc-0xFE value needs >= 9 bytes.
   if (!payload.empty() && payload[0] == 0xFE &&
       payload.size() < MAX_PAYLOAD_PER_PACKET) {
     outcome.kind = SingleColumnOutcome::Kind::Row;
@@ -121,8 +119,7 @@ SingleColumnOutcome QuerySingleColumn(PacketChannel &channel,
         "malformed row for '" + std::string(sql) + "': " + error;
     return outcome;
   }
-  // None of these queries can legitimately return more than one row; a
-  // defensive drain keeps the connection in sync if a source misbehaves.
+  // Drain any extra row so a misbehaving source cannot desync the connection.
   std::vector<std::uint8_t> terminator;
   if (!channel.ReadPacket(terminator, error)) {
     outcome.failureMessage =
@@ -170,8 +167,8 @@ PlainCommandOutcome ExecutePlainCommand(PacketChannel &channel,
     outcome.kind = PlainCommandOutcome::Kind::ServerError;
     return outcome;
   }
-  // false: a plain command's OK is always header 0x00, never the
-  // DEPRECATE_EOF row-terminator form (0xFE, only inside a result set).
+  // A plain command's OK is always header 0x00; 0xFE is a row terminator only
+  // inside a result set.
   if (!OkPacketCodec::IsOkPacket(payload.empty() ? std::uint8_t{0} : payload[0],
                                  false)) {
     outcome.failureMessage =
@@ -182,8 +179,6 @@ PlainCommandOutcome ExecutePlainCommand(PacketChannel &channel,
   return outcome;
 }
 
-// The attribute keys match a real replica's own (session_connect_attrs uses
-// the same names); the values are this relay's own identity, not borrowed.
 std::vector<std::pair<std::string, std::string>> BuildConnectionAttributes(
     const std::string &relayName, const std::string &relayVersion) {
   struct utsname systemInfo{};
@@ -220,9 +215,8 @@ ReplicaSession::ReplicaSession(Transport &transport,
 
 SessionResult ReplicaSession::Transient(std::string message) const {
   SessionResult result;
-  // A Read() interrupted by a caller-requested stop (m_channel's sticky
-  // flag) is Stopped, not TransientFailure - the one distinction among
-  // Transient() call sites that must not be retried by StartupSequence.
+  // A Read() interrupted by a requested stop is Stopped, not transient:
+  // StartupSequence must not retry it.
   result.outcome = m_channel.WasInterrupted()
                        ? SessionOutcome::Stopped
                        : SessionOutcome::TransientFailure;
@@ -255,8 +249,7 @@ SessionResult ReplicaSession::Run() {
 
 SessionResult ReplicaSession::ReadyWithoutRegistering() {
   SessionResult result;
-  // identity.registered, not this outcome, says whether COM_REGISTER_SLAVE
-  // itself ran.
+  // identity.registered, not this outcome, says whether COM_REGISTER_SLAVE ran.
   result.outcome = SessionOutcome::Registered;
   result.identity = m_identity;
   result.message =
@@ -280,8 +273,6 @@ std::optional<SessionResult> ReplicaSession::Handshake() {
   if (!m_channel.ReadPacket(payload, error))
     return Transient("reading greeting: " + error);
 
-  // Report the source's own message rather than the generic parse failure
-  // HandshakeV10Codec::Parse would give.
   if (ErrPacketCodec::IsErrPacket(payload)) {
     ErrPacket err;
     if (!ErrPacketCodec::Parse(payload, err, error))
@@ -296,10 +287,9 @@ std::optional<SessionResult> ReplicaSession::Handshake() {
   m_authPluginName = greeting.authPluginName;
   m_authPluginData = greeting.authPluginData;
 
-  // A strict request, not a preference: a source that does not offer the
-  // algorithm named in source.yml ends the session instead of quietly
-  // streaming uncompressed. The reference client refuses the same
-  // way, before sending anything, with error 2066.
+  // Strict: a source that does not offer the algorithm named in source.yml ends
+  // the session instead of streaming uncompressed (the reference client refuses
+  // likewise, error 2066).
   const std::uint32_t compressionBit =
       CompressionCapabilityBit(m_source.compression);
   if (compressionBit != 0 && (greeting.capabilities & compressionBit) == 0)
@@ -309,9 +299,8 @@ std::optional<SessionResult> ReplicaSession::Handshake() {
         " compression; set compression: uncompressed in source.yml to "
         "connect without it");
 
-  // Strict the same way, except under PREFERRED, which is what the name
-  // says. The bit is asked for only when it was offered: a
-  // server that did not offer it reads the SSL request as a bad handshake.
+  // Strict except under PREFERRED; the bit is requested only if offered, since
+  // a server that did not offer it reads the SSL request as a bad handshake.
   const bool sourceOffersTls = (greeting.capabilities & CLIENT_SSL) != 0;
   const bool useTls = m_source.sslMode != SslMode::Disabled && sourceOffersTls;
   if (m_source.sslMode != SslMode::Disabled &&
@@ -323,8 +312,8 @@ std::optional<SessionResult> ReplicaSession::Handshake() {
   HandshakeResponse41 response;
   response.capabilities =
       REPLICA_CLIENT_CAPABILITIES | compressionBit | (useTls ? CLIENT_SSL : 0);
-  // Encoded only under CLIENT_ZSTD_COMPRESSION_ALGORITHM; zlib's bit
-  // carries no level.
+  // Only CLIENT_ZSTD_COMPRESSION_ALGORITHM carries a level; zlib's bit has
+  // none.
   response.zstdCompressionLevel =
       static_cast<std::uint8_t>(m_source.zstdCompressionLevel);
   response.maxPacketSize = REPLICA_MAX_PACKET_SIZE;
@@ -339,7 +328,6 @@ std::optional<SessionResult> ReplicaSession::Handshake() {
                                m_authPluginData.data(), SCRAMBLE_LENGTH));
     response.authResponse.assign(scramble.begin(), scramble.end());
   }
-  // else: left empty; Authenticate() handles the AuthSwitchRequest.
   response.connectionAttributes =
       BuildConnectionAttributes(m_relayName, m_relayVersion);
 
@@ -347,9 +335,8 @@ std::optional<SessionResult> ReplicaSession::Handshake() {
     if (!m_tlsContext.Loaded() &&
         !m_tlsContext.LoadClient(m_source.sslMode, m_source.tls, error))
       return Permanent("TLS: " + error);
-    // The SSL request goes in the clear, the handshake follows it on the
-    // socket directly, and the full response continues the packet
-    // sequence over TLS (sql-common/client.cc).
+    // The SSL request goes in the clear; the handshake continues over TLS with
+    // the packet sequence carried on (sql-common/client.cc).
     std::vector<std::uint8_t> request;
     HandshakeResponse41Codec::EncodeSslRequest(response, request);
     if (!m_channel.WritePacket(request, error))
@@ -372,25 +359,23 @@ std::optional<SessionResult> ReplicaSession::Authenticate() {
   if (!m_channel.ReadPacket(payload, error))
     return Transient("reading authentication response: " + error);
 
-  // 5: a well-behaved exchange takes at most 3 passes; the cap turns a
-  // stuck source into a clear error instead of an infinite loop.
+  // A well-behaved exchange takes at most 3 passes; the cap turns a stuck
+  // source into an error instead of an endless loop.
   for (int round = 0; round < 5; ++round) {
     if (ErrPacketCodec::IsErrPacket(payload)) {
       ErrPacket err;
       if (!ErrPacketCodec::Parse(payload, err, error))
         return Transient("malformed ERR during authentication: " + error);
-      // Transient, matching a real replica: an authentication ERR
-      // rejoins the connect-retry loop instead of a one-shot give-up.
+      // Transient, like a real replica: an authentication ERR rejoins the
+      // connect-retry loop.
       return Transient("authentication rejected by source: " + err.message);
     }
-    // false: 0xFE means AuthSwitchRequest here, never an OK-as-terminator
-    // (that ambiguity only exists inside a result set - see
-    // cOkPacketCodec.hpp).
+    // 0xFE here means AuthSwitchRequest; the OK-as-terminator ambiguity exists
+    // only inside a result set.
     if (OkPacketCodec::IsOkPacket(
             payload.empty() ? std::uint8_t{0} : payload[0], false)) {
-      // Here and not in Handshake(): the OK ending authentication is the
-      // last uncompressed packet, and only reaching it means the source
-      // accepted the capability (sql/sql_connect.cc).
+      // Here, not in Handshake(): the OK ending authentication is the last
+      // uncompressed packet (sql/sql_connect.cc).
       if (m_source.compression != CompressionAlgorithm::None)
         m_compressed.Enable(
             m_source.compression,
@@ -408,9 +393,8 @@ std::optional<SessionResult> ReplicaSession::Authenticate() {
             switchRequest.pluginName);
       if (switchRequest.pluginData.size() < SCRAMBLE_LENGTH)
         return Transient("AuthSwitchRequest nonce shorter than expected");
-      // Keeps m_authPluginData in sync with the nonce in effect - a
-      // later PerformFullAuthentication must encrypt against this
-      // one, not the greeting's.
+      // Keeps m_authPluginData at the nonce in effect; a later
+      // PerformFullAuthentication must encrypt against it.
       m_authPluginData.assign(switchRequest.pluginData.begin(),
                               switchRequest.pluginData.end());
       const auto scramble = CachingSha2Scramble::Compute(
@@ -426,8 +410,6 @@ std::optional<SessionResult> ReplicaSession::Authenticate() {
       if (!AuthMoreDataCodec::Parse(payload, signal, data, error))
         return Transient("malformed AuthMoreData: " + error);
       if (signal == AuthMoreDataSignal::PerformFullAuthentication) {
-        // Only reachable with an empty password if a caller built
-        // SourceSettings directly, bypassing this relay's own config loader.
         if (m_source.password.empty())
           return Transient(
               "source requires full caching_sha2_password authentication, but "
@@ -437,9 +419,8 @@ std::optional<SessionResult> ReplicaSession::Authenticate() {
         RsaPublicKey publicKey;
         std::string keyError;
         if (!m_source.sourcePublicKeyPem.empty()) {
-          // A local key always wins over asking the source,
-          // matching the reference client's own order (rsa_init()
-          // first, network request only a fallback).
+          // A local key takes precedence over asking the source, as in the
+          // reference client (rsa_init()).
           const std::span<const std::uint8_t> pem(
               reinterpret_cast<const std::uint8_t *>(
                   m_source.sourcePublicKeyPem.data()),
@@ -448,8 +429,6 @@ std::optional<SessionResult> ReplicaSession::Authenticate() {
             return Transient("parsing the configured RSA public key: " +
                              keyError);
         } else if (m_source.getSourcePublicKey) {
-          // Read inline rather than through another pass of this
-          // loop's round counter (see that counter's comment above).
           if (!m_channel.WritePacket(PublicKeyRequestCodec::Encode(), error))
             return Transient("requesting the source's RSA public key: " +
                              error);
@@ -466,8 +445,8 @@ std::optional<SessionResult> ReplicaSession::Authenticate() {
             return Transient("parsing the source's RSA public key: " +
                              keyError);
         } else {
-          // Matches the reference client's own message text
-          // exactly - administrators search for it verbatim.
+          // Same text as the reference client; administrators search for it
+          // verbatim.
           return Transient(
               "Authentication requires secure connection. Configure "
               "source_public_key_path or "
@@ -501,7 +480,6 @@ std::optional<SessionResult> ReplicaSession::Authenticate() {
 }
 
 namespace {
-// Just enough for the "8.4.11" version shape, not a general-purpose parser.
 std::pair<unsigned, std::size_t> LeadingNumber(std::string_view text) {
   std::size_t digitCount = 0;
   while (digitCount < text.size() &&
@@ -530,8 +508,8 @@ std::optional<SessionResult> ReplicaSession::CheckVersion() {
                      std::to_string(MINIMUM_SUPPORTED_MAJOR_VERSION) + ".0+)");
   m_identity.versionMajor = major;
 
-  // Matches mysql_get_server_version() (sql-common/client.cc): a version
-  // string without ".<minor>.<patch>" leaves them at 0, not a failure.
+  // As mysql_get_server_version(): a version string without ".<minor>.<patch>"
+  // leaves them at 0, not a failure.
   unsigned minor = 0;
   unsigned patch = 0;
   std::string_view rest = m_identity.versionString;
@@ -554,20 +532,16 @@ std::optional<SessionResult> ReplicaSession::CheckVersion() {
 
 std::optional<SessionResult> ReplicaSession::ReportClockSkew() {
   const auto outcome = QuerySingleColumn(m_channel, "SELECT UNIX_TIMESTAMP()");
-  // Captured here, right after the round trip, to stay close to when the
-  // source actually read its own clock.
   const auto readAt = std::chrono::steady_clock::now();
   if (outcome.kind == SingleColumnOutcome::Kind::Failed)
     return Transient(outcome.failureMessage);
-  // The value is the source's own clock, used later as "now" from the
-  // source's point of view, not this relay's.
+  // The source's own clock, used later as "now" from the source's point of
+  // view.
   if (outcome.kind == SingleColumnOutcome::Kind::Row && outcome.value) {
     try {
       m_identity.unixTimestamp = std::stoull(*outcome.value);
       m_identity.unixTimestampReadAt = readAt;
     } catch (const std::exception &) {
-      // Left at 0 - same "non-fatal, nothing further to do" handling
-      // as a server error or missing value above.
     }
   }
   return std::nullopt;
@@ -580,7 +554,7 @@ std::optional<SessionResult> ReplicaSession::CheckServerId() {
     return Transient(outcome.failureMessage);
   if (outcome.kind == SingleColumnOutcome::Kind::ServerError) {
     if (outcome.err.errorCode == ER_UNKNOWN_SYSTEM_VARIABLE)
-      return std::nullopt;  // skip the equality check, as a real replica does
+      return std::nullopt;
     return Permanent("SELECT @@GLOBAL.SERVER_ID failed: " +
                      outcome.err.message);
   }
@@ -626,8 +600,7 @@ std::optional<SessionResult> ReplicaSession::NegotiateChecksum() {
     return Transient(setOutcome.failureMessage);
   if (setOutcome.kind == PlainCommandOutcome::Kind::ServerError) {
     if (setOutcome.err.errorCode == ER_UNKNOWN_SYSTEM_VARIABLE) {
-      m_identity.checksumAlgorithm =
-          "OFF";  // source predates binlog_checksum support
+      m_identity.checksumAlgorithm = "OFF";
       return std::nullopt;
     }
     return Permanent("setting binlog checksum failed: " +
@@ -656,8 +629,8 @@ std::optional<SessionResult> ReplicaSession::CheckGtidMode() {
       return Permanent(
           "source has no GTID_MODE (predates GTID support); relay requires "
           "GTID_MODE=ON");
-    // The one exception among pre-dump SELECTs: other errors here are a
-    // reconnect, not a fatal incompatibility.
+    // The one pre-dump SELECT whose error is fatal; other errors here only
+    // trigger a reconnect.
     return Transient("SELECT @@GLOBAL.GTID_MODE failed: " +
                      outcome.err.message);
   }
@@ -677,7 +650,7 @@ std::optional<SessionResult> ReplicaSession::CheckServerUuid() {
     return Transient(outcome.failureMessage);
   if (outcome.kind == SingleColumnOutcome::Kind::ServerError) {
     if (outcome.err.errorCode == ER_UNKNOWN_SYSTEM_VARIABLE)
-      return std::nullopt;  // source predates SERVER_UUID
+      return std::nullopt;
     return Permanent("SELECT @@GLOBAL.SERVER_UUID failed: " +
                      outcome.err.message);
   }
@@ -691,8 +664,8 @@ std::optional<SessionResult> ReplicaSession::CheckServerUuid() {
 }
 
 std::optional<SessionResult> ReplicaSession::SetReplicaUuid() {
-  // m_replicaUuid is SessionUuid::Generate()'s own output, never
-  // external input, so interpolating it into SQL here is injection-safe.
+  // m_replicaUuid is generated locally, never external input, so interpolating
+  // it into SQL is injection-safe.
   const std::string sql = "SET @slave_uuid = '" + m_replicaUuid +
                           "', @replica_uuid = '" + m_replicaUuid + "'";
   const auto outcome = ExecutePlainCommand(m_channel, sql);
@@ -717,8 +690,8 @@ SessionResult ReplicaSession::Register() {
     ErrPacket err;
     if (!ErrPacketCodec::Parse(payload, err, error))
       return Transient("malformed ERR for COM_REGISTER_SLAVE: " + error);
-    // Transient, matching a real replica: an ERR here rejoins the
-    // connect-retry loop rather than giving up outright.
+    // Transient, like a real replica: an ERR here rejoins the connect-retry
+    // loop.
     return Transient("registration rejected by source: " + err.message);
   }
   if (!OkPacketCodec::IsOkPacket(payload.empty() ? std::uint8_t{0} : payload[0],
@@ -801,7 +774,6 @@ ReplicaSession::RowQueryResult ReplicaSession::QueryRow(
         Transient("reading row for '" + std::string(sql) + "': " + error);
     return result;
   }
-  // Same DEPRECATE_EOF disambiguation as QuerySingleColumn() above.
   if (!payload.empty() && payload[0] == 0xFE &&
       payload.size() < MAX_PAYLOAD_PER_PACKET) {
     result.ok = true;
@@ -838,13 +810,12 @@ std::optional<SessionResult> ReplicaSession::StartDump(const GtidSet &gtidSet) {
 
   BinlogDumpGtidCommand command;
   command.serverId = m_server.serverId;
-  // Matches a real replica (sql/rpl_replica.cc, request_dump()).
   command.flags = BINLOG_DUMP_USE_HEARTBEAT_EVENT_V2;
   if (skipTaggedGtids) command.flags |= BINLOG_DUMP_SKIP_TAGGED_GTIDS;
   command.gtidSetEncoded = gtidSet.Encode(skipTaggedGtids);
 
-  // Not read here: EventStreamReader::Run() distinguishes an ERR from the
-  // first event's bytes for the rest of the stream too.
+  // Not read here: EventStreamReader::Run() tells an ERR from the first event's
+  // bytes.
   m_channel.ResetSequence();
   std::string error;
   if (!m_channel.WritePacket(ComBinlogDumpGtidCommand::Encode(command), error))

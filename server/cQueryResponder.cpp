@@ -36,16 +36,10 @@ namespace binlog_streamer {
 
 namespace {
 
-// The scanners below read the statement where it lies: every one of them
-// takes a view and hands back a view, so recognising a query copies only
-// what ends up in the answer.
-
 bool IsSpace(char c) {
   return std::isspace(static_cast<unsigned char>(c)) != 0;
 }
 
-// What an unquoted identifier is made of, and what therefore continues a
-// word instead of ending it.
 bool IsWordChar(char c) {
   const unsigned char byte = static_cast<unsigned char>(c);
   return std::isalnum(byte) != 0 || c == '_' || c == '$';
@@ -92,9 +86,8 @@ std::string Lower(std::string_view text) {
   return out;
 }
 
-// A keyword ends at a word boundary: SELECTED does not begin with SELECT,
-// while "SELECT@@version" does. On a match text is left standing after the
-// keyword.
+// A keyword ends at a word boundary: SELECTED does not begin with SELECT, while
+// "SELECT@@version" does.
 bool TakeKeyword(std::string_view &text, std::string_view keyword) {
   std::string_view rest = text;
   SkipSpace(rest);
@@ -107,8 +100,8 @@ bool TakeKeyword(std::string_view &text, std::string_view keyword) {
   return true;
 }
 
-// Quotes, backticks and parentheses hide whatever they enclose: the comma
-// of SET @a = 'x, y' separates nothing.
+// Quotes, backticks and parentheses hide what they enclose: the comma in SET @a
+// = 'x, y' separates nothing.
 std::size_t FindTopLevel(std::string_view text, char wanted) {
   char quote = 0;
   int depth = 0;
@@ -143,9 +136,6 @@ std::vector<std::string_view> SplitTopLevel(std::string_view text,
   return parts;
 }
 
-// An identifier as written: bare, or in backticks or quotes, which is how
-// a name that is a keyword or holds a space reaches a server. What comes
-// back is the name without the quotes; text is left standing after it.
 std::string_view TakeIdentifier(std::string_view &text) {
   SkipSpace(text);
   if (text.empty()) return {};
@@ -165,17 +155,14 @@ std::string_view TakeIdentifier(std::string_view &text) {
 }
 
 struct VariableReference {
-  // False when what follows "@@" is not a variable reference at all: that
-  // is a statement the relay does not understand, not a variable it does
-  // not have.
+  // False when what follows "@@" is not a variable reference at all: an
+  // unsupported statement, not an unknown variable.
   bool valid = false;
-  // The name as written, without the scope and without the quotes.
   std::string name;
 };
 
-// "@@[GLOBAL.|SESSION.|LOCAL.]name", counted from after the two signs. A
-// qualifier that is none of the three is read as part of the name, the way
-// a server reads @@foo.bar.
+// A qualifier other than GLOBAL/SESSION/LOCAL is read as part of the name, as a
+// server reads @@foo.bar.
 VariableReference ParseVariableReference(std::string_view reference) {
   std::string_view rest = reference;
   const std::string_view first = TakeIdentifier(rest);
@@ -201,7 +188,7 @@ VariableReference ParseVariableReference(std::string_view reference) {
 }
 
 // "SELECT @@version_comment LIMIT 1", as the command-line client asks on
-// connect: a limit over a one-row answer changes nothing about it.
+// connect.
 std::string_view StripTrailingLimitOne(std::string_view expressions) {
   std::string_view head = Trim(expressions);
   if (head.empty() || head.back() != '1') return expressions;
@@ -225,10 +212,8 @@ QueryResponse MakeError(std::uint16_t code, std::string sqlState,
   return response;
 }
 
-// ER_NOT_SUPPORTED_YET: the statement is valid SQL, the relay just has no
-// answer for it. Said of everything the scanners do not recognise, so that
-// a client reading the error learns which of its statements went
-// unanswered.
+// ER_NOT_SUPPORTED_YET for everything the scanners do not recognise, so a
+// client learns which of its statements went unanswered.
 QueryResponse NotSupported(std::string_view statement) {
   constexpr std::size_t QUOTED_LENGTH = 64;
   return MakeError(1235, "42000",
@@ -236,9 +221,8 @@ QueryResponse NotSupported(std::string_view statement) {
                        std::string(statement.substr(0, QUOTED_LENGTH)) + "'");
 }
 
-// ER_UNKNOWN_SYSTEM_VARIABLE: a replica treats this one as "the source is
-// too old to have it" for several of its queries and carries on. Only a
-// name the relay read as a name gets it.
+// ER_UNKNOWN_SYSTEM_VARIABLE: a replica reads it as "source too old for this
+// variable" and carries on; only a name read as a name gets it.
 QueryResponse UnknownSystemVariable(const std::string &name) {
   return MakeError(1193, "HY000", "Unknown system variable '" + name + "'");
 }
@@ -277,8 +261,7 @@ std::optional<std::string> QueryResponder::SystemVariable(
   const std::string upper = Upper(name);
   if (upper == "SERVER_ID") return std::to_string(m_identity.serverId);
   if (upper == "SERVER_UUID") return m_identity.serverUuid;
-  if (upper == "GTID_MODE")
-    return std::string("ON");  // the relay serves replicas by GTID only
+  if (upper == "GTID_MODE") return std::string("ON");
   if (upper == "GTID_EXECUTED")
     return m_state != nullptr ? m_state->GtidExecuted() : std::string();
   if (upper == "GTID_PURGED")
@@ -291,9 +274,6 @@ std::optional<std::string> QueryResponder::SystemVariable(
   return std::nullopt;
 }
 
-// A replica asks for its variables one per statement; the command-line
-// client and mysqlbinlog ask for several at once. Each expression answers
-// in its own column, named as it was written.
 QueryResponse QueryResponder::Select(std::string_view expressions,
                                      std::string_view statement,
                                      const SessionVariables &session) const {
@@ -308,8 +288,8 @@ QueryResponse QueryResponder::Select(std::string_view expressions,
     if (EqualsIgnoringCase(expression, "UNIX_TIMESTAMP()")) {
       column.value = std::to_string(static_cast<long long>(std::time(nullptr)));
     } else if (EqualsIgnoringCase(expression, "VERSION()")) {
-      // mysqlbinlog reading from a remote server asks this first, to tell
-      // which binary log format to expect.
+      // mysqlbinlog reading from a remote server asks this first, to learn the
+      // binary log format.
       column.value = ServerVersion();
     } else if (StartsWith(expression, "@@")) {
       const VariableReference reference =
@@ -322,7 +302,6 @@ QueryResponse QueryResponder::Select(std::string_view expressions,
       std::string_view rest = expression.substr(1);
       const std::string_view name = TakeIdentifier(rest);
       if (name.empty() || !Trim(rest).empty()) return NotSupported(statement);
-      // A user variable never set reads as NULL, as on a server.
       column.value = session.Get(Lower(name));
     } else {
       return NotSupported(statement);
@@ -332,9 +311,8 @@ QueryResponse QueryResponder::Select(std::string_view expressions,
   return response;
 }
 
-// "SHOW BINLOG EVENTS IN '<file>' LIMIT 1,1": the second event of a file,
-// its Previous_gtids. A relay whose source is this relay asks for it before
-// its first dump (the row after the format description, as on a server).
+// "SHOW BINLOG EVENTS IN '<file>' LIMIT 1,1": the file's Previous_gtids; a
+// relay whose source is this relay asks for it before its first dump.
 QueryResponse QueryResponder::ShowPreviousGtids(
     std::string_view arguments, std::string_view statement) const {
   std::string_view rest = arguments;
@@ -354,8 +332,6 @@ QueryResponse QueryResponder::ShowPreviousGtids(
   std::optional<PreviousGtidsEvent> event;
   if (m_state != nullptr) event = m_state->PreviousGtids(fileName);
   if (!event) {
-    // ER_ERROR_WHEN_EXECUTING_COMMAND, as a server says it of a file it does
-    // not have
     return MakeError(1220, "HY000",
                      "Error when executing command SHOW BINLOG EVENTS: Could "
                      "not find target log");
@@ -380,8 +356,7 @@ QueryResponse QueryResponder::Set(std::string_view assignments,
                                   std::string_view statement,
                                   SessionVariables &session) const {
   std::string_view names = assignments;
-  if (TakeKeyword(names, "NAMES"))
-    return QueryResponse{};  // a character set is nothing the relay acts on
+  if (TakeKeyword(names, "NAMES")) return QueryResponse{};
 
   std::vector<std::pair<std::string, std::string>> parsed;
   for (const std::string_view part : SplitTopLevel(assignments, ',')) {
@@ -394,7 +369,7 @@ QueryResponse QueryResponder::Set(std::string_view assignments,
     if (name.empty()) return NotSupported(statement);
 
     SkipSpace(assignment);
-    if (!assignment.empty() && assignment.front() == ':')  // "@a := 1"
+    if (!assignment.empty() && assignment.front() == ':')
       assignment.remove_prefix(1);
     if (assignment.empty() || assignment.front() != '=')
       return NotSupported(statement);
