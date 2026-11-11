@@ -25,6 +25,9 @@
 
 #include <fcntl.h>
 #include <netdb.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -54,6 +57,13 @@ bool SetNonBlocking(int fd, std::string &error) {
 
 bool PrepareSocket(int fd, std::string &error) {
   if (!SetNonBlocking(fd, error)) return false;
+  // Best effort, as in MySQL's vio_fastsend().
+#if defined(IPTOS_THROUGHPUT)
+  const int tos = IPTOS_THROUGHPUT;
+  (void)setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
+#endif
+  const int noDelay = 1;
+  (void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &noDelay, sizeof(noDelay));
 #ifdef SO_NOSIGPIPE
   // Sending to a closed peer raises SIGPIPE; macOS has SO_NOSIGPIPE but not
   // MSG_NOSIGNAL, Linux the reverse, so both are applied.

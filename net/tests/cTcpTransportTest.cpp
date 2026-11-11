@@ -287,6 +287,30 @@ TEST(TcpTransportTest, WakeInterruptsTwoBlockedReadsOnOneSharedWakeupPipe) {
   EXPECT_LT(elapsedB, std::chrono::milliseconds(2000));
 }
 
+TEST(TcpTransportTest, SocketsSendSmallWritesWithoutDelay) {
+  LoopbackListener listener;
+  TcpTransport clientSide;
+  std::string error;
+  ASSERT_TRUE(clientSide.Connect("127.0.0.1", listener.Port(),
+                                 std::chrono::milliseconds(2000), error))
+      << error;
+  const int acceptedSocket = listener.Accept();
+  ASSERT_GE(acceptedSocket, 0);
+  int before = -1;
+  socklen_t length = sizeof(before);
+  ASSERT_EQ(
+      getsockopt(acceptedSocket, IPPROTO_TCP, TCP_NODELAY, &before, &length),
+      0);
+  EXPECT_EQ(before, 0);
+  TcpTransport serverSide;
+  ASSERT_TRUE(serverSide.Accept(acceptedSocket, error)) << error;
+  int after = 0;
+  length = sizeof(after);
+  ASSERT_EQ(
+      getsockopt(acceptedSocket, IPPROTO_TCP, TCP_NODELAY, &after, &length), 0);
+  EXPECT_NE(after, 0);
+}
+
 TEST(TcpTransportTest, AcceptWrapsAnAlreadyOpenSocketForReadingAndWriting) {
   LoopbackListener listener;
   TcpTransport clientSide;
