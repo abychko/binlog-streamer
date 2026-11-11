@@ -423,7 +423,7 @@ const GeneratedCertificates &Certificates() {
 }
 
 const TlsContext &ServerTls() {
-  static const TlsContext &context = [] {
+  static const TlsContext *context = [] {
     auto *loaded = new TlsContext;
     std::string error;
     if (!loaded->LoadServer(
@@ -431,9 +431,9 @@ const TlsContext &ServerTls() {
                         Certificates().serverKeyPem},
             error))
       ADD_FAILURE() << error;
-    return std::cref(*loaded);
+    return loaded;
   }();
-  return context;
+  return *context;
 }
 
 SourceSettings SourceFor(const ReplicaSettings &settings, SslMode mode) {

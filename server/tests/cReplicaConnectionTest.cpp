@@ -210,7 +210,7 @@ ConnectionServices CompressionOffered(
 }
 
 const TlsContext &ServerTls() {
-  static const TlsContext &context = [] {
+  static const TlsContext *context = [] {
     auto *loaded = new TlsContext;
     GeneratedCertificates certificates;
     std::string error;
@@ -220,9 +220,9 @@ const TlsContext &ServerTls() {
                         certificates.serverKeyPem},
             error))
       ADD_FAILURE() << error;
-    return std::cref(*loaded);
+    return loaded;
   }();
-  return context;
+  return *context;
 }
 
 ConnectionServices TlsOffered(bool requireSecureTransport = false) {
