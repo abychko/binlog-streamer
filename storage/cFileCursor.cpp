@@ -48,6 +48,8 @@ FileCursor::FileCursor(FileCursor &&other) noexcept
       m_path(std::move(other.m_path)),
       m_headerLength(other.m_headerLength),
       m_previousReadFromDisk(other.m_previousReadFromDisk),
+      m_dropStarted(other.m_dropStarted),
+      m_droppedTo(other.m_droppedTo),
       m_checkedMark(other.m_checkedMark),
       m_published(other.m_published) {}
 
@@ -59,6 +61,8 @@ FileCursor &FileCursor::operator=(FileCursor &&other) noexcept {
   m_path = std::move(other.m_path);
   m_headerLength = other.m_headerLength;
   m_previousReadFromDisk = other.m_previousReadFromDisk;
+  m_dropStarted = other.m_dropStarted;
+  m_droppedTo = other.m_droppedTo;
   m_checkedMark = other.m_checkedMark;
   m_published = other.m_published;
   return *this;
@@ -67,8 +71,31 @@ FileCursor &FileCursor::operator=(FileCursor &&other) noexcept {
 int FileCursor::Fd(std::string &error) const {
   if (m_fd >= 0) return m_fd;
   m_fd = open(m_path.c_str(), O_RDONLY | O_CLOEXEC);
-  if (m_fd < 0) error = "opening " + m_path + ": " + std::strerror(errno);
+  if (m_fd < 0) {
+    error = "opening " + m_path + ": " + std::strerror(errno);
+    return m_fd;
+  }
+#if defined(__linux__)
+  posix_fadvise(m_fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
   return m_fd;
+}
+
+void FileCursor::DropConsumedPages([[maybe_unused]] std::uint64_t begin,
+                                   [[maybe_unused]] std::uint64_t end) const {
+#if defined(__linux__)
+  static constexpr std::uint64_t DROP_BATCH_BYTES = 8ull << 20;
+  if (m_fd < 0) return;
+  if (!m_dropStarted) {
+    // Pages before the first read were not brought in by this cursor.
+    m_dropStarted = true;
+    m_droppedTo = begin;
+  }
+  if (end <= m_droppedTo || end - m_droppedTo < DROP_BATCH_BYTES) return;
+  posix_fadvise(m_fd, static_cast<off_t>(m_droppedTo),
+                static_cast<off_t>(end - m_droppedTo), POSIX_FADV_DONTNEED);
+  m_droppedTo = end;
+#endif
 }
 
 }  // namespace binlog_streamer

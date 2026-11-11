@@ -132,6 +132,8 @@ std::size_t StorageReader::Read(const FileCursor &cursor, std::uint64_t offset,
         std::min<std::uint64_t>(toRead, cursor.m_headerLength - offset),
         std::memory_order_relaxed);
   cursor.m_previousReadFromDisk = true;
+  // The published file is still read near its tail by others.
+  if (!cursor.m_published) cursor.DropConsumedPages(offset, offset + toRead);
   return toRead;
 }
 

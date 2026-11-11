@@ -45,6 +45,9 @@ class FileCursor {
   const std::string &FileName() const { return m_pin.FileName(); }
   // Set only by reads that returned bytes.
   bool LastReadFromDisk() const { return m_previousReadFromDisk; }
+  // Drops consumed pages from the page cache in batches; no-op without
+  // posix_fadvise.
+  void DropConsumedPages(std::uint64_t begin, std::uint64_t end) const;
 
  private:
   friend class StorageReader;
@@ -58,6 +61,8 @@ class FileCursor {
   std::string m_path;
   std::uint64_t m_headerLength = 0;
   mutable bool m_previousReadFromDisk = false;
+  mutable bool m_dropStarted = false;
+  mutable std::uint64_t m_droppedTo = 0;
   mutable std::uint64_t m_checkedMark = 0;
   mutable bool m_published = false;
 };
