@@ -1,0 +1,53 @@
+.TH BINLOG-STREAMER 1 "" "binlog-streamer" "User Commands"
+.SH NAME
+binlog-streamer \- MySQL binary log relay for independent replicas
+.SH SYNOPSIS
+.B binlog-streamer
+.RI [ options ]
+.SH DESCRIPTION
+.B binlog-streamer
+receives the binary log from one MySQL or Percona Server source
+(8.0 and newer), keeps it for a configured period and serves it to many
+replicas, so the source carries one replication connection instead of one
+per replica.
+It normally runs as the systemd service
+.BR binlog-streamer.service .
+.SH OPTIONS
+.TP
+.BI \-\-config " PATH"
+Settings file (default:
+.IR /etc/binlog-streamer/settings.yml ).
+.TP
+.B \-\-validate\-config
+Check the settings and exit.
+.TP
+.B \-\-rebuild\-index
+With the relay stopped, write binlog.index anew from the binary logs in
+data_dir and exit.
+The files have to make one history: one basename, consecutive numbers,
+and each file's Previous_gtids holding those of the one before;
+otherwise the index is left as it is.
+.TP
+.B \-\-help
+Show the help and exit.
+.TP
+.B \-\-version
+Show the version and exit.
+.SH FILES
+.TP
+.I /etc/binlog-streamer/settings.yml
+Relay settings.
+.TP
+.I /etc/binlog-streamer/source.yml
+Connection to the source.
+.TP
+.I /etc/binlog-streamer/replica.yml
+Where replicas connect and their accounts.
+.TP
+.I /etc/default/binlog-streamer
+Extra command-line options for the service.
+.TP
+.I /var/lib/binlog-streamer
+Stored binary log files.
+.SH SEE ALSO
+.I /usr/share/doc/binlog-streamer/README.md

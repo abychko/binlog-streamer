@@ -2,6 +2,30 @@
 
 Changes by minor version; each entry includes its patch releases.
 
+## 0.45 — 2026-11-14
+
+### Changed
+
+- The Zabbix template raises only the alerts a person has to act on:
+  the relay is unreachable, does not reach the source, has stopped
+  retrying or has been reconnecting too long, lags far behind the
+  source, does not publish what it received, or has no replica
+  connection left. Storage filling up to its disk limit, replica lag,
+  replica disconnects, replicas without a dump, reads from disk, a
+  change of source server and the low source-lag warning are no longer
+  triggers; their items and graphs stay. The macros of the removed
+  triggers are gone.
+- The package installs a manual page (`man binlog-streamer`), its
+  copyright file and a Debian changelog; `CHANGELOG.md` ships next to it.
+- Only `source.yml` and `replica.yml`, which hold credentials, are kept
+  from other users (`root:binlog-streamer`, 0640). `settings.yml` is
+  `root:root` 0644, `/etc/binlog-streamer` and `/var/lib/binlog-streamer`
+  are 0755; files the relay writes stay closed to others by the service's
+  `UMask=0027`, its TLS keys are 0600.
+- Installing or upgrading the package no longer starts or restarts the
+  service: a running relay keeps its process until the administrator
+  restarts it.
+
 ## 0.44 — 2026-11-14
 
 ### Added

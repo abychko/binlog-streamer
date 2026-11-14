@@ -1,0 +1,17 @@
+# cmake -P: a one-entry Debian changelog dated by the newest heading of CHANGELOG.
+FILE(STRINGS "${CHANGELOG}" HEADINGS ENCODING UTF-8 REGEX "^## [0-9]")
+LIST(GET HEADINGS 0 NEWEST)
+STRING(REGEX MATCH "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]" RELEASE_DATE "${NEWEST}")
+IF(NOT RELEASE_DATE)
+    MESSAGE(FATAL_ERROR "no date in the newest heading of ${CHANGELOG}: ${NEWEST}")
+ENDIF()
+EXECUTE_PROCESS(COMMAND date -R -u -d "${RELEASE_DATE} 00:00"
+    OUTPUT_VARIABLE RFC2822_DATE OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY)
+FILE(WRITE "${OUTPUT}"
+"${PACKAGE} (${VERSION}) unstable; urgency=medium
+
+  * Release ${VERSION}; changes in /usr/share/doc/${PACKAGE}/CHANGELOG.md.gz.
+
+ -- ${MAINTAINER}  ${RFC2822_DATE}
+")

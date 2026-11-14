@@ -17,10 +17,10 @@ zabbix_export:
         {$BS.STATUS.URL} when the relay does not listen on port 8080 of
         the host's address.
 
-        Lag thresholds, how long a replica may be read from disk and the
-        reconnect grace are macros; the replica thresholds take the
-        replica's user as context, e.g.
-        {$BS.REPLICA.LAG.HIGH:"reporting"}.
+        Triggers fire only where a person has to act. Storage and memory
+        filling up to their configured limits, replica lag and reads from
+        disk are items to watch, not alerts. The source lag threshold and
+        the reconnect and start graces are macros.
       groups:
         - name: Templates/Databases
       items:
@@ -188,16 +188,6 @@ zabbix_export:
               tags:
                 - tag: scope
                   value: performance
-            - uuid: 3f3a0455ad0c4b76bd63080e73b899e5
-              expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.source.behind_seconds,3m)>{$BS.SOURCE.LAG.WARN}'
-              name: 'Relay is more than {$BS.SOURCE.LAG.WARN}s behind the source'
-              priority: WARNING
-              dependencies:
-                - name: 'Relay is more than {$BS.SOURCE.LAG.HIGH}s behind the source'
-                  expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.source.behind_seconds,3m)>{$BS.SOURCE.LAG.HIGH}'
-              tags:
-                - tag: scope
-                  value: performance
         - uuid: e67d482f2b9e4f24ae0f63cfe0f7f259
           name: 'Source: server_uuid'
           type: DEPENDENT
@@ -219,16 +209,6 @@ zabbix_export:
           tags:
             - tag: component
               value: source
-          triggers:
-            - uuid: 2e233c5ffc194f7b89acc103b51431c6
-              expression: 'last(/Binlog Streamer by HTTP/binlog_streamer.source.server_uuid,#1)<>last(/Binlog Streamer by HTTP/binlog_streamer.source.server_uuid,#2) and length(last(/Binlog Streamer by HTTP/binlog_streamer.source.server_uuid,#2))>0'
-              name: 'Source server changed (server_uuid is now {ITEM.VALUE})'
-              priority: WARNING
-              description: 'The relay is receiving from a different server than before: a failover or a redirected source.yml. Check that the new server carries the GTID history the replicas rely on.'
-              manual_close: 'YES'
-              tags:
-                - tag: scope
-                  value: notice
         - uuid: 7720944c48cf44f586384acf120f7128
           name: 'Source: version'
           type: DEPENDENT
@@ -440,22 +420,6 @@ zabbix_export:
                 - tag: replica
                   value: '{#USER}@{#ADDRESS}'
               trigger_prototypes:
-                - uuid: 47cf521529be4a62909a6821c875c1c2
-                  expression: 'nodata(/Binlog Streamer by HTTP/binlog_streamer.replica.state_code[{#ADDRESS},{#USER}],5m)=1'
-                  name: 'Replica {#USER}@{#ADDRESS} has disconnected'
-                  priority: WARNING
-                  description: 'The replica is no longer in the status; the relay log says why it closed.'
-                  tags:
-                    - tag: scope
-                      value: availability
-                - uuid: 73f37e0932fb41d98b2c4e0148574547
-                  expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.replica.state_code[{#ADDRESS},{#USER}],2m)=0'
-                  name: 'Replica {#USER}@{#ADDRESS} logged in but requested no dump'
-                  priority: WARNING
-                  description: 'Connected for two minutes without COM_BINLOG_DUMP_GTID: usually the replica side is misconfigured or stopped.'
-                  tags:
-                    - tag: scope
-                      value: availability
             - uuid: 9e335875281d44e1b40e2385889b2583
               name: 'Replica {#USER}@{#ADDRESS}: seconds behind'
               type: DEPENDENT
@@ -476,23 +440,6 @@ zabbix_export:
                 - tag: replica
                   value: '{#USER}@{#ADDRESS}'
               trigger_prototypes:
-                - uuid: 6413df203a0a41f38ae4c772a61266a2
-                  expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.replica.behind_seconds[{#ADDRESS},{#USER}],3m)>{$BS.REPLICA.LAG.HIGH:"{#USER}"}'
-                  name: 'Replica {#USER}@{#ADDRESS} is more than {$BS.REPLICA.LAG.HIGH:"{#USER}"}s behind'
-                  priority: HIGH
-                  tags:
-                    - tag: scope
-                      value: performance
-                - uuid: 21fc2014776947de8977f2a1617e0276
-                  expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.replica.behind_seconds[{#ADDRESS},{#USER}],3m)>{$BS.REPLICA.LAG.WARN:"{#USER}"}'
-                  name: 'Replica {#USER}@{#ADDRESS} is more than {$BS.REPLICA.LAG.WARN:"{#USER}"}s behind'
-                  priority: WARNING
-                  dependencies:
-                    - name: 'Replica {#USER}@{#ADDRESS} is more than {$BS.REPLICA.LAG.HIGH:"{#USER}"}s behind'
-                      expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.replica.behind_seconds[{#ADDRESS},{#USER}],3m)>{$BS.REPLICA.LAG.HIGH:"{#USER}"}'
-                  tags:
-                    - tag: scope
-                      value: performance
             - uuid: bb1463af048f4868820da4706e701586
               name: 'Replica {#USER}@{#ADDRESS}: bytes behind'
               type: DEPENDENT
@@ -541,14 +488,6 @@ zabbix_export:
                 - tag: replica
                   value: '{#USER}@{#ADDRESS}'
               trigger_prototypes:
-                - uuid: 695100f678c24ca989ff7a06b0f896fa
-                  expression: 'min(/Binlog Streamer by HTTP/binlog_streamer.replica.read_from_disk[{#ADDRESS},{#USER}],{$BS.REPLICA.DISK.MAX:"{#USER}"})=1'
-                  name: 'Replica {#USER}@{#ADDRESS} has been read from disk for {$BS.REPLICA.DISK.MAX:"{#USER}"}'
-                  priority: WARNING
-                  description: 'The replica is further behind than the memory cache holds, so its events come from disk: it is catching up after a long stop, or cache.max_size and cache.window in settings.yml are too small for its lag.'
-                  tags:
-                    - tag: scope
-                      value: performance
             - uuid: 115883a90ade4308adc579fba48a0d27
               name: 'Replica {#USER}@{#ADDRESS}: connected since'
               type: DEPENDENT
@@ -581,30 +520,12 @@ zabbix_export:
               parameters:
                 - $.replicas
       macros:
-        - macro: '{$BS.DISK.HIGH}'
-          value: '95'
-          description: 'Disk used, percent of storage.disk.max_size, for the high-severity trigger'
-        - macro: '{$BS.DISK.WARN}'
-          value: '80'
-          description: 'Disk used, percent of storage.disk.max_size, for the warning'
         - macro: '{$BS.RECONNECT.MAX}'
           value: 1m
           description: 'How long the relay may stay in the reconnecting state before the trigger fires'
-        - macro: '{$BS.REPLICA.DISK.MAX}'
-          value: 10m
-          description: 'How long a replica may be read from disk before the warning; context is the replica user'
-        - macro: '{$BS.REPLICA.LAG.HIGH}'
-          value: '60'
-          description: 'Replica lag in seconds for the high-severity trigger; context is the replica user'
-        - macro: '{$BS.REPLICA.LAG.WARN}'
-          value: '5'
-          description: 'Replica lag in seconds for the warning; context is the replica user'
         - macro: '{$BS.SOURCE.LAG.HIGH}'
           value: '60'
           description: 'Seconds the relay may be behind the source before the high-severity trigger'
-        - macro: '{$BS.SOURCE.LAG.WARN}'
-          value: '5'
-          description: 'Seconds the relay may be behind the source before the warning'
         - macro: '{$BS.START.GRACE}'
           value: '60'
           description: 'Seconds after start within which the relay may still be reaching the source'
@@ -660,24 +581,6 @@ zabbix_export:
       tags:
         - tag: scope
           value: availability
-    - uuid: f241000277c5411b9b9b0ba78e786ef2
-      expression: 'last(/Binlog Streamer by HTTP/binlog_streamer.storage.max_bytes)>0 and last(/Binlog Streamer by HTTP/binlog_streamer.storage.bytes)*100/last(/Binlog Streamer by HTTP/binlog_streamer.storage.max_bytes)>{$BS.DISK.HIGH}'
-      name: 'Relay storage is more than {$BS.DISK.HIGH}% of its disk limit'
-      priority: HIGH
-      description: 'Purging cannot keep up: files are pinned by lagging replicas, or the retention period holds more than the disk limit allows.'
-      tags:
-        - tag: scope
-          value: capacity
-    - uuid: 222258f1030d438282b0a894fac7f8fb
-      expression: 'last(/Binlog Streamer by HTTP/binlog_streamer.storage.max_bytes)>0 and last(/Binlog Streamer by HTTP/binlog_streamer.storage.bytes)*100/last(/Binlog Streamer by HTTP/binlog_streamer.storage.max_bytes)>{$BS.DISK.WARN}'
-      name: 'Relay storage is more than {$BS.DISK.WARN}% of its disk limit'
-      priority: WARNING
-      dependencies:
-        - name: 'Relay storage is more than {$BS.DISK.HIGH}% of its disk limit'
-          expression: 'last(/Binlog Streamer by HTTP/binlog_streamer.storage.max_bytes)>0 and last(/Binlog Streamer by HTTP/binlog_streamer.storage.bytes)*100/last(/Binlog Streamer by HTTP/binlog_streamer.storage.max_bytes)>{$BS.DISK.HIGH}'
-      tags:
-        - tag: scope
-          value: capacity
     - uuid: dbfbaa1d53ce45f4933955c0c55a87b9
       expression: 'last(/Binlog Streamer by HTTP/binlog_streamer.replicas_connected)>=last(/Binlog Streamer by HTTP/binlog_streamer.max_connections)'
       name: 'All replica connections of the relay are in use'

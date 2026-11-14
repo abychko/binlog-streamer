@@ -51,16 +51,16 @@ ADD_FORMAT_TARGETS(include ${BINLOG_STREAMER_MODULES})
 INSTALL(FILES README.md DESTINATION share/doc/${PROJECT_NAME})
 INSTALL(FILES packaging/zabbix/binlog-streamer.yaml
     DESTINATION share/doc/${PROJECT_NAME}/zabbix)
-INSTALL(FILES packaging/settings.yml packaging/source.yml packaging/replica.yml
+INSTALL(FILES packaging/settings.yml DESTINATION /etc/${PROJECT_NAME}
+    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+# They hold passwords.
+INSTALL(FILES packaging/source.yml packaging/replica.yml
     DESTINATION /etc/${PROJECT_NAME}
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ)
-INSTALL(DIRECTORY DESTINATION /etc/${PROJECT_NAME}
-    DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE)
 INSTALL(FILES packaging/html/index.html packaging/html/status.css
     packaging/html/status.js DESTINATION /etc/${PROJECT_NAME}/html
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
-INSTALL(DIRECTORY DESTINATION /var/lib/${PROJECT_NAME}
-    DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE)
+INSTALL(DIRECTORY DESTINATION /var/lib/${PROJECT_NAME})
 
 # Unit/preset paths are relative to CPACK_PACKAGING_INSTALL_PREFIX (/usr,
 # cmake/packaging.cmake), giving /usr/lib/systemd/system(-preset).
