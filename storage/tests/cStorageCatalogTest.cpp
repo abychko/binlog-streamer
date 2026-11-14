@@ -25,6 +25,7 @@
 
 #include "cTempDirectoryFixture.hpp"
 #include "gtid/cGtidSet.hpp"
+#include "hStoredFileWriter.hpp"
 #include "storage/cBinlogIndexFile.hpp"
 #include "storage/hStorageDefaults.hpp"
 
@@ -38,44 +39,7 @@ namespace binlog_streamer {
 namespace {
 
 using test::TempDirectoryFixture;
-
-void WriteFreshFile(const std::filesystem::path &path, std::uint32_t serverId,
-                    bool inUse) {
-  std::vector<std::uint8_t> fdeBody(57, 0x00);
-  fdeBody[0] = 3;  // binlogVersion
-  const std::string version = "5.5.62";
-  for (std::size_t i = 0; i < version.size(); ++i)
-    fdeBody[2 + i] = static_cast<std::uint8_t>(version[i]);
-  fdeBody[56] = 19;  // commonHeaderLength
-
-  const auto pgeBody = GtidSet().Encode(/*skipTaggedGtids=*/false);
-
-  std::vector<std::uint8_t> file{0xfe, 0x62, 0x69, 0x6e};
-
-  const std::uint32_t fdeEventLength =
-      static_cast<std::uint32_t>(19 + fdeBody.size());
-  std::vector<std::uint8_t> fdeHeader(19, 0x00);
-  fdeHeader[4] = 15;  // FormatDescription
-  fdeHeader[5] = static_cast<std::uint8_t>(serverId);
-  fdeHeader[9] = static_cast<std::uint8_t>(fdeEventLength);
-  fdeHeader[13] = static_cast<std::uint8_t>(4 + fdeEventLength);
-  fdeHeader[17] = inUse ? 0x01 : 0x00;  // LOG_EVENT_BINLOG_IN_USE_F
-  file.insert(file.end(), fdeHeader.begin(), fdeHeader.end());
-  file.insert(file.end(), fdeBody.begin(), fdeBody.end());
-
-  const std::uint32_t pgeEventLength =
-      static_cast<std::uint32_t>(19 + pgeBody.size());
-  std::vector<std::uint8_t> pgeHeader(19, 0x00);
-  pgeHeader[4] = 35;  // PreviousGtids
-  pgeHeader[5] = static_cast<std::uint8_t>(serverId);
-  pgeHeader[9] = static_cast<std::uint8_t>(pgeEventLength);
-  file.insert(file.end(), pgeHeader.begin(), pgeHeader.end());
-  file.insert(file.end(), pgeBody.begin(), pgeBody.end());
-
-  std::ofstream out(path, std::ios::binary);
-  out.write(reinterpret_cast<const char *>(file.data()),
-            static_cast<std::streamsize>(file.size()));
-}
+using test::WriteFreshFile;
 
 void WriteIndex(const std::filesystem::path &dataDir,
                 const std::vector<std::string> &names) {

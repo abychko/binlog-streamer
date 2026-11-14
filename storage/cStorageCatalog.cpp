@@ -27,6 +27,7 @@
 #include "storage/cBinlogFileHeaderReader.hpp"
 #include "storage/cBinlogIndexFile.hpp"
 #include "storage/hStorageDefaults.hpp"
+#include "storage/hStorageOwnFiles.hpp"
 
 #include <algorithm>
 #include <mutex>
@@ -50,6 +51,10 @@ struct ParsedName {
   std::uint64_t number = 0;
 };
 
+constexpr const char *REBUILD_HINT =
+    "\nto index the binary logs on disk anew, stop the relay and run it once "
+    "with --rebuild-index";
+
 }  // namespace
 
 bool StorageCatalog::Load(const std::filesystem::path &dataDir,
@@ -66,7 +71,10 @@ bool StorageCatalog::Load(const std::filesystem::path &dataDir,
   }
 
   std::vector<std::string> indexNames;
-  if (!BinlogIndexFile::Load(indexPath, indexNames, error)) return false;
+  if (!BinlogIndexFile::Load(indexPath, indexNames, error)) {
+    error = "reading " + indexPath + ": " + error + REBUILD_HINT;
+    return false;
+  }
 
   std::error_code removeTmpError;
   std::filesystem::remove(TmpIndexPath(dataDir), removeTmpError);
@@ -82,7 +90,7 @@ bool StorageCatalog::Load(const std::filesystem::path &dataDir,
     if (!BinlogFileName::Parse(name, parsed.basename, parsed.number,
                                parseError)) {
       error = "binlog.index holds a name storage cannot parse: " + name + " (" +
-              parseError + ")";
+              parseError + ")" + REBUILD_HINT;
       return false;
     }
     parsedIndexNames.push_back(std::move(parsed));
@@ -104,13 +112,7 @@ bool StorageCatalog::Load(const std::filesystem::path &dataDir,
            dataDir, std::filesystem::directory_options::none, listError)) {
     if (!entry.is_regular_file()) continue;
     const std::string name = entry.path().filename().string();
-    if (name == INDEX_FILE_NAME ||
-        name == std::string(INDEX_FILE_NAME) + ".tmp")
-      continue;
-    if (name == SERVER_UUID_FILE_NAME) continue;
-    if (std::find(TLS_FILE_NAMES.begin(), TLS_FILE_NAMES.end(), name) !=
-        TLS_FILE_NAMES.end())
-      continue;
+    if (IsStorageOwnFile(name)) continue;
     if (indexed.contains(name)) continue;
 
     std::string entryBasename;
@@ -175,6 +177,7 @@ bool StorageCatalog::Load(const std::filesystem::path &dataDir,
   if (!refusals.empty()) {
     error = "data directory does not match binlog.index:";
     for (const auto &reason : refusals) error += "\n  " + reason;
+    error += REBUILD_HINT;
     return false;
   }
 
@@ -192,7 +195,8 @@ bool StorageCatalog::Load(const std::filesystem::path &dataDir,
     if (record.inUse && i + 1 != indexNames.size()) {
       error = indexNames[i] +
               " has the \"file in use\" bit set, but is not the last file in "
-              "binlog.index";
+              "binlog.index" +
+              std::string(REBUILD_HINT);
       return false;
     }
     records.push_back(std::move(record));

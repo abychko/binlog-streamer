@@ -64,6 +64,13 @@ TEST(CommandLineTest, ValidateConfigFlag) {
   EXPECT_TRUE(result.value->validateOnly);
 }
 
+TEST(CommandLineTest, RebuildIndexFlag) {
+  EXPECT_FALSE(Parse({}).value->rebuildIndex);
+  const auto result = Parse({"--rebuild-index"});
+  ASSERT_TRUE(result.value) << ::testing::PrintToString(result.errors);
+  EXPECT_TRUE(result.value->rebuildIndex);
+}
+
 TEST(CommandLineTest, HelpAndVersionFlags) {
   const auto result = Parse({"--help", "--version"});
   ASSERT_TRUE(result.value) << ::testing::PrintToString(result.errors);

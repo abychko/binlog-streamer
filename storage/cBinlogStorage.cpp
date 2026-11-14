@@ -25,10 +25,9 @@
 
 #include "storage/cBinlogIndexFile.hpp"
 #include "storage/cStorageRecovery.hpp"
+#include "storage/hAccessErrno.hpp"
 #include "storage/hStorageDefaults.hpp"
 
-#include <fcntl.h>
-#include <sys/file.h>
 #include <unistd.h>
 #include <cerrno>
 #include <cstring>
@@ -36,49 +35,19 @@
 #include <vector>
 
 namespace binlog_streamer {
-namespace {
 
-bool IsAccessErrno(int savedErrno) {
-  return savedErrno == EACCES || savedErrno == EPERM || savedErrno == ENOENT ||
-         savedErrno == ENOTDIR || savedErrno == EROFS || savedErrno == ELOOP;
-}
-
-}  // namespace
-
-BinlogStorage::~BinlogStorage() {
-  if (m_lockFd >= 0) close(m_lockFd);
-}
+BinlogStorage::~BinlogStorage() = default;
 
 bool BinlogStorage::Open(const std::filesystem::path &dataDir,
                          StorageOpenFailure &failure, std::string &error) {
   const std::string dirPath = dataDir.string();
 
-  // Locks the directory itself, not binlog.index: Replace() rewrites the
-  // index via rename(2) onto a fresh inode, so a lock on the old inode
-  // wouldn't stop a second instance opening the new one.
-  const int dirFd = open(dirPath.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-  if (dirFd < 0) {
-    const int savedErrno = errno;
-    failure = IsAccessErrno(savedErrno) ? StorageOpenFailure::AccessProblem
-                                        : StorageOpenFailure::StorageProblem;
-    error = "opening " + dirPath + ": " + std::strerror(savedErrno);
+  bool accessProblem = false;
+  if (!m_lock.Acquire(dataDir, accessProblem, error)) {
+    failure = accessProblem ? StorageOpenFailure::AccessProblem
+                            : StorageOpenFailure::StorageProblem;
     return false;
   }
-  if (flock(dirFd, LOCK_EX | LOCK_NB) != 0) {
-    const int savedErrno = errno;
-    if (savedErrno == EWOULDBLOCK) {
-      failure = StorageOpenFailure::StorageProblem;
-      error =
-          "data directory " + dirPath + " is already open by another instance";
-    } else {
-      failure = IsAccessErrno(savedErrno) ? StorageOpenFailure::AccessProblem
-                                          : StorageOpenFailure::StorageProblem;
-      error = "locking " + dirPath + ": " + std::strerror(savedErrno);
-    }
-    close(dirFd);
-    return false;
-  }
-  m_lockFd = dirFd;
 
   if (access(dirPath.c_str(), W_OK) != 0) {
     const int savedErrno = errno;

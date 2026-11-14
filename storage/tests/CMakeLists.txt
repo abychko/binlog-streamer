@@ -3,6 +3,7 @@ ADD_EXECUTABLE(bs-storage-tests
     cBinlogFileWriterTest.cpp
     cBinlogIndexFileTest.cpp
     cBinlogStorageTest.cpp
+    cDirectoryLockTest.cpp
     cBinlogTailScannerTest.cpp
     cFileCursorTest.cpp
     cReadOnlyBinlogFileTest.cpp
@@ -10,6 +11,7 @@ ADD_EXECUTABLE(bs-storage-tests
     cPublishedPositionTrackerTest.cpp
     cStorageWriterTest.cpp
     cStorageCatalogTest.cpp
+    cStorageIndexRebuildTest.cpp
     cStoragePurgerTest.cpp
     cStorageEventSinkTest.cpp
     cStorageEventSinkCacheTest.cpp

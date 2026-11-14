@@ -30,6 +30,7 @@ namespace binlog_streamer {
 struct CommandLineOptions {
   std::string settingsPath = DEFAULT_SETTINGS_PATH;
   bool validateOnly = false;
+  bool rebuildIndex = false;
   bool showHelp = false;
   bool showVersion = false;
 };

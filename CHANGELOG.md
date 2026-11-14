@@ -2,7 +2,22 @@
 
 Changes by minor version; each entry includes its patch releases.
 
-## 0.43 — 2026-09-29
+## 0.44 — 2026-11-14
+
+### Added
+
+- `--rebuild-index`: with the relay stopped, writes `binlog.index` anew
+  from the binary logs in `data_dir`, for an index that was lost or
+  damaged. The files have to make one history — one basename,
+  consecutive numbers, the "file in use" bit on the newest one at most,
+  each file's `Previous_gtids` holding those of the one before — or the
+  index is left as it is and the command names what is wrong. A newest
+  file whose header is not whole is left out, and the next start removes
+  it as an interrupted create.
+- A start refused because the data directory does not match
+  `binlog.index` names `--rebuild-index`.
+
+## 0.43 — 2026-11-11
 
 ### Added
 
@@ -12,6 +27,15 @@ Changes by minor version; each entry includes its patch releases.
 - The Zabbix template reads it per replica and warns when a replica has
   been read from disk for `{$BS.REPLICA.DISK.MAX}` (10 minutes by
   default).
+
+### Changed
+
+- A replica catching up from stored history no longer pushes other data
+  out of the page cache.
+- Small writes are sent at once on every connection, as MySQL does: less
+  delay per event on a quiet stream.
+- The monitoring page keeps long host names on one line and uses up to
+  1600 pixels of width.
 
 ## 0.42 — 2026-09-28
 

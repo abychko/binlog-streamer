@@ -30,6 +30,7 @@
 #include <optional>
 #include <string>
 #include "cache/cEventCache.hpp"
+#include "storage/cDirectoryLock.hpp"
 #include "storage/cPublishedPositionTracker.hpp"
 #include "storage/cStorageCatalog.hpp"
 #include "storage/eStorageOpenFailure.hpp"
@@ -71,7 +72,7 @@ class BinlogStorage {
   std::optional<EventCache> m_cache;
   StorageCatalog m_catalog;
   PublishedPositionTracker m_published;
-  int m_lockFd = -1;
+  DirectoryLock m_lock;
 };
 
 }  // namespace binlog_streamer

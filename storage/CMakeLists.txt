@@ -5,11 +5,13 @@ ADD_LIBRARY(bs-storage STATIC
     cReadOnlyBinlogFile.cpp
     cBinlogIndexFile.cpp
     cBinlogStorage.cpp
+    cDirectoryLock.cpp
     cBinlogTailScanner.cpp
     cFileCursor.cpp
     cFilePin.cpp
     cPublishedPositionTracker.cpp
     cStorageCatalog.cpp
+    cStorageIndexRebuild.cpp
     cStoragePurger.cpp
     cStorageWriter.cpp
     cStorageEventSink.cpp

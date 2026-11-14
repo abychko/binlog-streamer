@@ -50,6 +50,8 @@ LoadResult<CommandLineOptions> CommandLine::Parse(int argc,
         options.settingsPath = argument.substr(9);
     } else if (argument == "--validate-config")
       options.validateOnly = true;
+    else if (argument == "--rebuild-index")
+      options.rebuildIndex = true;
     else if (argument == "--help")
       options.showHelp = true;
     else if (argument == "--version")

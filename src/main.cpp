@@ -58,6 +58,7 @@
 #include "status/cStatusJsonWriter.hpp"
 #include "storage/cBinlogStorage.hpp"
 #include "storage/cStorageEventSink.hpp"
+#include "storage/cStorageIndexRebuild.hpp"
 #include "storage/cStorageReader.hpp"
 #include "storage/cStorageRecovery.hpp"
 #include "storage/cStorageWriter.hpp"
@@ -303,6 +304,45 @@ void PrintStreamSummary(const StreamResult &result,
             << '\n';
 }
 
+ExitCode RebuildIndex(const Configuration &configuration) {
+  const std::filesystem::path &dataDir = configuration.settings.storage.dataDir;
+  StorageIndexRebuild::Report report;
+  bool accessProblem = false;
+  std::string error;
+  if (!StorageIndexRebuild::Run(dataDir, report, accessProblem, error)) {
+    std::cerr << BINLOG_STREAMER_NAME ": --rebuild-index: " << error << '\n';
+    return accessProblem ? ExitCode::ConfigurationError
+                         : ExitCode::StorageError;
+  }
+  const auto list = [](const std::vector<std::string> &names) {
+    return names.empty()       ? std::string("no files")
+           : names.size() == 1 ? names.front()
+                               : std::to_string(names.size()) + " files, " +
+                                     names.front() + " to " + names.back();
+  };
+  std::cout << "binlog.index was ";
+  if (!report.previousExisted)
+    std::cout << "missing";
+  else if (!report.previousError.empty())
+    std::cout << "unreadable (" << report.previousError << ")";
+  else
+    std::cout << "listing " << list(report.previous);
+  std::cout << "\nbinlog.index lists " << list(report.indexed) << '\n';
+  for (const std::string &name : report.indexed)
+    if (std::find(report.previous.begin(), report.previous.end(), name) ==
+        report.previous.end())
+      std::cout << "  added " << name << '\n';
+  for (const std::string &name : report.previous)
+    if (std::find(report.indexed.begin(), report.indexed.end(), name) ==
+            report.indexed.end() &&
+        name != report.leftOut)
+      std::cout << "  dropped " << name << ", which is not on disk\n";
+  if (report.leftOut)
+    std::cout << "  left out " << *report.leftOut
+              << ": its header is not whole, the next start removes it\n";
+  return ExitCode::Success;
+}
+
 }  // namespace
 }  // namespace binlog_streamer
 
@@ -322,6 +362,9 @@ int main(int argc, char *argv[]) {
               << DEFAULT_SETTINGS_PATH
               << ")\n"
                  "  --validate-config   check the settings and exit\n"
+                 "  --rebuild-index     with the relay stopped, write "
+                 "binlog.index anew from\n"
+                 "                      the binary logs in data_dir and exit\n"
                  "  --help              show this help and exit\n"
                  "  --version           show the version and exit\n";
     return static_cast<int>(ExitCode::Success);
@@ -360,6 +403,8 @@ int main(int argc, char *argv[]) {
     std::cerr << BINLOG_STREAMER_NAME ": warning: " << *text << '\n';
   }
   if (command.value->validateOnly) return static_cast<int>(ExitCode::Success);
+  if (command.value->rebuildIndex)
+    return static_cast<int>(RebuildIndex(*configuration.value));
 
   // A missing or permission-denied data_dir is a configuration problem (exit
   // code 1), not a storage one (4).
